@@ -63,7 +63,7 @@ $ExchangeWindowsFeatures = @(
     'Web-Dyn-Compression', 'Web-Http-Errors', 'Web-Http-Logging', 'Web-Http-Redirect', 'Web-Http-Tracing',
     'Web-ISAPI-Ext', 'Web-ISAPI-Filter', 'Web-Metabase', 'Web-Mgmt-Console', 'Web-Mgmt-Service', 'Web-Net-Ext45',
     'Web-Request-Monitor', 'Web-Server', 'Web-Stat-Compression', 'Web-Static-Content', 'Web-Windows-Auth', 'Web-WMI',
-    'Windows-Identity-Foundation', 'RSAT-ADDS'
+    'Windows-Identity-Foundation', 'RSAT-ADDS', 'RSAT-AD-PowerShell'
 )
 
 # Pflicht-Pakete. Fallback-Daten (URL, SHA256) stammen aus den winget-Manifesten.
@@ -189,7 +189,7 @@ function Initialize-WinGet {
     Initialize-PowerShellGallery
     if (-not (Get-Module -ListAvailable -Name Microsoft.WinGet.Client)) {
         Invoke-WithRetry -Activity 'Install-Module Microsoft.WinGet.Client' -ScriptBlock {
-            Install-Module -Name Microsoft.WinGet.Client -Scope AllUsers -Force -AllowClobber
+            Install-Module -Name Microsoft.WinGet.Client -Scope AllUsers -Force
         }
     }
     Import-Module -Name Microsoft.WinGet.Client
@@ -298,7 +298,15 @@ function Get-ExchangeMedium {
     if (-not (Test-Path -Path $isoPath)) {
         Write-LabLog "Lade Exchange-ISO von $IsoUri."
         Invoke-WithRetry -Activity 'Download Exchange-ISO' -Attempts 3 -DelaySeconds 60 -ScriptBlock {
-            Start-BitsTransfer -Source $IsoUri -Destination $isoPath -Priority Foreground
+            try {
+                Start-BitsTransfer -Source $IsoUri -Destination $isoPath -Priority Foreground
+            }
+            catch {
+                # BITS ist im SYSTEM-Kontext nicht immer verfuegbar.
+                Write-LabLog "BITS nicht nutzbar ($($_.Exception.Message)), lade per WebClient."
+                $client = New-Object -TypeName System.Net.WebClient
+                try { $client.DownloadFile($IsoUri, $isoPath) } finally { $client.Dispose() }
+            }
         }
     }
 

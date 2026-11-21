@@ -127,14 +127,14 @@ function Register-LabUpdateTask {
     param(
         [Parameter(Mandatory)][string] $ScriptContent,
         [Parameter(Mandatory)][string] $TaskName,
-        [switch] $StartNow
+        [bool] $StartNow = $false
     )
     $scriptFolder = 'C:\ExchangeLab\Scripts'
     New-Item -Path $scriptFolder -ItemType Directory -Force | Out-Null
     $scriptPath = Join-Path $scriptFolder 'Update-LabServer.ps1'
     Set-Content -Path $scriptPath -Value $ScriptContent -Encoding ASCII
 
-    $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$scriptPath`" -TaskName $TaskName"
+    $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"$scriptPath`" -TaskName $TaskName"
     $trigger = New-ScheduledTaskTrigger -AtStartup
     $trigger.Delay = 'PT5M'
     $principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
@@ -211,7 +211,7 @@ function Invoke-InstallTask {
     Save-InstallSecret
     Remove-Item -Path $ResultFile -Force -ErrorAction SilentlyContinue
 
-    $arguments = '-NoProfile -ExecutionPolicy Bypass -File "{0}" -Phase Install -DomainName {1} -NetbiosName {2} -AdminUser {3} -PublicDomainName {4} -CompanyOu {5} -DcComputerName {6} -OrganizationName {7}' -f $scriptCopy, $DomainName, $NetbiosName, $AdminUser, $PublicDomainName, $CompanyOu, $DcComputerName, $OrganizationName
+    $arguments = '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "{0}" -Phase Install -DomainName {1} -NetbiosName {2} -AdminUser {3} -PublicDomainName {4} -CompanyOu {5} -DcComputerName {6} -OrganizationName {7}' -f $scriptCopy, $DomainName, $NetbiosName, $AdminUser, $PublicDomainName, $CompanyOu, $DcComputerName, $OrganizationName
     $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument $arguments
     $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Hours 3)
     $adminPassword = ConvertFrom-Base64String $AdminPasswordB64
@@ -336,9 +336,16 @@ function Initialize-LabDirectory {
 
 function Assert-DomainControllerBuild {
     $dcFqdn = "$DcComputerName.$DomainName"
-    $build = Invoke-Command -ComputerName $dcFqdn -ScriptBlock {
-        $currentVersion = Get-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion'
-        [pscustomobject]@{ Build = [int]$currentVersion.CurrentBuildNumber; Ubr = [int]$currentVersion.UBR }
+    try {
+        $build = Invoke-Command -ComputerName $dcFqdn -ScriptBlock {
+            $currentVersion = Get-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion'
+            [pscustomobject]@{ Build = [int]$currentVersion.CurrentBuildNumber; Ubr = [int]$currentVersion.UBR }
+        }
+    }
+    catch {
+        # Nur die Pruefung entfaellt; Marketplace-Images "latest" erfuellen die Bedingung.
+        Write-LabLog "WARNUNG: Build des DC $dcFqdn nicht pruefbar: $($_.Exception.Message)"
+        return
     }
     Write-LabLog "DC $dcFqdn hat Build $($build.Build).$($build.Ubr)."
     if ($build.Build -eq 26100 -and $build.Ubr -lt 7171) {
@@ -421,7 +428,7 @@ function Initialize-ExchangeConfiguration {
         if (-not (Get-ExchangeCertificate -Server $server | Where-Object { $_.Thumbprint -eq $thumbprint })) {
             Import-ExchangeCertificate -Server $server -FileData ([IO.File]::ReadAllBytes($pfxFile)) -Password (ConvertTo-SecureString -String $PfxPassword -AsPlainText -Force) -PrivateKeyExportable $true | Out-Null
         }
-        Enable-ExchangeCertificate -Server $server -Thumbprint $thumbprint -Services 'IIS,SMTP' -Force
+        Enable-ExchangeCertificate -Server $server -Thumbprint $thumbprint -Services 'IIS,SMTP' -Force -Confirm:$false
         Write-LabLog "Zertifikat $($certificate.Subject) ($thumbprint, gueltig bis $($certificate.NotAfter)) fuer IIS und SMTP aktiviert."
     }
     else {

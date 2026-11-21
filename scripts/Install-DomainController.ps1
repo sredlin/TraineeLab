@@ -164,7 +164,7 @@ function Invoke-InstallPhase {
     # Erst Registrierung des Startup-Tasks, dann Heraufstufung: so laeuft PostReboot garantiert nach dem Neustart.
     $scriptCopy = Join-Path $ScriptDir 'Install-DomainController.ps1'
     Save-OwnScript -Destination $scriptCopy
-    $arguments = '-NoProfile -ExecutionPolicy Bypass -File "{0}" -Phase PostReboot -DomainName {1} -NetbiosName {2} -PublicDomainName {3} -ExchangeIp {4}' -f $scriptCopy, $DomainName, $NetbiosName, $PublicDomainName, $ExchangeIp
+    $arguments = '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "{0}" -Phase PostReboot -DomainName {1} -NetbiosName {2} -PublicDomainName {3} -ExchangeIp {4}' -f $scriptCopy, $DomainName, $NetbiosName, $PublicDomainName, $ExchangeIp
     $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument $arguments
     $trigger = New-ScheduledTaskTrigger -AtStartup
     $principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest

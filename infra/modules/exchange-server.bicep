@@ -182,7 +182,8 @@ resource initializeExchangeServer 'Microsoft.Compute/virtualMachines/runCommands
     source: {
       script: loadTextContent('../../scripts/Initialize-ExchangeServer.ps1')
     }
-    parameters: [
+    // Leere Werte wuerden als Parameter ohne Argument uebergeben, daher WingetPackages nur bei Bedarf.
+    parameters: concat([
       {
         name: 'PublicDomainName'
         value: publicDomainName
@@ -196,18 +197,19 @@ resource initializeExchangeServer 'Microsoft.Compute/virtualMachines/runCommands
         value: subscription().subscriptionId
       }
       {
-        name: 'WingetPackages'
-        value: join(wingetPackages, ',')
-      }
-      {
         name: 'EnableLetsEncrypt'
-        value: string(enableLetsEncrypt)
+        value: toLower(string(enableLetsEncrypt))
       }
       {
         name: 'LetsEncryptStaging'
-        value: string(letsEncryptStaging)
+        value: toLower(string(letsEncryptStaging))
       }
-    ]
+    ], empty(wingetPackages) ? [] : [
+      {
+        name: 'WingetPackages'
+        value: join(wingetPackages, ',')
+      }
+    ])
     asyncExecution: false
     timeoutInSeconds: 5400
     treatFailureAsDeploymentFailure: true
