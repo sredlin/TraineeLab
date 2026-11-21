@@ -10,7 +10,7 @@ BeforeDiscovery {
 
 BeforeAll {
     $repoRoot = Split-Path -Path $PSScriptRoot -Parent
-    $labUsers = Import-PowerShellDataFile -Path (Join-Path $repoRoot 'scripts\LabUsers.psd1')
+    $labUsers = Import-PowerShellDataFile -Path (Join-Path -Path $repoRoot -ChildPath 'scripts/LabUsers.psd1')
     $templateText = Get-Content -Path (Join-Path $repoRoot 'azuredeploy.json') -Raw
     $template = $templateText | ConvertFrom-Json -Depth 100
 }
