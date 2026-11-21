@@ -11,8 +11,11 @@
       - deutsche Regionaleinstellungen
       - Windows-Features laut Exchange-SE-Voraussetzungen (Mailbox-Rolle, ohne ADLDS)
       - Remote Registry auf Automatisch (Exchange-Voraussetzung)
-      - winget (Modul Microsoft.WinGet.Client, im SYSTEM-Kontext supportet):
-        VC++ 2012/2013, IIS URL Rewrite und optionale Tools
+      - PowerShell 7 (LTS) als Laufzeit fuer winget: Die winget-CLI ist im SYSTEM-Kontext nicht
+        supportet, das Modul Microsoft.WinGet.Client laeuft nur unter PowerShell 7.
+        Exchange nutzt weiterhin nur Windows PowerShell 5.1 (Side-by-Side ist zulaessig).
+      - winget: VC++ 2012/2013, IIS URL Rewrite und optionale Tools,
+        Fallback fuer die Exchange-Voraussetzungen: Microsoft-Download mit SHA256-Pruefung
       - Exchange-SE-ISO laden und entpacken, UCMA 4.0 aus \UCMARedist installieren
       - optional Let's-Encrypt-Wildcard-Zertifikat ueber die Managed Identity der VM
 
@@ -49,6 +52,36 @@ $InstallDir = Join-Path $LabRoot 'Install'
 $MediaDir = Join-Path $LabRoot 'Media\ExchangeSE'
 $CertDir = 'C:\Certificates'
 $PoshAcmeHome = 'C:\ProgramData\Posh-ACME'
+$PwshExe = Join-Path $env:ProgramFiles 'PowerShell\7\pwsh.exe'
+
+# PowerShell 7 LTS, Quelle: GitHub-Release PowerShell/PowerShell (SHA256 aus den Release-Assets).
+$PowerShell7 = @{
+    Id        = 'Microsoft.PowerShell'
+    Url       = 'https://github.com/PowerShell/PowerShell/releases/download/v7.6.9/PowerShell-7.6.9-win-x64.msi'
+    Sha256    = '50d33c7494aaf82b987cfd4de3f232d04f91fdd4c0deeca8a669cced3e7cf8f9'
+    Arguments = '/quiet /norestart ADD_PATH=1 DISABLE_TELEMETRY=1 USE_MU=0 ENABLE_MU=0'
+}
+
+# Laeuft unter PowerShell 7 als SYSTEM und installiert die uebergebenen winget-Pakete maschinenweit.
+$WinGetHelperScript = @'
+param([Parameter(Mandatory)][string] $Ids)
+$ErrorActionPreference = 'Stop'
+$ProgressPreference = 'SilentlyContinue'
+Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+if (-not (Get-Module -ListAvailable -Name Microsoft.WinGet.Client)) {
+    Install-Module -Name Microsoft.WinGet.Client -Scope AllUsers -Force
+}
+Import-Module -Name Microsoft.WinGet.Client
+foreach ($id in $Ids.Split(',')) {
+    try {
+        $result = Install-WinGetPackage -Id $id -Source winget -MatchOption Equals -Mode Silent -Scope SystemOrUnknown -Force
+        'RESULT|{0}|{1}|{2}' -f $id, $result.Status, $result.InstallerErrorCode
+    }
+    catch {
+        'RESULT|{0}|Error|{1}' -f $id, $_.Exception.Message
+    }
+}
+'@
 
 New-Item -Path $LogDir, $InstallDir -ItemType Directory -Force | Out-Null
 $LogFile = Join-Path $LogDir 'Initialize-ExchangeServer.log'
@@ -181,25 +214,6 @@ function Initialize-PowerShellGallery {
     Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
 }
 
-function Initialize-WinGet {
-    Initialize-PowerShellGallery
-    if (-not (Get-Module -ListAvailable -Name Microsoft.WinGet.Client)) {
-        Invoke-WithRetry -Activity 'Install-Module Microsoft.WinGet.Client' -ScriptBlock {
-            Install-Module -Name Microsoft.WinGet.Client -Scope AllUsers -Force
-        }
-    }
-    Import-Module -Name Microsoft.WinGet.Client
-
-    try {
-        Write-LabLog "WinGet-Version: $(Get-WinGetVersion)"
-    }
-    catch {
-        Write-LabLog "WinGet nicht bereit ($($_.Exception.Message)), repariere Paketmanager."
-        Repair-WinGetPackageManager -AllUsers -Force -Latest
-        Write-LabLog "WinGet-Version nach Reparatur: $(Get-WinGetVersion)"
-    }
-}
-
 function Install-PackageFromDownload {
     param([Parameter(Mandatory)][hashtable] $Package)
 
@@ -226,59 +240,61 @@ function Install-PackageFromDownload {
     Write-LabLog "$($Package.Id) per Microsoft-Download installiert (Exit-Code $($process.ExitCode))."
 }
 
-function Install-LabPackage {
-    param(
-        [Parameter(Mandatory)][string] $Id,
-        [hashtable] $Fallback
-    )
-
-    try {
-        $result = Install-WinGetPackage -Id $Id -Source winget -MatchOption Equals -Mode Silent -Scope SystemOrUnknown -Force
-        if ($result.Status -ne 'Ok') {
-            throw "Status $($result.Status), Installer-Code $($result.InstallerErrorCode)"
-        }
-        Write-LabLog "winget: $Id installiert (Neustart erforderlich: $($result.RebootRequired))."
+function Install-PowerShell7 {
+    if (Test-Path -Path $PwshExe) {
+        Write-LabLog "PowerShell 7 bereits vorhanden: $PwshExe"
+        return
     }
-    catch {
-        if (-not $Fallback) {
-            throw "winget-Installation von $Id fehlgeschlagen: $($_.Exception.Message)"
-        }
-        Write-LabLog "winget-Installation von $Id fehlgeschlagen ($($_.Exception.Message)), nutze Microsoft-Download."
-        Install-PackageFromDownload -Package $Fallback
+    Install-PackageFromDownload -Package $PowerShell7
+    if (-not (Test-Path -Path $PwshExe)) {
+        throw "PowerShell 7 nach der Installation nicht gefunden ($PwshExe)."
     }
 }
 
+function Invoke-WinGetInstall {
+    param([Parameter(Mandatory)][string[]] $Ids)
+
+    $helper = Join-Path $InstallDir 'Install-WinGetPackage.ps1'
+    Set-Content -Path $helper -Value $WinGetHelperScript -Encoding ASCII
+    $output = & $PwshExe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $helper -Ids ($Ids -join ',') 2>&1
+
+    $status = @{}
+    foreach ($line in $output) {
+        $text = "$line"
+        if ($text -like 'RESULT|*') {
+            $parts = $text.Split('|', 4)
+            $status[$parts[1]] = $parts[2]
+            Write-LabLog "winget: $($parts[1]) -> $($parts[2]) ($($parts[3]))"
+        }
+        elseif ($text) {
+            Write-LabLog "winget-Hilfsskript: $text"
+        }
+    }
+    return $status
+}
+
 function Install-LabSoftware {
-    $wingetReady = $true
+    $optional = @($WingetPackages.Split(',') | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+    $status = @{}
     try {
-        Initialize-WinGet
+        Install-PowerShell7
+        $requiredIds = @($RequiredPackages | ForEach-Object { $_.Id })
+        $status = Invoke-WinGetInstall -Ids ($requiredIds + $optional)
     }
     catch {
-        $wingetReady = $false
-        Write-LabLog "WinGet nicht verfuegbar: $($_.Exception.Message)"
+        Write-LabLog "WARNUNG: winget nicht nutzbar: $($_.Exception.Message)"
     }
 
     foreach ($package in $RequiredPackages) {
-        if ($wingetReady) {
-            Install-LabPackage -Id $package.Id -Fallback $package
-        }
-        else {
+        if ($status[$package.Id] -ne 'Ok') {
+            Write-LabLog "$($package.Id) nicht per winget installiert, nutze Microsoft-Download."
             Install-PackageFromDownload -Package $package
         }
     }
-
-    $optional = $WingetPackages.Split(',') | ForEach-Object { $_.Trim() } | Where-Object { $_ }
     foreach ($id in $optional) {
-        if (-not $wingetReady) {
-            Write-LabLog "WARNUNG: $id uebersprungen, WinGet nicht verfuegbar."
-            continue
-        }
-        try {
-            Install-LabPackage -Id $id
-        }
-        catch {
+        if ($status[$id] -ne 'Ok') {
             # Optionale Tools duerfen das Lab nicht blockieren.
-            Write-LabLog "WARNUNG: $($_.Exception.Message)"
+            Write-LabLog "WARNUNG: optionales Paket $id nicht installiert."
         }
     }
 }
@@ -361,6 +377,11 @@ function Request-LabCertificate {
         Import-Module -Name Posh-ACME
 
         if ($LetsEncryptStaging -eq 'true') { Set-PAServer -DirectoryUrl LE_STAGE } else { Set-PAServer -DirectoryUrl LE_PROD }
+        # Ohne Konto wirft Get-PACertificate einen terminierenden Fehler.
+        if (-not (Get-PAAccount)) {
+            New-PAAccount -AcceptTOS | Out-Null
+            Write-LabLog 'ACME-Konto angelegt.'
+        }
 
         $domain = "*.$PublicDomainName"
         $certificate = Get-PACertificate -MainDomain $domain -ErrorAction SilentlyContinue

@@ -78,7 +78,7 @@ Describe 'LabUsers.psd1' {
 
 Describe 'azuredeploy.json' {
     It 'enthaelt keine abgekuendigten oder entfernten Komponenten' {
-        $templateText | Should -Not -Match 'Microsoft\.Powershell'          # DSC-Extension
+        $templateText | Should -Not -Match '"type":\s*"DSC"'                # DSC-Extension
         $templateText | Should -Not -Match 'Microsoft\.Azure\.Diagnostics'  # WAD
         $templateText | Should -Not -Match 'CustomScriptExtension'
         $templateText | Should -Not -Match 'raw\.githubusercontent\.com'
