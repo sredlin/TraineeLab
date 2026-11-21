@@ -121,15 +121,11 @@ function Initialize-PageFile {
     if ($computerSystem.AutomaticManagedPagefile) {
         Set-CimInstance -InputObject $computerSystem -Property @{ AutomaticManagedPagefile = $false }
     }
-    Get-CimInstance -ClassName Win32_PageFileSetting | Where-Object Name -NE 'C:\pagefile.sys' | Remove-CimInstance
-    $setting = Get-CimInstance -ClassName Win32_PageFileSetting | Where-Object Name -EQ 'C:\pagefile.sys'
-    if ($setting) {
-        Set-CimInstance -InputObject $setting -Property @{ InitialSize = $sizeMb; MaximumSize = $sizeMb }
-    }
-    else {
-        New-CimInstance -ClassName Win32_PageFileSetting -Property @{ Name = 'C:\pagefile.sys'; InitialSize = $sizeMb; MaximumSize = $sizeMb } | Out-Null
-    }
-    Write-LabLog "Auslagerungsdatei C:\pagefile.sys fest auf $sizeMb MB (25 % RAM)."
+    # Direkt in der Registry statt per Win32_PageFileSetting: New-CimInstance scheitert dort mit
+    # "Generic failure". Wirksam nach dem naechsten Neustart (Domaenenbeitritt).
+    $memoryKey = 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management'
+    Set-ItemProperty -Path $memoryKey -Name 'PagingFiles' -Value @("C:\pagefile.sys $sizeMb $sizeMb") -Type MultiString
+    Write-LabLog "Auslagerungsdatei C:\pagefile.sys fest auf $sizeMb MB (25 % RAM), aktiv nach Neustart."
 }
 
 function Initialize-DataDisk {
