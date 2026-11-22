@@ -442,7 +442,11 @@ function Initialize-ExchangeConfiguration {
     Set-OabVirtualDirectory -Identity "$server\OAB (Default Web Site)" -InternalUrl "$baseUrl/OAB" -ExternalUrl "$baseUrl/OAB"
     Set-ActiveSyncVirtualDirectory -Identity "$server\Microsoft-Server-ActiveSync (Default Web Site)" -InternalUrl "$baseUrl/Microsoft-Server-ActiveSync" -ExternalUrl "$baseUrl/Microsoft-Server-ActiveSync"
     Set-MapiVirtualDirectory -Identity "$server\mapi (Default Web Site)" -InternalUrl "$baseUrl/mapi" -ExternalUrl "$baseUrl/mapi"
-    Set-OutlookAnywhere -Identity "$server\Rpc (Default Web Site)" -InternalHostname $mailHost -ExternalHostname $mailHost -InternalClientsRequireSsl $true -ExternalClientsRequireSsl $true
+    # Mit ExternalHostname verlangt Exchange eine externe Authentifizierungsmethode; vorhandene beibehalten.
+    $outlookAnywhere = Get-OutlookAnywhere -Identity "$server\Rpc (Default Web Site)"
+    $externalAuth = "$($outlookAnywhere.ExternalClientAuthenticationMethod)"
+    if (-not $externalAuth) { $externalAuth = 'Ntlm' }
+    Set-OutlookAnywhere -Identity "$server\Rpc (Default Web Site)" -InternalHostname $mailHost -ExternalHostname $mailHost -InternalClientsRequireSsl $true -ExternalClientsRequireSsl $true -ExternalClientAuthenticationMethod $externalAuth
     Set-ClientAccessService -Identity $server -AutoDiscoverServiceInternalUri "https://autodiscover.$PublicDomainName/Autodiscover/Autodiscover.xml"
     Write-LabLog "Interne und externe URLs auf $baseUrl gesetzt, Autodiscover-SCP konfiguriert."
 }
