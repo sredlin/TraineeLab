@@ -74,15 +74,21 @@ function Test-DomainControllerReady {
         return "Split-DNS-Record mail.$PublicDomainName zeigt noch nicht auf $ExchangeIp."
     }
 
-    $entry = New-Object -TypeName System.DirectoryServices.DirectoryEntry -ArgumentList "LDAP://$DomainName/RootDSE", "$NetbiosName\$AdminUser", $Password
+    # UPN statt NETBIOS\Benutzer: von einem Rechner ausserhalb der Domain scheitert der Bind
+    # mit NetBIOS-Praefix gegen den Domain-FQDN (im Testdeployment nachgewiesen).
+    $entry = New-Object -TypeName System.DirectoryServices.DirectoryEntry -ArgumentList "LDAP://$DomainName/RootDSE", "$AdminUser@$DomainName", $Password
     try {
+        $entry.RefreshCache()
         $namingContext = $entry.Properties['defaultNamingContext'].Value
         if (-not $namingContext) {
             return 'LDAP-Bind liefert keinen Naming Context.'
         }
     }
+    catch {
+        return "LDAP-Bind als $AdminUser@$DomainName fehlgeschlagen: $($_.Exception.Message)"
+    }
     finally {
-        $entry.Dispose()
+        ([IDisposable]$entry).Dispose()
     }
 
     return $null

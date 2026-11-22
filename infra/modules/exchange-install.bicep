@@ -105,7 +105,8 @@ resource joinDomain 'Microsoft.Compute/virtualMachines/extensions@2025-04-01' = 
     autoUpgradeMinorVersion: true
     settings: {
       Name: domainName
-      User: '${netbiosName}\\${adminUsername}'
+      // UPN-Format: NETBIOS\Benutzer scheitert von Rechnern ausserhalb der Domain (Testdeployment).
+      User: '${adminUsername}@${domainName}'
       Restart: 'true'
       Options: 3
     }
