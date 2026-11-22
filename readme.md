@@ -47,7 +47,7 @@ flowchart LR
    | Parameter | Pflicht | Bedeutung |
    | --- | --- | --- |
    | `trainee` | ja | Kürzel, 3 Buchstaben |
-   | `adminPassword` | ja | Passwort für `vbu-adm` (lokal, Domain-Admin, DSRM) |
+   | `adminPassword` | ja | Passwort für `azadmin` (lokal, Domain-Admin, DSRM) |
    | `allowedRdpSourcePrefix` | ja | eigene öffentliche IP, z. B. `203.0.113.10/32` |
    | `labUserPassword` | nein | Passwort der 12 Lab-Benutzer, leer = `adminPassword` |
    | `exchangePublishedSourcePrefix` | nein | Quelle für 443/80/25, leer = wie RDP. Erst nach dem Update-Lauf auf `Internet` stellen |
@@ -70,7 +70,7 @@ Status von außen: `az vm run-command show -g <rg> --vm-name vm-<k>-ex01 --name 
 
 ## Nach dem Deployment
 
-- **RDP:** auf den Exchange-Server (Ausgabe `rdpHost`) als `<K>\vbu-adm`. Den DC erreichst du per RDP vom Exchange-Server aus (`<K>-DC01`).
+- **RDP:** auf den Exchange-Server (Ausgabe `rdpHost`) als `<K>\azadmin`. Den DC erreichst du per RDP vom Exchange-Server aus (`<K>-DC01`).
 - **OWA/ECP:** `https://mail.<k>.lab.example.com/owa` bzw. `/ecp`, z. B. als `mmustermann@<k>.lab.example.com`.
 - **Von außen erreichbar machen:** erst wenn `Update-LabServer.log` fertig ist, die NSG-Regel `Allow-Exchange-Published` auf Quelle `Internet` stellen.
 - **Ausgehende Mails** an fremde Domains gehen aus Azure nur supportet über einen Smart Host (Send Connector mit Relay). Das ist bewusst nicht vorkonfiguriert.

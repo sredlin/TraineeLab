@@ -101,6 +101,10 @@ Describe 'azuredeploy.json' {
         $skus | ForEach-Object { $_ | Should -BeLike '2025-datacenter*' }
     }
 
+    It 'nutzt azadmin als Standard-Administrator' {
+        $template.parameters.adminUsername.defaultValue | Should -Be 'azadmin'
+    }
+
     It 'deklariert Passwoerter als securestring' {
         $template.parameters.adminPassword.type | Should -Be 'securestring'
         $template.parameters.labUserPassword.type | Should -Be 'securestring'

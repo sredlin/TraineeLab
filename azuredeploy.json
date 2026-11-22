@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.40.2.10011",
-      "templateHash": "15950897520744308886"
+      "templateHash": "16721645444054642989"
     },
     "name": "Exchange Server SE Lab",
     "description": "Azubi-Lab: separater Domain Controller und Exchange Server SE auf Windows Server 2025, fertig konfiguriert (Split DNS, Zertifikat, URLs, Postfaecher)."
@@ -28,7 +28,7 @@
     },
     "adminUsername": {
       "type": "string",
-      "defaultValue": "vbu-adm",
+      "defaultValue": "azadmin",
       "metadata": {
         "description": "Administrator beider VMs, nach der Heraufstufung zugleich Domain-Administrator."
       }

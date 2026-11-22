@@ -16,7 +16,7 @@ param trainee string
 param location string = resourceGroup().location
 
 @description('Administrator beider VMs, nach der Heraufstufung zugleich Domain-Administrator.')
-param adminUsername string = 'vbu-adm'
+param adminUsername string = 'azadmin'
 
 @description('Passwort des Administrators (auch DSRM-Passwort).')
 @secure()
