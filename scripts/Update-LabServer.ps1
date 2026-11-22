@@ -63,36 +63,41 @@ try {
     $searcher = $session.CreateUpdateSearcher()
     $searcher.ServerSelection = 3
     $searcher.ServiceID = $MicrosoftUpdateServiceId
-    $searchResult = $searcher.Search("IsInstalled=0 and IsHidden=0 and Type='Software'")
 
-    if ($searchResult.Updates.Count -eq 0) {
-        Write-LabLog 'Keine ausstehenden Updates.'
-        Unregister-UpdateTask
-        exit 0
-    }
-
-    $updates = New-Object -ComObject Microsoft.Update.UpdateColl
-    foreach ($update in $searchResult.Updates) {
-        if (-not $update.EulaAccepted) {
-            $update.AcceptEula()
+    # Ohne Neustartbedarf sofort erneut suchen: manche Updates erscheinen erst nach anderen.
+    for ($round = 1; $round -le 3; $round++) {
+        $searchResult = $searcher.Search("IsInstalled=0 and IsHidden=0 and Type='Software'")
+        if ($searchResult.Updates.Count -eq 0) {
+            Write-LabLog 'Keine ausstehenden Updates.'
+            Unregister-UpdateTask
+            exit 0
         }
-        Write-LabLog "Gefunden: $($update.Title)"
-        $updates.Add($update) | Out-Null
+
+        $updates = New-Object -ComObject Microsoft.Update.UpdateColl
+        foreach ($update in $searchResult.Updates) {
+            if (-not $update.EulaAccepted) {
+                $update.AcceptEula()
+            }
+            Write-LabLog "Gefunden: $($update.Title)"
+            $updates.Add($update) | Out-Null
+        }
+
+        $downloader = $session.CreateUpdateDownloader()
+        $downloader.Updates = $updates
+        $downloader.Download() | Out-Null
+
+        $installer = $session.CreateUpdateInstaller()
+        $installer.Updates = $updates
+        $installResult = $installer.Install()
+        Write-LabLog "Installation beendet, ResultCode $($installResult.ResultCode), Neustart erforderlich: $($installResult.RebootRequired)."
+
+        if ($installResult.RebootRequired) {
+            Write-LabLog 'Neustart in 60 Sekunden, danach naechster Durchlauf.'
+            & shutdown.exe /r /t 60 /c 'ExchangeLab: Neustart nach Updates' /d p:2:17 | Out-Null
+            exit 0
+        }
     }
-
-    $downloader = $session.CreateUpdateDownloader()
-    $downloader.Updates = $updates
-    $downloader.Download() | Out-Null
-
-    $installer = $session.CreateUpdateInstaller()
-    $installer.Updates = $updates
-    $installResult = $installer.Install()
-    Write-LabLog "Installation beendet, ResultCode $($installResult.ResultCode), Neustart erforderlich: $($installResult.RebootRequired)."
-
-    if ($installResult.RebootRequired) {
-        Write-LabLog 'Neustart in 60 Sekunden, danach naechster Durchlauf.'
-        & shutdown.exe /r /t 60 /c 'ExchangeLab: Neustart nach Updates' /d p:2:17 | Out-Null
-    }
+    Write-LabLog 'Weitere Updates stehen aus, naechster Durchlauf beim naechsten Start.'
     exit 0
 }
 catch {
