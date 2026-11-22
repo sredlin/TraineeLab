@@ -1,0 +1,5 @@
+# Einheitliche LF-Zeilenenden: azuredeploy.json bettet die Skripte per loadTextContent ein
+# und muss lokal (Windows) und in der CI (Linux) byte-identisch gebaut werden.
+* text=auto eol=lf
+*.zip binary
+*.png binary

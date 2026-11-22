@@ -1,0 +1,53 @@
+name: Validate
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  bicep:
+    name: Bicep (Lint, Build, Abgleich)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Gleiche Version wie beim lokalen Build, sonst unterscheidet sich die Generator-Metadaten im JSON.
+      - name: Bicep installieren
+        run: az bicep install --version v0.40.2
+
+      - name: Lint
+        run: az bicep lint --file infra/main.bicep
+
+      - name: Build und Abgleich mit azuredeploy.json
+        run: |
+          az bicep build --file infra/main.bicep --outfile "$RUNNER_TEMP/azuredeploy.json"
+          if ! diff -u azuredeploy.json "$RUNNER_TEMP/azuredeploy.json"; then
+            echo "::error::azuredeploy.json ist nicht aktuell. Bitte 'az bicep build --file infra/main.bicep --outfile azuredeploy.json' ausfuehren und committen."
+            exit 1
+          fi
+
+  powershell:
+    name: PowerShell (Analyzer, Pester)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Module installieren
+        shell: pwsh
+        run: |
+          Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+          Install-Module -Name Pester -MinimumVersion 5.5.0 -Scope CurrentUser -Force
+          Install-Module -Name PSScriptAnalyzer -Scope CurrentUser -Force
+
+      - name: Pester
+        shell: pwsh
+        run: |
+          $config = New-PesterConfiguration
+          $config.Run.Path = 'tests'
+          $config.Run.Exit = $true
+          $config.Output.Verbosity = 'Detailed'
+          Invoke-Pester -Configuration $config
