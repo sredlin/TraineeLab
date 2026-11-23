@@ -16,7 +16,7 @@
       - Exchange-Setup: PrepareSchema, PrepareAD, Mailbox-Rolle (DB und Logs auf F:)
       - Nachkonfiguration: Accepted Domain, Adressrichtlinie, Postfaecher, Zertifikat (IIS/SMTP),
         interne/externe URLs, Autodiscover-SCP
-      - registriert den einmaligen Update-Task auf Exchange-Server und DC
+      - registriert den einmaligen Update-Task auf Exchange-Server und DC(s)
 
     Das Skript ist idempotent und enthaelt bewusst nur ASCII-Zeichen (Windows PowerShell 5.1).
 #>
@@ -45,6 +45,9 @@ param(
     [string] $DcComputerName,
 
     [string] $OrganizationName = 'ExchOrg',
+
+    # Optionaler zweiter DC, bekommt ebenfalls den einmaligen Update-Task.
+    [string] $SecondDcComputerName = '',
 
     # Nur Phase 'Orchestrate':
     [string] $AdminPasswordB64,
@@ -213,6 +216,9 @@ function Invoke-InstallTask {
     Remove-Item -Path $ResultFile -Force -ErrorAction SilentlyContinue
 
     $arguments = '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "{0}" -Phase Install -DomainName {1} -NetbiosName {2} -AdminUser {3} -PublicDomainName {4} -CompanyOu {5} -DcComputerName {6} -OrganizationName {7}' -f $scriptCopy, $DomainName, $NetbiosName, $AdminUser, $PublicDomainName, $CompanyOu, $DcComputerName, $OrganizationName
+    if ($SecondDcComputerName) {
+        $arguments += " -SecondDcComputerName $SecondDcComputerName"
+    }
     $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument $arguments
     $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Hours 3)
     $adminPassword = ConvertFrom-Base64String $AdminPasswordB64
@@ -479,13 +485,15 @@ function Register-InitialUpdate {
     Register-LabUpdateTask -ScriptContent $content -TaskName $UpdateTaskName
     Write-LabLog 'Update-Task auf dem Exchange-Server registriert (laeuft nach dem Neustart).'
 
-    try {
-        $dcFqdn = "$DcComputerName.$DomainName"
-        Invoke-Command -ComputerName $dcFqdn -ScriptBlock ${function:Register-LabUpdateTask} -ArgumentList $content, $UpdateTaskName, $true
-        Write-LabLog "Update-Task auf $dcFqdn registriert und gestartet."
-    }
-    catch {
-        Write-LabLog "WARNUNG: Update-Task auf dem DC nicht registriert: $($_.Exception.Message)"
+    foreach ($dcName in @($DcComputerName, $SecondDcComputerName) | Where-Object { $_ }) {
+        $dcFqdn = "$dcName.$DomainName"
+        try {
+            Invoke-Command -ComputerName $dcFqdn -ScriptBlock ${function:Register-LabUpdateTask} -ArgumentList $content, $UpdateTaskName, $true
+            Write-LabLog "Update-Task auf $dcFqdn registriert und gestartet."
+        }
+        catch {
+            Write-LabLog "WARNUNG: Update-Task auf $dcFqdn nicht registriert: $($_.Exception.Message)"
+        }
     }
 }
 

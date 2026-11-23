@@ -120,6 +120,11 @@ Describe 'azuredeploy.json' {
         $templateText | Should -Not -Match 'Allow-Exchange-Published'
     }
 
+    It 'stellt den zweiten DC nur auf Wunsch bereit' {
+        $template.parameters.deploySecondDc.defaultValue | Should -BeFalse
+        $templateText | Should -Match 'Install-ADDSDomainController'
+    }
+
     It 'veroeffentlicht SPF und DMARC fuer die Lab-Domain' {
         $templateText | Should -Match 'v=spf1 mx -all'
         $templateText | Should -Match 'v=DMARC1; p=none'

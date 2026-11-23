@@ -58,12 +58,15 @@ param wingetPackages array = [
   'Microsoft.VisualStudioCode'
 ]
 
-@description('VM-Groesse des Domain Controllers.')
+@description('VM-Groesse der Domain Controller.')
 @allowed([
   'Standard_B2ms'
   'Standard_D2s_v5'
 ])
 param dcVmSize string = 'Standard_B2ms'
+
+@description('Zweiten Domain Controller <K>-DC02 bereitstellen (Replikation, FSMO, DC-Ausfall ueben). Der erste DC laeuft durch, DC02 schaltet mit der Exchange-VM ab.')
+param deploySecondDc bool = false
 
 @description('VM-Groesse des Exchange-Servers (Microsoft empfiehlt fuer Produktion 128 GB RAM; 32 GB reichen fuer das Lab).')
 @allowed([
@@ -88,6 +91,7 @@ var companyOu = 'LEARN-${traineeLower}'
 var addressPrefix = '10.0.0.0/16'
 var dcPrivateIp = '10.0.1.4'
 var exchangePrivateIp = '10.0.1.5'
+var dc2PrivateIp = '10.0.1.6'
 
 var names = {
   vnet: 'vnet-exlab-${traineeLower}'
@@ -95,6 +99,8 @@ var names = {
   nsg: 'nsg-exlab-${traineeLower}'
   dcVm: 'vm-${traineeLower}-dc01'
   dcComputer: '${traineeUpper}-DC01'
+  dc2Vm: 'vm-${traineeLower}-dc02'
+  dc2Computer: '${traineeUpper}-DC02'
   exchangeVm: 'vm-${traineeLower}-ex01'
   exchangeComputer: '${traineeUpper}-EX01'
   exchangePublicIp: 'pip-${traineeLower}-ex01'
@@ -209,6 +215,28 @@ module exchangeServer 'modules/exchange-server.bicep' = {
   ]
 }
 
+// Laeuft parallel zum ersten DC und wartet selbst (Run Command Wait-DomainController), bis dieser fertig ist.
+module secondDomainController 'modules/domain-controller.bicep' = if (deploySecondDc) {
+  name: 'domain-controller-2'
+  params: {
+    location: location
+    tags: allTags
+    vmName: names.dc2Vm
+    computerName: names.dc2Computer
+    vmSize: dcVmSize
+    subnetId: network.outputs.subnetId
+    privateIp: dc2PrivateIp
+    adminUsername: adminUsername
+    adminPassword: adminPassword
+    domainName: adDomainName
+    netbiosName: traineeUpper
+    publicDomainName: publicDomainName
+    exchangeIp: exchangePrivateIp
+    mode: 'Replica'
+    firstDcIp: dcPrivateIp
+  }
+}
+
 module vnetDns 'modules/vnet-dns.bicep' = {
   name: 'vnet-dns'
   params: {
@@ -217,12 +245,16 @@ module vnetDns 'modules/vnet-dns.bicep' = {
     vnetName: names.vnet
     addressPrefix: addressPrefix
     subnets: subnets
-    dnsServers: [
+    dnsServers: deploySecondDc ? [
+      dcPrivateIp
+      dc2PrivateIp
+    ] : [
       dcPrivateIp
     ]
   }
   dependsOn: [
     domainController
+    secondDomainController
   ]
 }
 
@@ -240,9 +272,11 @@ module exchangeInstall 'modules/exchange-install.bicep' = {
     publicDomainName: publicDomainName
     companyOu: companyOu
     dcComputerName: names.dcComputer
+    secondDcComputerName: deploySecondDc ? names.dc2Computer : ''
     dcIp: dcPrivateIp
     exchangeIp: exchangePrivateIp
   }
+  // Exchange-Setup erst, wenn alle DCs stehen, damit es keinen halb replizierten DC erwischt.
   dependsOn: [
     vnetDns
   ]
@@ -259,6 +293,21 @@ module exchangeShutdown 'modules/auto-shutdown.bicep' = if (!empty(autoShutdownT
   }
   dependsOn: [
     exchangeInstall
+  ]
+}
+
+// DC02 darf deallokiert werden: Beim Start holt er sich SYSVOL vom durchlaufenden ersten DC.
+module secondDcShutdown 'modules/auto-shutdown.bicep' = if (deploySecondDc && !empty(autoShutdownTime)) {
+  name: 'auto-shutdown-${names.dc2Vm}'
+  params: {
+    location: location
+    tags: allTags
+    vmName: names.dc2Vm
+    shutdownTime: autoShutdownTime
+  }
+  dependsOn: [
+    exchangeInstall
+    secondDomainController
   ]
 }
 

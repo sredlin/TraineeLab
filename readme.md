@@ -13,6 +13,7 @@ flowchart LR
         subgraph VNET[vnet-exlab-&lt;k&gt; 10.0.0.0/16]
             subgraph SNET[snet-servers 10.0.1.0/24 + NSG]
                 DC[vm-&lt;k&gt;-dc01<br/>10.0.1.4<br/>AD DS + DNS]
+                DC2[vm-&lt;k&gt;-dc02 optional<br/>10.0.1.6<br/>AD DS + DNS]
                 EX[vm-&lt;k&gt;-ex01<br/>10.0.1.5<br/>Exchange SE]
             end
         end
@@ -20,6 +21,7 @@ flowchart LR
     end
     PIP --- EX
     EX -->|LDAP/Kerberos/DNS| DC
+    DC <-->|AD-Replikation| DC2
     PARENT[&lt;zone&gt;<br/>rg-publicdns] -->|NS-Delegation| ZONE
 ```
 
@@ -28,6 +30,7 @@ flowchart LR
 | Ressource | Details |
 | --- | --- |
 | Domain Controller | `Standard_B2ms`, Windows Server 2025, Forest `<k>.intern` (Functional Level 2016), NTDS/SYSVOL auf eigener Datendisk (Host-Cache None), keine Public IP |
+| Zweiter DC (optional) | `deploySecondDc = true`: `<K>-DC02` mit gleicher Ausstattung, wird parallel zum ersten DC aufgebaut und heraufgestuft, DNS des VNets zeigt dann auf beide DCs |
 | Exchange-Server | `Standard_E4s_v5` (32 GB RAM), Windows Server 2025, Exchange Server SE (Mailbox), OS- und Datendisk **Premium SSD**, DB und Logs auf ReFS-Datendisk |
 | Netzwerk | ein VNet, ein Subnet, eine NSG (kein Allow-All, SMTP getrennt von HTTP/HTTPS), eine Standard-Public-IP |
 | DNS | öffentliche Zone `<k>.<zone>` (mail, autodiscover, MX, SPF, DMARC `p=none`) mit Delegation in `<zone>`; intern Split DNS und Reverse-Zone `1.0.10.in-addr.arpa` auf dem DC |
@@ -39,7 +42,7 @@ flowchart LR
 - **Rechte:** Owner auf der eigenen Ziel-Ressourcengruppe (für die Rollenzuweisung der Managed Identity) und *DNS Zone Contributor* auf `rg-publicdns`. Eine Entra-/Global-Admin-Rolle ist **nicht** nötig. Ohne Owner: Parameter `enableLetsEncrypt = false`.
 - **Kürzel** darf noch nicht als Subdomain in `<zone>` existieren.
 - **Übergeordnete Zone:** Existiert `<zone>` in der Ressourcengruppe `parentDnsZoneResourceGroup`, bleibt sie unverändert, das Deployment ergänzt nur den NS-Eintrag `<k>`. Fehlt sie, wird sie angelegt. Die Ressourcengruppe selbst muss existieren. Eine neu angelegte Zone muss einmalig beim Registrar delegiert werden, sonst schlägt Let's Encrypt fehl.
-- **Kontingent:** 6 vCPU (2 × BS-Familie, 4 × ESv5-Familie) in der Region.
+- **Kontingent:** 6 vCPU (2 × BS-Familie, 4 × ESv5-Familie) in der Region, mit zweitem DC 8 vCPU (4 × BS-Familie).
 
 ## Bereitstellen
 
@@ -57,6 +60,7 @@ flowchart LR
    | `exchangePublishedSourcePrefix` | nein | Quelle für 443/80, leer = wie RDP |
    | `smtpSourcePrefix` | nein | Quelle für 25, leer = wie 443/80. Für eingehende Mails erst nach dem Update-Lauf auf `Internet` stellen |
    | `autoShutdownTime` | nein | tägliches Herunterfahren der Exchange-VM (`HHmm`), Standard `1900`, leer = aus |
+   | `deploySecondDc` | nein | zweiten Domain Controller `<K>-DC02` bereitstellen, Standard `false` |
    | `enableLetsEncrypt` / `letsEncryptStaging` | nein | Zertifikat an/aus, Test-CA für Testdeployments |
    | `wingetPackages` | nein | zusätzliche Tools per winget, Standard `Microsoft.VisualStudioCode` |
 
@@ -67,10 +71,11 @@ flowchart LR
 | Schritt | Wo | Log auf der VM |
 | --- | --- | --- |
 | Forest anlegen, Neustart, Split DNS | DC | `C:\ExchangeLab\Logs\Install-DomainController-*.log` |
+| Warten auf DC01, Heraufstufung (optional) | DC02 | `C:\ExchangeLab\Logs\Wait-DomainController.log`, `Install-DomainController-*.log` |
 | Voraussetzungen, ISO, Zertifikat (parallel) | Exchange | `C:\ExchangeLab\Logs\Initialize-ExchangeServer.log` |
 | Warten auf DC, Domänenbeitritt | Exchange | `C:\ExchangeLab\Logs\Wait-DomainController.log` |
 | Exchange-Setup und Konfiguration | Exchange | `C:\ExchangeLab\Logs\Install-ExchangeServer-*.log`, `C:\ExchangeSetupLogs\` |
-| Updates nach der Installation | beide | `C:\ExchangeLab\Logs\Update-LabServer.log` |
+| Updates nach der Installation | alle Server | `C:\ExchangeLab\Logs\Update-LabServer.log` |
 
 Status von außen: `az vm run-command show -g <rg> --vm-name vm-<k>-ex01 --name Install-ExchangeServer --instance-view`.
 
@@ -88,6 +93,7 @@ Status von außen: `az vm run-command show -g <rg> --vm-name vm-<k>-ex01 --name 
 
 - Die **Exchange-VM** fährt täglich um `autoShutdownTime` (Standard 19:00) herunter und wird deallokiert. Morgens im Portal starten. Der Schedule entsteht erst nach der Installation, das Exchange-Setup wird also nicht unterbrochen. Den Update-Lauf danach kann er aber unterbrechen, deshalb nicht kurz vor der Abschaltzeit deployen.
 - Den **DC nie im Portal stoppen oder deallokieren.** Laut Microsoft setzt das Deallokieren die VM-Generation-ID zurück, der DC verwirft seinen RID-Pool und markiert SYSVOL als nicht-autoritativ. Mit nur einem DC gibt es keinen Partner, von dem SYSVOL kommen könnte, dann fehlen NETLOGON und die Gruppenrichtlinien, bis jemand von Hand eingreift. Der DC (`Standard_B2ms`) ist günstig und läuft deshalb durch. Neustarts nur im Gast.
+- **Mit zweitem DC:** `<K>-DC02` fährt zusammen mit der Exchange-VM herunter. Beim Start holt er sich SYSVOL vom durchlaufenden `<K>-DC01`. Der erste DC bleibt die Ausnahme und läuft immer. Werden beide DCs gleichzeitig deallokiert, gibt es keinen autoritativen Partner mehr und SYSVOL muss von Hand repariert werden.
 - **Budget:** optional im Portal unter Ressourcengruppe → *Kostenverwaltung* → *Budgets* mit E-Mail-Benachrichtigung anlegen. Nicht im Template, weil Budgets ein Startdatum im laufenden Monat brauchen und Redeploys in späteren Monaten sonst scheitern können.
 
 ## Supportbarkeit

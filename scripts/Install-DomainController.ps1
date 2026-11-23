@@ -8,20 +8,25 @@
     Phase 'Install' (Standard):
       - Datendisk F: (NTFS) fuer NTDS und SYSVOL (Host-Cache None, siehe Bicep)
       - deutsche Regionaleinstellungen
-      - AD DS + DNS, neuer Forest mit Functional Level 2016 (WinThreshold),
+      - AD DS + DNS
+      - Modus 'Forest': neuer Forest mit Functional Level 2016 (WinThreshold),
         weil Exchange Server SE nur FFL 2012 R2/2016 unterstuetzt
+      - Modus 'Replica': weiterer DC in der bestehenden Domain (Domain-Admin im UPN-Format)
       - registriert einen einmaligen Startup-Task fuer Phase 'PostReboot'
       - verzoegerter Neustart (120 s), damit der Run Command seinen Status melden kann
 
     Phase 'PostReboot' (einmaliger Startup-Task, SYSTEM, keine Secrets):
-      - DNS-Forwarder 168.63.129.16, Reverse-Zone des Subnets, DNS-Registrierung des DC
-      - Split DNS: interne Zone <PublicDomainName> mit mail/autodiscover/MX auf die interne Exchange-IP
+      - DNS-Forwarder 168.63.129.16, DNS-Registrierung des DC
+      - nur Modus 'Forest': Reverse-Zone des Subnets und Split DNS (interne Zone <PublicDomainName>
+        mit mail/autodiscover/MX auf die interne Exchange-IP); weitere DCs erhalten beides per Replikation
       - schreibt Marker und entfernt den Task
 
     Das Skript ist idempotent und enthaelt bewusst nur ASCII-Zeichen (Windows PowerShell 5.1).
 #>
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', 'SafeModePasswordB64', Justification = 'Run Command uebergibt Parameter nur als String; Wert ist Base64 und kommt aus protectedParameters.')]
-[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingConvertToSecureStringWithPlainText', '', Justification = 'Passwort kommt als protectedParameter und wird nur fuer Install-ADDSForest benoetigt.')]
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', 'AdminPasswordB64', Justification = 'Run Command uebergibt Parameter nur als String; Wert ist Base64 und kommt aus protectedParameters.')]
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingConvertToSecureStringWithPlainText', '', Justification = 'Passwoerter kommen als protectedParameters und werden nur fuer die Heraufstufung benoetigt.')]
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingUsernameAndPasswordParams', '', Justification = 'Run Command kann keine PSCredential uebergeben.')]
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)]
@@ -37,6 +42,15 @@ param(
     [string] $ExchangeIp,
 
     [string] $SafeModePasswordB64,
+
+    # Forest = erster DC (legt den Forest an), Replica = weiterer DC in der bestehenden Domain.
+    [ValidateSet('Forest', 'Replica')]
+    [string] $Mode = 'Forest',
+
+    # Nur Modus Replica:
+    [string] $AdminUser,
+    [string] $AdminPasswordB64,
+    [string] $FirstDcIp,
 
     [ValidateSet('Install', 'PostReboot')]
     [string] $Phase = 'Install'
@@ -179,7 +193,7 @@ function Invoke-InstallPhase {
     # Erst Registrierung des Startup-Tasks, dann Heraufstufung: so laeuft PostReboot garantiert nach dem Neustart.
     $scriptCopy = Join-Path $ScriptDir 'Install-DomainController.ps1'
     Save-OwnScript -Destination $scriptCopy
-    $arguments = '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "{0}" -Phase PostReboot -DomainName {1} -NetbiosName {2} -PublicDomainName {3} -ExchangeIp {4}' -f $scriptCopy, $DomainName, $NetbiosName, $PublicDomainName, $ExchangeIp
+    $arguments = '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "{0}" -Phase PostReboot -DomainName {1} -NetbiosName {2} -PublicDomainName {3} -ExchangeIp {4} -Mode {5}' -f $scriptCopy, $DomainName, $NetbiosName, $PublicDomainName, $ExchangeIp, $Mode
     $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument $arguments
     $trigger = New-ScheduledTaskTrigger -AtStartup
     $principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
@@ -190,12 +204,7 @@ function Invoke-InstallPhase {
     $safeModePassword = ConvertTo-SecureString -String (ConvertFrom-Base64String $SafeModePasswordB64) -AsPlainText -Force
     Import-Module ADDSDeployment
 
-    Write-LabLog "Lege Forest $DomainName (NetBIOS $NetbiosName, Functional Level 2016) an."
-    $forestParams = @{
-        DomainName                    = $DomainName
-        DomainNetbiosName             = $NetbiosName
-        ForestMode                    = 'WinThreshold'
-        DomainMode                    = 'WinThreshold'
+    $commonParams = @{
         InstallDns                    = $true
         DatabasePath                  = 'F:\NTDS'
         LogPath                       = 'F:\NTDS'
@@ -205,17 +214,36 @@ function Invoke-InstallPhase {
         Force                         = $true
         WarningAction                 = 'SilentlyContinue'
     }
-    $result = Install-ADDSForest @forestParams
+
+    if ($Mode -eq 'Forest') {
+        Write-LabLog "Lege Forest $DomainName (NetBIOS $NetbiosName, Functional Level 2016) an."
+        $result = Install-ADDSForest @commonParams -DomainName $DomainName -DomainNetbiosName $NetbiosName -ForestMode 'WinThreshold' -DomainMode 'WinThreshold'
+        # Der erste DC nutzt sich selbst als DNS-Server.
+        $dnsServers = @('127.0.0.1')
+    }
+    else {
+        foreach ($name in 'AdminUser', 'AdminPasswordB64', 'FirstDcIp') {
+            if (-not (Get-Variable -Name $name -ValueOnly)) {
+                throw "Parameter $name fehlt (Modus Replica)."
+            }
+        }
+        # UPN-Format: von einem Rechner ausserhalb der Domain scheitert NETBIOS\Benutzer.
+        $adminPassword = ConvertTo-SecureString -String (ConvertFrom-Base64String $AdminPasswordB64) -AsPlainText -Force
+        $credential = New-Object -TypeName System.Management.Automation.PSCredential -ArgumentList "$AdminUser@$DomainName", $adminPassword
+        Write-LabLog "Stufe weiteren DC fuer $DomainName herauf (Quelle der Erstreplikation: $FirstDcIp)."
+        $result = Install-ADDSDomainController @commonParams -DomainName $DomainName -Credential $credential
+        # Erster DC zuerst, eigene Adresse nur als zweiter Eintrag (Microsoft-Empfehlung, sonst Startverzoegerung).
+        $dnsServers = @($FirstDcIp, '127.0.0.1')
+    }
     if ($result.Status -ne 'Success') {
-        throw "Install-ADDSForest meldet Status '$($result.Status)': $($result.Message)"
+        throw "Heraufstufung ($Mode) meldet Status '$($result.Status)': $($result.Message)"
     }
 
-    # Der erste DC nutzt sich selbst als DNS-Server.
     $adapter = Get-NetAdapter | Where-Object Status -EQ 'Up' | Select-Object -First 1
-    Set-DnsClientServerAddress -InterfaceIndex $adapter.ifIndex -ServerAddresses '127.0.0.1'
-    Write-LabLog "DNS-Client von Adapter $($adapter.Name) zeigt auf 127.0.0.1."
+    Set-DnsClientServerAddress -InterfaceIndex $adapter.ifIndex -ServerAddresses $dnsServers
+    Write-LabLog "DNS-Client von Adapter $($adapter.Name) zeigt auf $($dnsServers -join ', ')."
 
-    Write-LabLog 'Forest angelegt. Neustart in 120 Sekunden.'
+    Write-LabLog "Heraufstufung ($Mode) abgeschlossen. Neustart in 120 Sekunden."
     & shutdown.exe /r /t 120 /c 'ExchangeLab: Neustart nach DC-Heraufstufung' /d p:4:2 | Out-Null
 }
 
@@ -239,23 +267,29 @@ function Invoke-PostRebootPhase {
     }
     Write-LabLog 'AD DS und DNS laufen.'
 
+    # Forwarder sind pro DNS-Server gespeichert und werden nicht repliziert, also auf jedem DC setzen.
     Set-DnsServerForwarder -IPAddress '168.63.129.16'
     Write-LabLog 'DNS-Forwarder 168.63.129.16 (Azure DNS) gesetzt.'
 
-    # Vor der DNS-Registrierung und vor dem Domaenenbeitritt der Exchange-VM, damit PTR-Records dynamisch entstehen.
-    Add-ReverseLookupZone -IpAddress $ExchangeIp
+    # Die AD-integrierten Zonen legt nur der erste DC an, weitere DCs bekommen sie per Replikation.
+    if ($Mode -eq 'Forest') {
+        # Vor der DNS-Registrierung und vor dem Domaenenbeitritt der Exchange-VM, damit PTR-Records dynamisch entstehen.
+        Add-ReverseLookupZone -IpAddress $ExchangeIp
+    }
 
     & ipconfig.exe /registerdns | Out-Null
     & nltest.exe /dsregdns | Out-Null
     Write-LabLog 'DNS-Registrierung des DC angestossen.'
 
-    if (-not (Get-DnsServerZone -Name $PublicDomainName -ErrorAction SilentlyContinue)) {
-        Add-DnsServerPrimaryZone -Name $PublicDomainName -ReplicationScope Domain
-        Write-LabLog "Split-DNS-Zone $PublicDomainName angelegt."
+    if ($Mode -eq 'Forest') {
+        if (-not (Get-DnsServerZone -Name $PublicDomainName -ErrorAction SilentlyContinue)) {
+            Add-DnsServerPrimaryZone -Name $PublicDomainName -ReplicationScope Domain
+            Write-LabLog "Split-DNS-Zone $PublicDomainName angelegt."
+        }
+        Add-SplitDnsRecord -Zone $PublicDomainName -Name 'mail' -Type A -Value $ExchangeIp
+        Add-SplitDnsRecord -Zone $PublicDomainName -Name 'autodiscover' -Type CNAME -Value "mail.$PublicDomainName."
+        Add-SplitDnsRecord -Zone $PublicDomainName -Name '.' -Type MX -Value "mail.$PublicDomainName."
     }
-    Add-SplitDnsRecord -Zone $PublicDomainName -Name 'mail' -Type A -Value $ExchangeIp
-    Add-SplitDnsRecord -Zone $PublicDomainName -Name 'autodiscover' -Type CNAME -Value "mail.$PublicDomainName."
-    Add-SplitDnsRecord -Zone $PublicDomainName -Name '.' -Type MX -Value "mail.$PublicDomainName."
 
     Set-Content -Path $MarkerFile -Value (Get-Date -Format o) -Encoding ASCII
     Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue
