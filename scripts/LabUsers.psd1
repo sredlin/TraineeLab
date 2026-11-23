@@ -37,6 +37,9 @@
         @{ SamAccountName = 'RJung'; GivenName = 'Robert'; Surname = 'Jung'; OrganizationalUnit = 'OU=Users,OU=Hamburg,OU=Branch'; StreetAddress = 'Ring 1'; City = 'Hamburg'; PostalCode = '20257'; Office = '15'; Title = 'Artist'; Department = 'Marketing'; OfficePhone = '0049 040 655 123 513'; MobilePhone = '0049 160 655 123 513' }
     )
 
+    # Ziel-OU fuer den optionalen Windows-11-Client (tritt zunaechst in den Standardcontainer bei).
+    ClientOrganizationalUnit = 'OU=Computers,OU=Kiel,OU=Branch'
+
     # Vorgesetzte (Benutzer = Manager), sichtbar im Adressbuch und im Organigramm von OWA.
     Managers            = @{
         EMustermann = 'MMustermann'

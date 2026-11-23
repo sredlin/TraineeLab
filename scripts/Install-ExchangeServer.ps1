@@ -18,6 +18,8 @@
         interne/externe URLs, Autodiscover-SCP
       - Beispielempfaenger aus LabUsers.psd1: Verteiler, freigegebene Postfaecher (FullAccess/SendAs),
         Raumpostfaecher, externe Kontakte; Vorgesetzte der Lab-Benutzer
+      - GPO 'LAB - Outlook klassisch' (neues Outlook kann kein Exchange on Premises)
+      - verschiebt den optionalen Windows-11-Client in die Client-OU
       - registriert den einmaligen Update-Task auf Exchange-Server und DC(s) sowie den taeglichen
         Wartungs-Task (Invoke-LabMaintenance.ps1)
       - legt Lab-Info.txt und Verknuepfungen (OWA, ECP, Logs) auf dem oeffentlichen Desktop ab
@@ -52,6 +54,9 @@ param(
 
     # Optionaler zweiter DC, bekommt ebenfalls den einmaligen Update-Task.
     [string] $SecondDcComputerName = '',
+
+    # Optionaler Windows-11-Client, wird in die Client-OU aus LabUsers.psd1 verschoben.
+    [string] $ClientComputerName = '',
 
     # Nur Phase 'Orchestrate':
     [string] $AdminPasswordB64,
@@ -226,6 +231,9 @@ function Invoke-InstallTask {
     $arguments = '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "{0}" -Phase Install -DomainName {1} -NetbiosName {2} -AdminUser {3} -PublicDomainName {4} -CompanyOu {5} -DcComputerName {6} -OrganizationName {7}' -f $scriptCopy, $DomainName, $NetbiosName, $AdminUser, $PublicDomainName, $CompanyOu, $DcComputerName, $OrganizationName
     if ($SecondDcComputerName) {
         $arguments += " -SecondDcComputerName $SecondDcComputerName"
+    }
+    if ($ClientComputerName) {
+        $arguments += " -ClientComputerName $ClientComputerName"
     }
     $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument $arguments
     $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Hours 3)
@@ -590,6 +598,62 @@ function Register-LabMaintenance {
     Write-LabLog "Wartungs-Task $MaintenanceTaskName registriert (taeglich 12:00, Log-Bereinigung und Zertifikatserneuerung)."
 }
 
+function Initialize-LabOutlookPolicy {
+    # Das neue Outlook fuer Windows unterstuetzt kein Exchange on Premises. Die GPO blendet den Umschalter
+    # im klassischen Outlook aus und schaltet die automatische Migration ab. Nicht fatal.
+    $name = 'LAB - Outlook klassisch'
+    try {
+        Import-Module -Name GroupPolicy
+        if (-not (Get-GPO -Name $name -ErrorAction SilentlyContinue)) {
+            New-GPO -Name $name -Comment 'Exchange-Lab: neues Outlook ausblenden, klassisches Outlook fuer Exchange on Premises behalten.' | Out-Null
+            Write-LabLog "GPO '$name' angelegt."
+        }
+        Set-GPRegistryValue -Name $name -Key 'HKCU\Software\Policies\Microsoft\office\16.0\outlook\options\general' -ValueName 'HideNewOutlookToggle' -Type DWord -Value 1 | Out-Null
+        Set-GPRegistryValue -Name $name -Key 'HKCU\Software\Policies\Microsoft\office\16.0\outlook\preferences' -ValueName 'NewOutlookMigrationUserSetting' -Type DWord -Value 0 | Out-Null
+
+        $target = "OU=$CompanyOu,$((Get-ADDomain).DistinguishedName)"
+        if (-not ((Get-GPInheritance -Target $target).GpoLinks | Where-Object { $_.DisplayName -eq $name })) {
+            New-GPLink -Name $name -Target $target | Out-Null
+            Write-LabLog "GPO '$name' mit $target verknuepft."
+        }
+    }
+    catch {
+        Write-LabLog "WARNUNG: GPO '$name' nicht vollstaendig eingerichtet: $($_.Exception.Message)"
+    }
+}
+
+function Move-LabClientComputer {
+    # Der Client tritt parallel zur Exchange-Installation in den Standardcontainer bei und landet hier in
+    # der Lab-Struktur, damit Gruppenrichtlinien der Firmen-OU greifen. Nicht fatal.
+    param([Parameter(Mandatory)][hashtable] $LabData)
+
+    if (-not $ClientComputerName) { return }
+    try {
+        $target = "$($LabData.ClientOrganizationalUnit),OU=$CompanyOu,$((Get-ADDomain).DistinguishedName)"
+        $computer = $null
+        for ($i = 1; $i -le 20 -and -not $computer; $i++) {
+            $computer = Get-ADComputer -Filter "Name -eq '$ClientComputerName'"
+            if (-not $computer) {
+                Write-LabLog "Client $ClientComputerName noch nicht in der Domain, warte (Versuch $i/20)."
+                Start-Sleep -Seconds 30
+            }
+        }
+        if (-not $computer) {
+            Write-LabLog "WARNUNG: Client $ClientComputerName nicht gefunden, bitte selbst nach $target verschieben."
+            return
+        }
+        if ($computer.DistinguishedName -like "*,$target") {
+            Write-LabLog "Client $ClientComputerName liegt bereits in $target."
+            return
+        }
+        Move-ADObject -Identity $computer.DistinguishedName -TargetPath $target
+        Write-LabLog "Client $ClientComputerName nach $target verschoben."
+    }
+    catch {
+        Write-LabLog "WARNUNG: Client $ClientComputerName nicht verschoben: $($_.Exception.Message)"
+    }
+}
+
 function Write-UrlShortcut {
     param([Parameter(Mandatory)][string] $Path, [Parameter(Mandatory)][string] $Url)
     Set-Content -Path $Path -Value "[InternetShortcut]`r`nURL=$Url" -Encoding ASCII
@@ -613,6 +677,7 @@ function Publish-LabDesktop {
             "Oeffentliche Domain: $PublicDomainName"
             "Exchange-Server:     $env:COMPUTERNAME"
             "Domain Controller:   $($dcNames -join ', ')"
+            "Client:              $(if ($ClientComputerName) { "$ClientComputerName (Windows 11, Microsoft 365 Apps, RDP direkt ueber Ausgabe clientRdpHost)" } else { 'keiner' })"
             "Administrator:       $NetbiosName\$AdminUser"
             "OWA:                 https://$mailHost/owa"
             "ECP:                 https://$mailHost/ecp"
@@ -677,8 +742,10 @@ function Invoke-InstallPhase {
     Connect-ExchangeSession
     Initialize-ExchangeConfiguration -Users $labData.Users
     Initialize-LabRecipient -LabData $labData
+    Initialize-LabOutlookPolicy
     Register-InitialUpdate
     Register-LabMaintenance
+    Move-LabClientComputer -LabData $labData
     Publish-LabDesktop -LabData $labData
 }
 

@@ -68,6 +68,26 @@ param dcVmSize string = 'Standard_B2ms'
 @description('Zweiten Domain Controller <K>-DC02 bereitstellen (Replikation, FSMO, DC-Ausfall ueben). Der erste DC laeuft durch, DC02 schaltet mit der Exchange-VM ab.')
 param deploySecondDc bool = false
 
+@description('Windows-11-Client <K>-CL01 mit Microsoft 365 Apps bereitstellen, Domaenenmitglied mit eigener Public IP fuer RDP. Braucht Windows-Lizenzen mit Multitenant Hosting Rights.')
+param deployClient bool = true
+
+@description('VM-Groesse des Windows-11-Clients.')
+@allowed([
+  'Standard_B2ms'
+  'Standard_D2s_v5'
+])
+param clientVmSize string = 'Standard_B2ms'
+
+@description('SKU des Windows-11-Images (Publisher MicrosoftWindowsDesktop, Offer windows-11).')
+param clientImageSku string = 'win11-25h2-ent'
+
+@description('Microsoft 365 Apps auf dem Client: O365ProPlusRetail = Apps for enterprise (M365 E3/E5), O365BusinessRetail = Apps for business (Business Standard/Premium). Aktiviert wird mit dem Firmenkonto.')
+@allowed([
+  'O365ProPlusRetail'
+  'O365BusinessRetail'
+])
+param officeProductId string = 'O365ProPlusRetail'
+
 @description('VM-Groesse des Exchange-Servers (Microsoft empfiehlt fuer Produktion 128 GB RAM; 32 GB reichen fuer das Lab).')
 @allowed([
   'Standard_E4s_v5'
@@ -92,6 +112,7 @@ var addressPrefix = '10.0.0.0/16'
 var dcPrivateIp = '10.0.1.4'
 var exchangePrivateIp = '10.0.1.5'
 var dc2PrivateIp = '10.0.1.6'
+var clientPrivateIp = '10.0.1.10'
 
 var names = {
   vnet: 'vnet-exlab-${traineeLower}'
@@ -104,6 +125,9 @@ var names = {
   exchangeVm: 'vm-${traineeLower}-ex01'
   exchangeComputer: '${traineeUpper}-EX01'
   exchangePublicIp: 'pip-${traineeLower}-ex01'
+  clientVm: 'vm-${traineeLower}-cl01'
+  clientComputer: '${traineeUpper}-CL01'
+  clientPublicIp: 'pip-${traineeLower}-cl01'
 }
 
 // Einzige Quelle der Subnet-Definition: wird bei Erstanlage und DNS-Umstellung identisch verwendet.
@@ -148,6 +172,10 @@ module network 'modules/network.bicep' = {
     smtpSourcePrefix: empty(smtpSourcePrefix) ? webSourcePrefix : smtpSourcePrefix
     publicIpName: names.exchangePublicIp
     publicIpDnsLabel: 'mail-${traineeLower}-${take(uniqueString(resourceGroup().id), 6)}'
+    deployClient: deployClient
+    clientPrivateIp: clientPrivateIp
+    clientPublicIpName: names.clientPublicIp
+    clientPublicIpDnsLabel: 'cl-${traineeLower}-${take(uniqueString(resourceGroup().id), 6)}'
   }
 }
 
@@ -273,11 +301,51 @@ module exchangeInstall 'modules/exchange-install.bicep' = {
     companyOu: companyOu
     dcComputerName: names.dcComputer
     secondDcComputerName: deploySecondDc ? names.dc2Computer : ''
+    clientComputerName: deployClient ? names.clientComputer : ''
     dcIp: dcPrivateIp
     exchangeIp: exchangePrivateIp
   }
   // Exchange-Setup erst, wenn alle DCs stehen, damit es keinen halb replizierten DC erwischt.
   dependsOn: [
+    vnetDns
+  ]
+}
+
+// Vorbereitung (Sprachpaket, Office) parallel zum DC-Aufbau, Beitritt erst nach der DNS-Umstellung.
+module client 'modules/client.bicep' = if (deployClient) {
+  name: 'client'
+  params: {
+    location: location
+    tags: allTags
+    vmName: names.clientVm
+    computerName: names.clientComputer
+    vmSize: clientVmSize
+    subnetId: network.outputs.subnetId
+    privateIp: clientPrivateIp
+    publicIpId: network.outputs.clientPublicIpId
+    adminUsername: adminUsername
+    adminPassword: adminPassword
+    imageSku: clientImageSku
+    officeProductId: officeProductId
+  }
+}
+
+module clientJoin 'modules/client-join.bicep' = if (deployClient) {
+  name: 'client-join'
+  params: {
+    location: location
+    tags: allTags
+    vmName: names.clientVm
+    adminUsername: adminUsername
+    adminPassword: adminPassword
+    domainName: adDomainName
+    netbiosName: traineeUpper
+    publicDomainName: publicDomainName
+    dcIp: dcPrivateIp
+    exchangeIp: exchangePrivateIp
+  }
+  dependsOn: [
+    client
     vnetDns
   ]
 }
@@ -311,6 +379,20 @@ module secondDcShutdown 'modules/auto-shutdown.bicep' = if (deploySecondDc && !e
   ]
 }
 
+module clientShutdown 'modules/auto-shutdown.bicep' = if (deployClient && !empty(autoShutdownTime)) {
+  name: 'auto-shutdown-${names.clientVm}'
+  params: {
+    location: location
+    tags: allTags
+    vmName: names.clientVm
+    shutdownTime: autoShutdownTime
+  }
+  dependsOn: [
+    exchangeInstall
+    clientJoin
+  ]
+}
+
 // ---------------------------------------------------------------------------------------------
 // Ausgaben
 // ---------------------------------------------------------------------------------------------
@@ -319,3 +401,4 @@ output owaUrl string = 'https://mail.${publicDomainName}/owa'
 output rdpHost string = network.outputs.publicIpFqdn
 output adDomain string = adDomainName
 output publicDomain string = publicDomainName
+output clientRdpHost string = deployClient ? network.outputs.clientPublicIpFqdn : ''

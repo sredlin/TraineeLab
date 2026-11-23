@@ -96,6 +96,10 @@ Describe 'LabUsers.psd1' {
         }
     }
 
+    It 'hat eine vorhandene Ziel-OU fuer den Client' {
+        $labUsers.OrganizationalUnits | Should -Contain $labUsers.ClientOrganizationalUnit
+    }
+
     It 'nutzt fuer externe Kontakte nur reservierte Beispiel-Domains' {
         foreach ($contact in $labUsers.Contacts) {
             $contact.ExternalEmailAddress | Should -Match '@([a-z0-9-]+\.)*example\.(com|org|net)$'
@@ -130,7 +134,10 @@ Describe 'azuredeploy.json' {
     }
 
     It 'enthaelt keine NSG-Regel mit beliebiger Quelle' {
+        # Literal-JSON und, bei bedingten Regeln, ARM-Ausdruck createObject('sourceAddressPrefix', '*').
         $templateText | Should -Not -Match '"sourceAddressPrefix": "\*"'
+        $templateText | Should -Not -Match "'sourceAddressPrefix', '\*'"
+        $templateText | Should -Match "'sourceAddressPrefix', parameters\('allowedRdpSourcePrefix'\)"
     }
 
     It 'nutzt Windows Server 2025 fuer alle VMs' {
@@ -153,13 +160,25 @@ Describe 'azuredeploy.json' {
     }
 
     It 'trennt SMTP von HTTP/HTTPS in der NSG' {
-        $templateText | Should -Match '"name": "Allow-Exchange-Web"'
-        $templateText | Should -Match '"name": "Allow-Exchange-SMTP"'
+        $templateText | Should -Match "'name', 'Allow-Exchange-Web'"
+        $templateText | Should -Match "'name', 'Allow-Exchange-SMTP'"
         $templateText | Should -Not -Match 'Allow-Exchange-Published'
     }
 
     It 'uebergibt das Wartungsskript an die Exchange-Installation' {
         $templateText | Should -Match 'MaintenanceScriptB64'
+    }
+
+    It 'stellt standardmaessig einen Windows-11-Client mit Multitenant Hosting Rights bereit' {
+        $template.parameters.deployClient.defaultValue | Should -BeTrue
+        $template.parameters.clientImageSku.defaultValue | Should -BeLike 'win11-*'
+        $templateText | Should -Match '"publisher": "MicrosoftWindowsDesktop"'
+        $templateText | Should -Match '"offer": "windows-11"'
+        $templateText | Should -Match '"licenseType": "Windows_Client"'
+    }
+
+    It 'erlaubt nur Office-Produkte mit Benutzeraktivierung' {
+        $template.parameters.officeProductId.allowedValues | Should -Be @('O365ProPlusRetail', 'O365BusinessRetail')
     }
 
     It 'stellt den zweiten DC nur auf Wunsch bereit' {

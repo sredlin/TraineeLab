@@ -1,4 +1,4 @@
-// Netzwerk des Labs: NSG, VNet mit einem Subnet und Public IP fuer den Exchange-Server.
+// Netzwerk des Labs: NSG, VNet mit einem Subnet, Public IP fuer den Exchange-Server und optional fuer den Client.
 
 @description('Azure-Region.')
 param location string
@@ -36,12 +36,41 @@ param publicIpName string
 @description('DNS-Label der Public IP (<label>.<region>.cloudapp.azure.com).')
 param publicIpDnsLabel string
 
+@description('Windows-11-Client bereitstellen (eigene Public IP und RDP-Regel).')
+param deployClient bool
+
+@description('Private IP des Clients (Ziel der RDP-Regel).')
+param clientPrivateIp string
+
+@description('Name der Public IP des Clients.')
+param clientPublicIpName string
+
+@description('DNS-Label der Public IP des Clients.')
+param clientPublicIpDnsLabel string
+
+var clientRules = deployClient ? [
+  {
+    name: 'Allow-RDP-Client'
+    properties: {
+      description: 'RDP auf den Windows-11-Client (z. B. als Lab-Benutzer fuer Outlook-Tests), nur von der freigegebenen Quelle.'
+      priority: 105
+      direction: 'Inbound'
+      access: 'Allow'
+      protocol: 'Tcp'
+      sourceAddressPrefix: allowedRdpSourcePrefix
+      sourcePortRange: '*'
+      destinationAddressPrefix: clientPrivateIp
+      destinationPortRange: '3389'
+    }
+  }
+] : []
+
 resource nsg 'Microsoft.Network/networkSecurityGroups@2025-05-01' = {
   name: nsgName
   location: location
   tags: tags
   properties: {
-    securityRules: [
+    securityRules: concat([
       {
         name: 'Allow-RDP-Exchange'
         properties: {
@@ -87,7 +116,7 @@ resource nsg 'Microsoft.Network/networkSecurityGroups@2025-05-01' = {
           destinationPortRange: '25'
         }
       }
-    ]
+    ], clientRules)
   }
 }
 
@@ -125,7 +154,26 @@ resource publicIp 'Microsoft.Network/publicIPAddresses@2025-05-01' = {
   }
 }
 
+resource clientPublicIp 'Microsoft.Network/publicIPAddresses@2025-05-01' = if (deployClient) {
+  name: clientPublicIpName
+  location: location
+  tags: tags
+  sku: {
+    name: 'Standard'
+    tier: 'Regional'
+  }
+  properties: {
+    publicIPAllocationMethod: 'Static'
+    publicIPAddressVersion: 'IPv4'
+    dnsSettings: {
+      domainNameLabel: clientPublicIpDnsLabel
+    }
+  }
+}
+
 output subnetId string = vnet.properties.subnets[0].id
 output publicIpId string = publicIp.id
 output publicIpAddress string = publicIp.properties.ipAddress
 output publicIpFqdn string = publicIp.properties.dnsSettings.fqdn
+output clientPublicIpId string = deployClient ? clientPublicIp.id : ''
+output clientPublicIpFqdn string = deployClient ? clientPublicIp!.properties.dnsSettings.fqdn : ''
