@@ -10,7 +10,8 @@
       - wartet auf das Ergebnis, raeumt Task und Secrets auf, startet den Server verzoegert neu
 
     Phase 'Install' (Scheduled Task als <NETBIOS>\<AdminUser>):
-      - OU-Struktur und Lab-Benutzer aus LabUsers.psd1, UPN-Suffix der oeffentlichen Domain
+      - OU-Struktur und Lab-Benutzer aus LabUsers.psd1, UPN-Suffix der oeffentlichen Domain,
+        Kennwortablauf fuer Lab-Konten aus, AD-Papierkorb an
       - Pruefung DC-Build (Windows Server 2025 braucht fuer PrepareSchema mind. 26100.7171)
       - Exchange-Setup: PrepareSchema, PrepareAD, Mailbox-Rolle (DB und Logs auf F:)
       - Nachkonfiguration: Accepted Domain, Adressrichtlinie, Postfaecher, Zertifikat (IIS/SMTP),
@@ -319,6 +320,8 @@ function Initialize-LabDirectory {
             Title             = $user.Title
             OfficePhone       = $user.OfficePhone
             MobilePhone       = $user.MobilePhone
+            # Lab-Kompromiss: Ohne das laeuft das Kennwort nach 42 Tagen (Default Domain Policy) ab.
+            PasswordNeverExpires = $true
         }
         if ($user.Department) { $attributes.Department = $user.Department }
 
@@ -331,7 +334,27 @@ function Initialize-LabDirectory {
             Write-LabLog "Benutzer $($user.SamAccountName) angelegt."
         }
     }
+
+    Set-ADUser -Identity $AdminUser -PasswordNeverExpires $true
+    Write-LabLog "Kennwortablauf fuer $AdminUser und die Lab-Benutzer deaktiviert."
     return $data.Users
+}
+
+function Enable-AdRecycleBin {
+    # Nicht fatal: Der Papierkorb ist eine Komfortfunktion und darf die Exchange-Installation nicht abbrechen.
+    # Laeuft als Domain-Admin des Forest-Erstellers, der zugleich Enterprise Admin ist.
+    try {
+        $feature = Get-ADOptionalFeature -Identity 'Recycle Bin Feature'
+        if ($feature.EnabledScopes.Count -gt 0) {
+            Write-LabLog 'AD-Papierkorb ist bereits aktiv.'
+            return
+        }
+        Enable-ADOptionalFeature -Identity 'Recycle Bin Feature' -Scope ForestOrConfigurationSet -Target (Get-ADForest).Name -Confirm:$false
+        Write-LabLog 'AD-Papierkorb aktiviert.'
+    }
+    catch {
+        Write-LabLog "WARNUNG: AD-Papierkorb nicht aktiviert: $($_.Exception.Message)"
+    }
 }
 
 function Assert-DomainControllerBuild {
@@ -469,6 +492,7 @@ function Register-InitialUpdate {
 function Invoke-InstallPhase {
     $secret = Get-InstallSecret
     $users = Initialize-LabDirectory -LabUserPassword (ConvertTo-SecureString -String $secret.LabUserPassword -AsPlainText -Force)
+    Enable-AdRecycleBin
     Install-Exchange
     Connect-ExchangeSession
     Initialize-ExchangeConfiguration -Users $users

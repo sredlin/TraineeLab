@@ -14,7 +14,7 @@
       - verzoegerter Neustart (120 s), damit der Run Command seinen Status melden kann
 
     Phase 'PostReboot' (einmaliger Startup-Task, SYSTEM, keine Secrets):
-      - DNS-Forwarder 168.63.129.16, DNS-Registrierung des DC
+      - DNS-Forwarder 168.63.129.16, Reverse-Zone des Subnets, DNS-Registrierung des DC
       - Split DNS: interne Zone <PublicDomainName> mit mail/autodiscover/MX auf die interne Exchange-IP
       - schreibt Marker und entfernt den Task
 
@@ -142,6 +142,21 @@ function Add-SplitDnsRecord {
     Write-LabLog "DNS-Record $Type $Name.$Zone -> $Value angelegt."
 }
 
+function Add-ReverseLookupZone {
+    # /24-Reverse-Zone des Lab-Subnets. Ohne sie meldet nslookup "UnKnown" und laeuft in Timeouts.
+    param([Parameter(Mandatory)][string] $IpAddress)
+
+    $octets = $IpAddress.Split('.')
+    $zoneName = '{0}.{1}.{2}.in-addr.arpa' -f $octets[2], $octets[1], $octets[0]
+    if (Get-DnsServerZone -Name $zoneName -ErrorAction SilentlyContinue) {
+        Write-LabLog "Reverse-Zone $zoneName existiert bereits."
+        return
+    }
+    $networkId = '{0}.{1}.{2}.0/24' -f $octets[0], $octets[1], $octets[2]
+    Add-DnsServerPrimaryZone -NetworkId $networkId -ReplicationScope Domain -DynamicUpdate Secure
+    Write-LabLog "Reverse-Zone $zoneName ($networkId) angelegt."
+}
+
 function Invoke-InstallPhase {
     if ((Get-CimInstance -ClassName Win32_ComputerSystem).DomainRole -ge 4) {
         Write-LabLog 'Server ist bereits Domain Controller, nichts zu tun.'
@@ -226,6 +241,9 @@ function Invoke-PostRebootPhase {
 
     Set-DnsServerForwarder -IPAddress '168.63.129.16'
     Write-LabLog 'DNS-Forwarder 168.63.129.16 (Azure DNS) gesetzt.'
+
+    # Vor der DNS-Registrierung und vor dem Domaenenbeitritt der Exchange-VM, damit PTR-Records dynamisch entstehen.
+    Add-ReverseLookupZone -IpAddress $ExchangeIp
 
     & ipconfig.exe /registerdns | Out-Null
     & nltest.exe /dsregdns | Out-Null

@@ -8,7 +8,7 @@ Lab-Umgebung für die Ausbildung: ein **Domain Controller** und ein **Exchange S
 
 ```mermaid
 flowchart LR
-    Internet((Internet)) -->|"443/80/25 (freigegebene Quelle)\n3389 (RDP-Quelle)"| PIP[pip-&lt;k&gt;-ex01]
+    Internet((Internet)) -->|"443/80 (Web-Quelle), 25 (SMTP-Quelle)\n3389 (RDP-Quelle)"| PIP[pip-&lt;k&gt;-ex01]
     subgraph RG[Ressourcengruppe]
         subgraph VNET[vnet-exlab-&lt;k&gt; 10.0.0.0/16]
             subgraph SNET[snet-servers 10.0.1.0/24 + NSG]
@@ -29,9 +29,10 @@ flowchart LR
 | --- | --- |
 | Domain Controller | `Standard_B2ms`, Windows Server 2025, Forest `<k>.intern` (Functional Level 2016), NTDS/SYSVOL auf eigener Datendisk (Host-Cache None), keine Public IP |
 | Exchange-Server | `Standard_E4s_v5` (32 GB RAM), Windows Server 2025, Exchange Server SE (Mailbox), OS- und Datendisk **Premium SSD**, DB und Logs auf ReFS-Datendisk |
-| Netzwerk | ein VNet, ein Subnet, eine NSG (kein Allow-All), eine Standard-Public-IP |
-| DNS | öffentliche Zone `<k>.<zone>` (mail, autodiscover, MX) mit Delegation in `<zone>`; intern Split DNS auf dem DC |
-| AD | OU-Baum `LEARN-<k>` (Branch Kiel/Hamburg, Administration), 12 Lab-Benutzer mit Postfach und Adresse `@<k>.<zone>` |
+| Netzwerk | ein VNet, ein Subnet, eine NSG (kein Allow-All, SMTP getrennt von HTTP/HTTPS), eine Standard-Public-IP |
+| DNS | öffentliche Zone `<k>.<zone>` (mail, autodiscover, MX, SPF, DMARC `p=none`) mit Delegation in `<zone>`; intern Split DNS und Reverse-Zone `1.0.10.in-addr.arpa` auf dem DC |
+| AD | OU-Baum `LEARN-<k>` (Branch Kiel/Hamburg, Administration), 12 Lab-Benutzer mit Postfach und Adresse `@<k>.<zone>`, AD-Papierkorb aktiv |
+| Verwaltung | DNS-Konsole und GPMC zusätzlich auf dem Exchange-Server (Jump-Host) |
 
 ## Voraussetzungen
 
@@ -49,11 +50,13 @@ flowchart LR
    | --- | --- | --- |
    | `trainee` | ja | Kürzel, 3 Buchstaben |
    | `adminPassword` | ja | Passwort für `azadmin` (lokal, Domain-Admin, DSRM) |
+   | `labUserPassword` | ja | Passwort der 12 Lab-Benutzer, bewusst ein anderes als `adminPassword` |
    | `allowedRdpSourcePrefix` | ja | eigene öffentliche IP, z. B. `203.0.113.10/32` |
    | `parentDnsZoneName` | ja | übergeordnete DNS-Zone `<zone>`, Name vom Ausbilder |
    | `parentDnsZoneResourceGroup` | nein | Ressourcengruppe der übergeordneten Zone, Standard `rg-publicdns` |
-   | `labUserPassword` | nein | Passwort der 12 Lab-Benutzer, leer = `adminPassword` |
-   | `exchangePublishedSourcePrefix` | nein | Quelle für 443/80/25, leer = wie RDP. Erst nach dem Update-Lauf auf `Internet` stellen |
+   | `exchangePublishedSourcePrefix` | nein | Quelle für 443/80, leer = wie RDP |
+   | `smtpSourcePrefix` | nein | Quelle für 25, leer = wie 443/80. Für eingehende Mails erst nach dem Update-Lauf auf `Internet` stellen |
+   | `autoShutdownTime` | nein | tägliches Herunterfahren der Exchange-VM (`HHmm`), Standard `1900`, leer = aus |
    | `enableLetsEncrypt` / `letsEncryptStaging` | nein | Zertifikat an/aus, Test-CA für Testdeployments |
    | `wingetPackages` | nein | zusätzliche Tools per winget, Standard `Microsoft.VisualStudioCode` |
 
@@ -73,10 +76,19 @@ Status von außen: `az vm run-command show -g <rg> --vm-name vm-<k>-ex01 --name 
 
 ## Nach dem Deployment
 
-- **RDP:** auf den Exchange-Server (Ausgabe `rdpHost`) als `<K>\azadmin`. Den DC erreichst du per RDP vom Exchange-Server aus (`<K>-DC01`).
+- **RDP:** auf den Exchange-Server (Ausgabe `rdpHost`) als `<K>\azadmin`. Den DC erreichst du per RDP vom Exchange-Server aus (`<K>-DC01`). DNS-Konsole, GPMC und AD-Verwaltung sind auch direkt auf dem Exchange-Server installiert.
 - **OWA/ECP:** `https://mail.<k>.<zone>/owa` bzw. `/ecp`, z. B. als `mmustermann@<k>.<zone>`.
-- **Von außen erreichbar machen:** erst wenn `Update-LabServer.log` fertig ist, die NSG-Regel `Allow-Exchange-Published` auf Quelle `Internet` stellen.
+- **Eingehende Mails aus dem Internet:** erst wenn `Update-LabServer.log` fertig ist, die NSG-Regel `Allow-Exchange-SMTP` auf Quelle `Internet` stellen.
+- **OWA/Outlook von überall:** `Allow-Exchange-Web` nur kurzzeitig auf `Internet` stellen. Damit ist auch ECP mit der Anmeldung des Domain-Admins öffentlich erreichbar.
+- **Kennwörter** von `azadmin` und den Lab-Benutzern laufen nicht ab (Lab-Kompromiss, sonst nach 42 Tagen).
+- **Gelöschte AD-Objekte** lassen sich über den AD-Papierkorb wiederherstellen (Active Directory-Verwaltungscenter).
 - **Ausgehende Mails** an fremde Domains gehen aus Azure nur supportet über einen Smart Host (Send Connector mit Relay). Das ist bewusst nicht vorkonfiguriert.
+
+## Kosten und Abschalten
+
+- Die **Exchange-VM** fährt täglich um `autoShutdownTime` (Standard 19:00) herunter und wird deallokiert. Morgens im Portal starten. Der Schedule entsteht erst nach der Installation, das Exchange-Setup wird also nicht unterbrochen. Den Update-Lauf danach kann er aber unterbrechen, deshalb nicht kurz vor der Abschaltzeit deployen.
+- Den **DC nie im Portal stoppen oder deallokieren.** Laut Microsoft setzt das Deallokieren die VM-Generation-ID zurück, der DC verwirft seinen RID-Pool und markiert SYSVOL als nicht-autoritativ. Mit nur einem DC gibt es keinen Partner, von dem SYSVOL kommen könnte, dann fehlen NETLOGON und die Gruppenrichtlinien, bis jemand von Hand eingreift. Der DC (`Standard_B2ms`) ist günstig und läuft deshalb durch. Neustarts nur im Gast.
+- **Budget:** optional im Portal unter Ressourcengruppe → *Kostenverwaltung* → *Budgets* mit E-Mail-Benachrichtigung anlegen. Nicht im Template, weil Budgets ein Startdatum im laufenden Monat brauchen und Redeploys in späteren Monaten sonst scheitern können.
 
 ## Supportbarkeit
 
@@ -91,8 +103,6 @@ Status von außen: `az vm run-command show -g <rg> --vm-name vm-<k>-ex01 --name 
 | Lizenz | Exchange SE braucht eine Subscription-Lizenz oder Software Assurance. Ohne Product Key läuft der Server 180 Tage als Testversion |
 | Sizing | 32 GB RAM liegen unter der Microsoft-Empfehlung von 128 GB. Das reicht fürs Lab, nicht für Produktion |
 | PowerShell 7 | Wird auf dem Exchange-Server als Laufzeit für winget installiert, weil die winget-CLI im SYSTEM-Kontext nicht supportet ist und `Microsoft.WinGet.Client` nur unter PowerShell 7 läuft. Exchange nutzt weiterhin ausschließlich Windows PowerShell 5.1; ein Parallelbetrieb ist laut Microsoft zulässig |
-
-Den DC nicht über das Portal stoppen oder deallokieren, sondern im Gast herunterfahren (VM-Generation-ID, RID-Pool).
 
 ## Zertifikat
 

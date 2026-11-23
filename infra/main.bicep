@@ -22,15 +22,21 @@ param adminUsername string = 'azadmin'
 @secure()
 param adminPassword string
 
-@description('Passwort der 12 Lab-Benutzer. Leer = Administrator-Passwort.')
+@description('Passwort der 12 Lab-Benutzer. Bewusst getrennt vom Administrator-Passwort, damit Testkonten nicht das Domain-Admin-Passwort verraten.')
 @secure()
-param labUserPassword string = ''
+param labUserPassword string
 
 @description('Quelle fuer RDP auf den Exchange-Server, z. B. eigene oeffentliche IP als 203.0.113.10/32. Kein "*".')
 param allowedRdpSourcePrefix string
 
-@description('Quelle fuer SMTP/HTTP/HTTPS auf den Exchange-Server. Leer = wie RDP. Erst nach dem Update-Lauf auf "Internet" stellen.')
+@description('Quelle fuer HTTP/HTTPS (OWA, ECP, Outlook, Autodiscover) auf den Exchange-Server. Leer = wie RDP. "Internet" macht auch ECP mit Admin-Anmeldung oeffentlich.')
 param exchangePublishedSourcePrefix string = ''
+
+@description('Quelle fuer SMTP (Port 25) auf den Exchange-Server. Leer = wie HTTP/HTTPS. Fuer eingehende Mails aus dem Internet erst nach dem Update-Lauf auf "Internet" stellen.')
+param smtpSourcePrefix string = ''
+
+@description('Taegliches automatisches Herunterfahren der Exchange-VM im Format HHmm (W. Europe Standard Time). Leer = aus. Der DC wird bewusst nie automatisch deallokiert.')
+param autoShutdownTime string = '1900'
 
 @description('Uebergeordnete oeffentliche DNS-Zone fuer die Subdomain-Delegation (Name vom Ausbilder). Wird angelegt, falls sie fehlt; eine bestehende Zone bleibt unveraendert.')
 param parentDnsZoneName string
@@ -109,6 +115,8 @@ var subnets = [
   }
 ]
 
+var webSourcePrefix = empty(exchangePublishedSourcePrefix) ? allowedRdpSourcePrefix : exchangePublishedSourcePrefix
+
 var allTags = union(tags, {
   workload: 'exchange-lab'
   trainee: traineeLower
@@ -130,7 +138,8 @@ module network 'modules/network.bicep' = {
     nsgName: names.nsg
     exchangePrivateIp: exchangePrivateIp
     allowedRdpSourcePrefix: allowedRdpSourcePrefix
-    exchangePublishedSourcePrefix: empty(exchangePublishedSourcePrefix) ? allowedRdpSourcePrefix : exchangePublishedSourcePrefix
+    exchangePublishedSourcePrefix: webSourcePrefix
+    smtpSourcePrefix: empty(smtpSourcePrefix) ? webSourcePrefix : smtpSourcePrefix
     publicIpName: names.exchangePublicIp
     publicIpDnsLabel: 'mail-${traineeLower}-${take(uniqueString(resourceGroup().id), 6)}'
   }
@@ -225,7 +234,7 @@ module exchangeInstall 'modules/exchange-install.bicep' = {
     vmName: exchangeServer.outputs.vmName
     adminUsername: adminUsername
     adminPassword: adminPassword
-    labUserPassword: empty(labUserPassword) ? adminPassword : labUserPassword
+    labUserPassword: labUserPassword
     domainName: adDomainName
     netbiosName: traineeUpper
     publicDomainName: publicDomainName
@@ -236,6 +245,20 @@ module exchangeInstall 'modules/exchange-install.bicep' = {
   }
   dependsOn: [
     vnetDns
+  ]
+}
+
+// Erst nach der Installation, damit der Schedule das Exchange-Setup nicht unterbricht.
+module exchangeShutdown 'modules/auto-shutdown.bicep' = if (!empty(autoShutdownTime)) {
+  name: 'auto-shutdown-${names.exchangeVm}'
+  params: {
+    location: location
+    tags: allTags
+    vmName: names.exchangeVm
+    shutdownTime: autoShutdownTime
+  }
+  dependsOn: [
+    exchangeInstall
   ]
 }
 

@@ -24,8 +24,11 @@ param exchangePrivateIp string
 @description('Quelle fuer RDP (z. B. eigene oeffentliche IP/32).')
 param allowedRdpSourcePrefix string
 
-@description('Quelle fuer HTTP, HTTPS und SMTP zum Exchange-Server.')
+@description('Quelle fuer HTTP und HTTPS zum Exchange-Server.')
 param exchangePublishedSourcePrefix string
+
+@description('Quelle fuer SMTP zum Exchange-Server. Getrennt von HTTP/HTTPS, damit eingehende Mails aus dem Internet nicht auch ECP oeffentlich machen.')
+param smtpSourcePrefix string
 
 @description('Name der Public IP des Exchange-Servers.')
 param publicIpName string
@@ -54,9 +57,9 @@ resource nsg 'Microsoft.Network/networkSecurityGroups@2025-05-01' = {
         }
       }
       {
-        name: 'Allow-Exchange-Published'
+        name: 'Allow-Exchange-Web'
         properties: {
-          description: 'SMTP, HTTP (Weiterleitung) und HTTPS auf den Exchange-Server.'
+          description: 'HTTP (Weiterleitung) und HTTPS auf den Exchange-Server (OWA, ECP, Outlook, Autodiscover).'
           priority: 110
           direction: 'Inbound'
           access: 'Allow'
@@ -65,10 +68,23 @@ resource nsg 'Microsoft.Network/networkSecurityGroups@2025-05-01' = {
           sourcePortRange: '*'
           destinationAddressPrefix: exchangePrivateIp
           destinationPortRanges: [
-            '25'
             '80'
             '443'
           ]
+        }
+      }
+      {
+        name: 'Allow-Exchange-SMTP'
+        properties: {
+          description: 'SMTP auf den Exchange-Server (eingehende Mails).'
+          priority: 120
+          direction: 'Inbound'
+          access: 'Allow'
+          protocol: 'Tcp'
+          sourceAddressPrefix: smtpSourcePrefix
+          sourcePortRange: '*'
+          destinationAddressPrefix: exchangePrivateIp
+          destinationPortRange: '25'
         }
       }
     ]

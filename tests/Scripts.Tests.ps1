@@ -109,4 +109,37 @@ Describe 'azuredeploy.json' {
         $template.parameters.adminPassword.type | Should -Be 'securestring'
         $template.parameters.labUserPassword.type | Should -Be 'securestring'
     }
+
+    It 'verlangt ein eigenes Passwort fuer die Lab-Benutzer (kein Rueckfall auf das Admin-Passwort)' {
+        $template.parameters.labUserPassword.PSObject.Properties.Name | Should -Not -Contain 'defaultValue'
+    }
+
+    It 'trennt SMTP von HTTP/HTTPS in der NSG' {
+        $templateText | Should -Match '"name": "Allow-Exchange-Web"'
+        $templateText | Should -Match '"name": "Allow-Exchange-SMTP"'
+        $templateText | Should -Not -Match 'Allow-Exchange-Published'
+    }
+
+    It 'veroeffentlicht SPF und DMARC fuer die Lab-Domain' {
+        $templateText | Should -Match 'v=spf1 mx -all'
+        $templateText | Should -Match 'v=DMARC1; p=none'
+    }
+}
+
+Describe 'infra/main.bicep' {
+    BeforeAll {
+        $mainBicep = Get-Content -Path (Join-Path $repoRoot 'infra/main.bicep') -Raw
+        $shutdownModules = @([regex]::Matches($mainBicep, "(?ms)^module \w+ 'modules/auto-shutdown\.bicep'.*?^\}") | ForEach-Object Value)
+    }
+
+    It 'schaltet die Exchange-VM automatisch ab' {
+        ($shutdownModules -join "`n") | Should -Match 'names\.exchangeVm'
+    }
+
+    It 'deallokiert den ersten DC nie automatisch (SYSVOL waere danach nicht-autoritativ)' {
+        $shutdownModules | Should -Not -BeNullOrEmpty
+        foreach ($module in $shutdownModules) {
+            $module | Should -Not -Match 'names\.dcVm\b'
+        }
+    }
 }

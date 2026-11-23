@@ -9,7 +9,8 @@
       - Auslagerungsdatei fest auf 25 % RAM (Vorgabe Exchange Server SE)
       - Datendisk F: als ReFS (64K, Integrity Streams aus) fuer Datenbanken und Logs
       - deutsche Regionaleinstellungen
-      - Windows-Features laut Exchange-SE-Voraussetzungen (Mailbox-Rolle, ohne ADLDS)
+      - Windows-Features laut Exchange-SE-Voraussetzungen (Mailbox-Rolle, ohne ADLDS),
+        dazu DNS-Konsole und GPMC fuer die Verwaltung vom Jump-Host aus
       - Remote Registry auf Automatisch (Exchange-Voraussetzung)
       - PowerShell 7 (LTS) als Laufzeit fuer winget: Die winget-CLI ist im SYSTEM-Kontext nicht
         supportet, das Modul Microsoft.WinGet.Client laeuft nur unter PowerShell 7.
@@ -98,6 +99,10 @@ $ExchangeWindowsFeatures = @(
     'Web-Request-Monitor', 'Web-Server', 'Web-Stat-Compression', 'Web-Static-Content', 'Web-Windows-Auth', 'Web-WMI',
     'Windows-Identity-Foundation', 'RSAT-ADDS', 'RSAT-AD-PowerShell'
 )
+
+# Keine Exchange-Voraussetzung: DNS-Konsole und GPMC, damit der Exchange-Server als Jump-Host
+# fuer DNS und Gruppenrichtlinien reicht und niemand dafuer auf den DC muss.
+$AdminToolFeatures = @('RSAT-DNS-Server', 'GPMC')
 
 # Pflicht-Pakete. Fallback-Daten (URL, SHA256) stammen aus den winget-Manifesten.
 $RequiredPackages = @(
@@ -196,9 +201,9 @@ function Initialize-RegionalSetting {
 }
 
 function Install-ExchangeWindowsFeature {
-    $result = Install-WindowsFeature -Name $ExchangeWindowsFeatures
+    $result = Install-WindowsFeature -Name ($ExchangeWindowsFeatures + $AdminToolFeatures)
     if (-not $result.Success) {
-        throw 'Installation der Windows-Features fuer Exchange fehlgeschlagen.'
+        throw 'Installation der Windows-Features fuer Exchange und Verwaltung fehlgeschlagen.'
     }
     Write-LabLog "Windows-Features installiert (Neustart erforderlich: $($result.RestartNeeded))."
 
