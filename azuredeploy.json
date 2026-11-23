@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.40.2.10011",
-      "templateHash": "16721645444054642989"
+      "templateHash": "5142860526340909625"
     },
     "name": "Exchange Server SE Lab",
     "description": "Azubi-Lab: separater Domain Controller und Exchange Server SE auf Windows Server 2025, fertig konfiguriert (Split DNS, Zertifikat, URLs, Postfaecher)."
@@ -537,12 +537,13 @@
         },
         "template": {
           "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "languageVersion": "2.0",
           "contentVersion": "1.0.0.0",
           "metadata": {
             "_generator": {
               "name": "bicep",
               "version": "0.40.2.10011",
-              "templateHash": "11206873597232189348"
+              "templateHash": "8894786802684709223"
             }
           },
           "parameters": {
@@ -565,8 +566,20 @@
               }
             }
           },
-          "resources": [
-            {
+          "resources": {
+            "parentZone": {
+              "@options": {
+                "onlyIfNotExists": []
+              },
+              "type": "Microsoft.Network/dnsZones",
+              "apiVersion": "2018-05-01",
+              "name": "[parameters('parentZoneName')]",
+              "location": "global",
+              "properties": {
+                "zoneType": "Public"
+              }
+            },
+            "delegation": {
               "type": "Microsoft.Network/dnsZones/NS",
               "apiVersion": "2018-05-01",
               "name": "[format('{0}/{1}', parameters('parentZoneName'), parameters('childLabel'))]",
@@ -581,9 +594,12 @@
                   }
                 ],
                 "TTL": 300
-              }
+              },
+              "dependsOn": [
+                "parentZone"
+              ]
             }
-          ]
+          }
         }
       },
       "dependsOn": [
