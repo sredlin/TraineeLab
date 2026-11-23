@@ -147,6 +147,12 @@ $new = Import-ExchangeCertificate -FileData ([IO.File]::ReadAllBytes($pfx)) -Pas
 Enable-ExchangeCertificate -Thumbprint $new.Thumbprint -Services IIS,SMTP -Force
 ```
 
+## Übungen und Betrieb
+
+- [Übungen](docs/uebungen/README.md): sieben Kapitel von Empfängerverwaltung über Mailfluss, Zertifikate und Backup bis Active Directory und Updates, jede Übung mit Prüfbefehl.
+- [Betrieb](docs/betrieb.md): Starten und Stoppen, neue eigene IP, Status, Kosten, Abbau.
+- [Troubleshooting](docs/troubleshooting.md): fehlgeschlagenes Deployment, Zertifikat, SYSVOL-Reparatur, Warteschlangen, Outlook und Office.
+
 ## Aufräumen
 
 Beim Löschen eines Labs immer auch die Delegation entfernen, sonst bleibt ein verwaister NS-Eintrag stehen (Gefahr einer Subdomain-Übernahme):
