@@ -16,27 +16,28 @@ flowchart LR
                 EX[vm-&lt;k&gt;-ex01<br/>10.0.1.5<br/>Exchange SE]
             end
         end
-        ZONE[DNS-Zone &lt;k&gt;.lab.example.com]
+        ZONE[DNS-Zone &lt;k&gt;.&lt;zone&gt;]
     end
     PIP --- EX
     EX -->|LDAP/Kerberos/DNS| DC
-    PARENT[lab.example.com<br/>rg-publicdns] -->|NS-Delegation| ZONE
+    PARENT[&lt;zone&gt;<br/>rg-publicdns] -->|NS-Delegation| ZONE
 ```
 
-`<k>` = Kürzel des Azubis (3 Buchstaben).
+`<k>` = Kürzel des Azubis (3 Buchstaben), `<zone>` = übergeordnete DNS-Zone (Parameter `parentDnsZoneName`, Name vom Ausbilder).
 
 | Ressource | Details |
 | --- | --- |
 | Domain Controller | `Standard_B2ms`, Windows Server 2025, Forest `<k>.intern` (Functional Level 2016), NTDS/SYSVOL auf eigener Datendisk (Host-Cache None), keine Public IP |
 | Exchange-Server | `Standard_E4s_v5` (32 GB RAM), Windows Server 2025, Exchange Server SE (Mailbox), OS- und Datendisk **Premium SSD**, DB und Logs auf ReFS-Datendisk |
 | Netzwerk | ein VNet, ein Subnet, eine NSG (kein Allow-All), eine Standard-Public-IP |
-| DNS | öffentliche Zone `<k>.lab.example.com` (mail, autodiscover, MX) mit Delegation in `lab.example.com`; intern Split DNS auf dem DC |
-| AD | OU-Baum `LEARN-<k>` (Branch Kiel/Hamburg, Administration), 12 Lab-Benutzer mit Postfach und Adresse `@<k>.lab.example.com` |
+| DNS | öffentliche Zone `<k>.<zone>` (mail, autodiscover, MX) mit Delegation in `<zone>`; intern Split DNS auf dem DC |
+| AD | OU-Baum `LEARN-<k>` (Branch Kiel/Hamburg, Administration), 12 Lab-Benutzer mit Postfach und Adresse `@<k>.<zone>` |
 
 ## Voraussetzungen
 
 - **Rechte:** Owner auf der eigenen Ziel-Ressourcengruppe (für die Rollenzuweisung der Managed Identity) und *DNS Zone Contributor* auf `rg-publicdns`. Eine Entra-/Global-Admin-Rolle ist **nicht** nötig. Ohne Owner: Parameter `enableLetsEncrypt = false`.
-- **Kürzel** darf noch nicht als Subdomain in `lab.example.com` existieren.
+- **Kürzel** darf noch nicht als Subdomain in `<zone>` existieren.
+- **Übergeordnete Zone:** Existiert `<zone>` in der Ressourcengruppe `parentDnsZoneResourceGroup`, bleibt sie unverändert, das Deployment ergänzt nur den NS-Eintrag `<k>`. Fehlt sie, wird sie angelegt. Die Ressourcengruppe selbst muss existieren. Eine neu angelegte Zone muss einmalig beim Registrar delegiert werden, sonst schlägt Let's Encrypt fehl.
 - **Kontingent:** 6 vCPU (2 × BS-Familie, 4 × ESv5-Familie) in der Region.
 
 ## Bereitstellen
@@ -49,6 +50,8 @@ flowchart LR
    | `trainee` | ja | Kürzel, 3 Buchstaben |
    | `adminPassword` | ja | Passwort für `azadmin` (lokal, Domain-Admin, DSRM) |
    | `allowedRdpSourcePrefix` | ja | eigene öffentliche IP, z. B. `203.0.113.10/32` |
+   | `parentDnsZoneName` | ja | übergeordnete DNS-Zone `<zone>`, Name vom Ausbilder |
+   | `parentDnsZoneResourceGroup` | nein | Ressourcengruppe der übergeordneten Zone, Standard `rg-publicdns` |
    | `labUserPassword` | nein | Passwort der 12 Lab-Benutzer, leer = `adminPassword` |
    | `exchangePublishedSourcePrefix` | nein | Quelle für 443/80/25, leer = wie RDP. Erst nach dem Update-Lauf auf `Internet` stellen |
    | `enableLetsEncrypt` / `letsEncryptStaging` | nein | Zertifikat an/aus, Test-CA für Testdeployments |
@@ -71,7 +74,7 @@ Status von außen: `az vm run-command show -g <rg> --vm-name vm-<k>-ex01 --name 
 ## Nach dem Deployment
 
 - **RDP:** auf den Exchange-Server (Ausgabe `rdpHost`) als `<K>\azadmin`. Den DC erreichst du per RDP vom Exchange-Server aus (`<K>-DC01`).
-- **OWA/ECP:** `https://mail.<k>.lab.example.com/owa` bzw. `/ecp`, z. B. als `mmustermann@<k>.lab.example.com`.
+- **OWA/ECP:** `https://mail.<k>.<zone>/owa` bzw. `/ecp`, z. B. als `mmustermann@<k>.<zone>`.
 - **Von außen erreichbar machen:** erst wenn `Update-LabServer.log` fertig ist, die NSG-Regel `Allow-Exchange-Published` auf Quelle `Internet` stellen.
 - **Ausgehende Mails** an fremde Domains gehen aus Azure nur supportet über einen Smart Host (Send Connector mit Relay). Das ist bewusst nicht vorkonfiguriert.
 
@@ -93,9 +96,9 @@ Den DC nicht über das Portal stoppen oder deallokieren, sondern im Gast herunte
 
 ## Zertifikat
 
-Das Wildcard-Zertifikat `*.<k>.lab.example.com` kommt von Let's Encrypt. Die DNS-Challenge erfolgt über die Managed Identity der Exchange-VM, die nur *DNS Zone Contributor* auf der eigenen Zone hat. Die Dateien liegen in `C:\Certificates`, nur für Administratoren lesbar. Das PFX-Passwort ist der Posh-ACME-Standard `poshacme`.
+Das Wildcard-Zertifikat `*.<k>.<zone>` kommt von Let's Encrypt. Die DNS-Challenge erfolgt über die Managed Identity der Exchange-VM, die nur *DNS Zone Contributor* auf der eigenen Zone hat. Die Dateien liegen in `C:\Certificates`, nur für Administratoren lesbar. Das PFX-Passwort ist der Posh-ACME-Standard `poshacme`.
 
-- Gültigkeit 90 Tage. Let's Encrypt erlaubt 50 Zertifikate pro Woche für `lab.example.com` insgesamt, also für alle Azubis zusammen. Für Testdeployments deshalb `letsEncryptStaging = true` setzen.
+- Gültigkeit 90 Tage. Let's Encrypt erlaubt 50 Zertifikate pro Woche für `<zone>` insgesamt, also für alle Azubis zusammen. Für Testdeployments deshalb `letsEncryptStaging = true` setzen.
 - Erneuern (auf dem Exchange-Server, PowerShell als Administrator):
 
 ```powershell
@@ -115,7 +118,7 @@ Beim Löschen eines Labs immer auch die Delegation entfernen, sonst bleibt ein v
 
 ```bash
 az group delete -n rg-exlab-<k>
-az network dns record-set ns delete -g rg-publicdns -z lab.example.com -n <k>
+az network dns record-set ns delete -g rg-publicdns -z <zone> -n <k>
 ```
 
 ## Entwicklung

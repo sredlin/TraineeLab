@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.40.2.10011",
-      "templateHash": "5142860526340909625"
+      "templateHash": "16040240038907011902"
     },
     "name": "Exchange Server SE Lab",
     "description": "Azubi-Lab: separater Domain Controller und Exchange Server SE auf Windows Server 2025, fertig konfiguriert (Split DNS, Zertifikat, URLs, Postfaecher)."
@@ -61,9 +61,8 @@
     },
     "parentDnsZoneName": {
       "type": "string",
-      "defaultValue": "lab.example.com",
       "metadata": {
-        "description": "Uebergeordnete oeffentliche DNS-Zone fuer die Subdomain-Delegation."
+        "description": "Uebergeordnete oeffentliche DNS-Zone fuer die Subdomain-Delegation (Name vom Ausbilder). Wird angelegt, falls sie fehlt; eine bestehende Zone bleibt unveraendert."
       }
     },
     "parentDnsZoneResourceGroup": {
@@ -416,7 +415,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.40.2.10011",
-              "templateHash": "13818193775197363055"
+              "templateHash": "10665740782968604984"
             }
           },
           "parameters": {
@@ -663,7 +662,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.40.2.10011",
-              "templateHash": "6416760561534940664"
+              "templateHash": "17685779101959627520"
             }
           },
           "parameters": {
@@ -971,7 +970,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.40.2.10011",
-              "templateHash": "1729657596914624429"
+              "templateHash": "6301572916919426246"
             }
           },
           "parameters": {

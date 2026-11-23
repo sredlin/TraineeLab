@@ -32,8 +32,8 @@ param allowedRdpSourcePrefix string
 @description('Quelle fuer SMTP/HTTP/HTTPS auf den Exchange-Server. Leer = wie RDP. Erst nach dem Update-Lauf auf "Internet" stellen.')
 param exchangePublishedSourcePrefix string = ''
 
-@description('Uebergeordnete oeffentliche DNS-Zone fuer die Subdomain-Delegation.')
-param parentDnsZoneName string = 'lab.example.com'
+@description('Uebergeordnete oeffentliche DNS-Zone fuer die Subdomain-Delegation (Name vom Ausbilder). Wird angelegt, falls sie fehlt; eine bestehende Zone bleibt unveraendert.')
+param parentDnsZoneName string
 
 @description('Ressourcengruppe der uebergeordneten DNS-Zone (gleiche Subscription).')
 param parentDnsZoneResourceGroup string = 'rg-publicdns'
