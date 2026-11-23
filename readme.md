@@ -1,6 +1,6 @@
 # Exchange Server SE Lab (Azure)
 
-[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2Fsredlin%2FExchangeSELab%2Fmaster%2Fazuredeploy.json)
+[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2Fsredlin%2FTraineeLab%2Fmaster%2Fazuredeploy.json)
 
 Lab-Umgebung für die Ausbildung: ein **Domain Controller** und ein **Exchange Server SE** auf getrennten VMs mit Windows Server 2025. Nach dem Deployment ist alles fertig eingerichtet: Split DNS, Let's-Encrypt-Zertifikat, URLs, Accepted Domain und Postfächer für 12 Lab-Benutzer.
 
