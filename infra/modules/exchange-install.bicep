@@ -169,6 +169,10 @@ resource installExchangeServer 'Microsoft.Compute/virtualMachines/runCommands@20
         name: 'UpdateScriptB64'
         value: base64(loadTextContent('../../scripts/Update-LabServer.ps1'))
       }
+      {
+        name: 'MaintenanceScriptB64'
+        value: base64(loadTextContent('../../scripts/Invoke-LabMaintenance.ps1'))
+      }
     ], empty(secondDcComputerName) ? [] : [
       {
         name: 'SecondDcComputerName'

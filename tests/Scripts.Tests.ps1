@@ -64,6 +64,44 @@ Describe 'LabUsers.psd1' {
         }
     }
 
+    It 'verweist bei Vorgesetzten nur auf vorhandene Benutzer' {
+        $names = $labUsers.Users.SamAccountName
+        foreach ($entry in $labUsers.Managers.GetEnumerator()) {
+            $names | Should -Contain $entry.Key
+            $names | Should -Contain $entry.Value
+            $entry.Value | Should -Not -Be $entry.Key
+        }
+    }
+
+    It 'hat gueltige, eindeutige Aliase fuer alle Beispielempfaenger' {
+        $recipients = @($labUsers.DistributionGroups) + @($labUsers.SharedMailboxes) + @($labUsers.RoomMailboxes) + @($labUsers.Contacts)
+        $aliases = $recipients.Alias
+        ($aliases | Select-Object -Unique).Count | Should -Be $aliases.Count
+        foreach ($alias in $aliases) {
+            # Alias dient zugleich als SamAccountName (max. 20 Zeichen) und Adressteil.
+            $alias | Should -Match '^[a-z0-9-]{1,20}$'
+            $labUsers.Users.SamAccountName | Should -Not -Contain $alias
+        }
+        foreach ($recipient in $recipients) {
+            $labUsers.OrganizationalUnits | Should -Contain $recipient.OrganizationalUnit
+        }
+    }
+
+    It 'verweist bei Mitgliedern und Berechtigungen nur auf vorhandene Benutzer' {
+        $names = $labUsers.Users.SamAccountName
+        $references = @($labUsers.DistributionGroups.Members) + @($labUsers.SharedMailboxes.FullAccess) + @($labUsers.SharedMailboxes.SendAs)
+        $references | Should -Not -BeNullOrEmpty
+        foreach ($reference in $references) {
+            $names | Should -Contain $reference
+        }
+    }
+
+    It 'nutzt fuer externe Kontakte nur reservierte Beispiel-Domains' {
+        foreach ($contact in $labUsers.Contacts) {
+            $contact.ExternalEmailAddress | Should -Match '@([a-z0-9-]+\.)*example\.(com|org|net)$'
+        }
+    }
+
     It 'listet uebergeordnete OUs vor untergeordneten' {
         $seen = @()
         foreach ($ou in $labUsers.OrganizationalUnits) {
@@ -118,6 +156,10 @@ Describe 'azuredeploy.json' {
         $templateText | Should -Match '"name": "Allow-Exchange-Web"'
         $templateText | Should -Match '"name": "Allow-Exchange-SMTP"'
         $templateText | Should -Not -Match 'Allow-Exchange-Published'
+    }
+
+    It 'uebergibt das Wartungsskript an die Exchange-Installation' {
+        $templateText | Should -Match 'MaintenanceScriptB64'
     }
 
     It 'stellt den zweiten DC nur auf Wunsch bereit' {

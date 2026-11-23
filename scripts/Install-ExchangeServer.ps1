@@ -16,7 +16,11 @@
       - Exchange-Setup: PrepareSchema, PrepareAD, Mailbox-Rolle (DB und Logs auf F:)
       - Nachkonfiguration: Accepted Domain, Adressrichtlinie, Postfaecher, Zertifikat (IIS/SMTP),
         interne/externe URLs, Autodiscover-SCP
-      - registriert den einmaligen Update-Task auf Exchange-Server und DC(s)
+      - Beispielempfaenger aus LabUsers.psd1: Verteiler, freigegebene Postfaecher (FullAccess/SendAs),
+        Raumpostfaecher, externe Kontakte; Vorgesetzte der Lab-Benutzer
+      - registriert den einmaligen Update-Task auf Exchange-Server und DC(s) sowie den taeglichen
+        Wartungs-Task (Invoke-LabMaintenance.ps1)
+      - legt Lab-Info.txt und Verknuepfungen (OWA, ECP, Logs) auf dem oeffentlichen Desktop ab
 
     Das Skript ist idempotent und enthaelt bewusst nur ASCII-Zeichen (Windows PowerShell 5.1).
 #>
@@ -54,6 +58,7 @@ param(
     [string] $LabUserPasswordB64,
     [string] $LabUsersB64,
     [string] $UpdateScriptB64,
+    [string] $MaintenanceScriptB64,
 
     [ValidateSet('Orchestrate', 'Install')]
     [string] $Phase = 'Orchestrate',
@@ -73,10 +78,12 @@ $ResultFile = Join-Path $LabRoot 'exchange-install.result'
 $DoneMarker = Join-Path $LabRoot 'exchange-install.done'
 $LabUsersFile = Join-Path $ScriptDir 'LabUsers.psd1'
 $UpdateScriptFile = Join-Path $ScriptDir 'Update-LabServer.ps1'
+$MaintenanceScriptFile = Join-Path $ScriptDir 'Invoke-LabMaintenance.ps1'
 $MediaDir = Join-Path $LabRoot 'Media\ExchangeSE'
 $CertDir = 'C:\Certificates'
 $InstallTaskName = 'ExchangeLab-InstallExchange'
 $UpdateTaskName = 'ExchangeLab-InitialUpdates'
+$MaintenanceTaskName = 'ExchangeLab-Maintenance'
 $PfxPassword = 'poshacme'
 $SelfText = $MyInvocation.MyCommand.ScriptBlock.ToString()
 
@@ -212,6 +219,7 @@ function Invoke-InstallTask {
     Save-OwnScript -Destination $scriptCopy
     Write-Utf8File -Path $LabUsersFile -Content (ConvertFrom-Base64String $LabUsersB64)
     Write-Utf8File -Path $UpdateScriptFile -Content (ConvertFrom-Base64String $UpdateScriptB64)
+    Write-Utf8File -Path $MaintenanceScriptFile -Content (ConvertFrom-Base64String $MaintenanceScriptB64)
     Save-InstallSecret
     Remove-Item -Path $ResultFile -Force -ErrorAction SilentlyContinue
 
@@ -253,7 +261,7 @@ function Invoke-OrchestratePhase {
         Write-LabLog 'Exchange ist bereits installiert und konfiguriert, nichts zu tun.'
         return
     }
-    foreach ($name in 'AdminPasswordB64', 'LabUserPasswordB64', 'LabUsersB64', 'UpdateScriptB64') {
+    foreach ($name in 'AdminPasswordB64', 'LabUserPasswordB64', 'LabUsersB64', 'UpdateScriptB64', 'MaintenanceScriptB64') {
         if (-not (Get-Variable -Name $name -ValueOnly)) {
             throw "Parameter $name fehlt."
         }
@@ -341,9 +349,17 @@ function Initialize-LabDirectory {
         }
     }
 
+    # Zweiter Durchlauf, weil Vorgesetzte erst existieren muessen.
+    if ($data.Managers) {
+        foreach ($entry in $data.Managers.GetEnumerator()) {
+            Set-ADUser -Identity $entry.Key -Manager $entry.Value
+        }
+        Write-LabLog "Vorgesetzte fuer $($data.Managers.Count) Benutzer gesetzt."
+    }
+
     Set-ADUser -Identity $AdminUser -PasswordNeverExpires $true
     Write-LabLog "Kennwortablauf fuer $AdminUser und die Lab-Benutzer deaktiviert."
-    return $data.Users
+    return $data
 }
 
 function Enable-AdRecycleBin {
@@ -480,6 +496,73 @@ function Initialize-ExchangeConfiguration {
     Write-LabLog "Interne und externe URLs auf $baseUrl gesetzt, Autodiscover-SCP konfiguriert."
 }
 
+function Get-LabRecipientByAlias {
+    param([Parameter(Mandatory)][string] $Alias)
+    Get-Recipient -Filter "Alias -eq '$Alias'" -ResultSize 1 -ErrorAction SilentlyContinue
+}
+
+function Initialize-LabRecipient {
+    # Beispielempfaenger fuer die Uebungen. Bestehende Objekte bleiben unveraendert, fehlende Berechtigungen
+    # werden ergaenzt. Nicht fatal: Die Beispiele duerfen die Exchange-Installation nicht scheitern lassen.
+    param([Parameter(Mandatory)][hashtable] $LabData)
+
+    try {
+        $companyDn = "OU=$CompanyOu,$((Get-ADDomain).DistinguishedName)"
+        $database = (Get-MailboxDatabase -Server $env:COMPUTERNAME | Select-Object -First 1).Name
+
+        foreach ($group in $LabData.DistributionGroups) {
+            if (Get-LabRecipientByAlias -Alias $group.Alias) { continue }
+            New-DistributionGroup -Name $group.Name -Alias $group.Alias -SamAccountName $group.Alias -Type Distribution -OrganizationalUnit "$($group.OrganizationalUnit),$companyDn" -Members $group.Members | Out-Null
+            Write-LabLog "Verteiler $($group.Alias) mit $($group.Members.Count) Mitgliedern angelegt."
+        }
+
+        foreach ($shared in $LabData.SharedMailboxes) {
+            if (-not (Get-LabRecipientByAlias -Alias $shared.Alias)) {
+                Invoke-WithRetry -Activity "Freigegebenes Postfach $($shared.Alias)" -Attempts 5 -DelaySeconds 30 -ScriptBlock {
+                    New-Mailbox -Shared -Name $shared.Name -Alias $shared.Alias -SamAccountName $shared.Alias -OrganizationalUnit "$($shared.OrganizationalUnit),$companyDn" -Database $database | Out-Null
+                }
+                Write-LabLog "Freigegebenes Postfach $($shared.Alias) angelegt."
+            }
+            foreach ($user in $shared.FullAccess) {
+                $existing = Get-MailboxPermission -Identity $shared.Alias -User $user -ErrorAction SilentlyContinue | Where-Object { "$($_.AccessRights)" -match 'FullAccess' }
+                if (-not $existing) {
+                    # AutoMapping: Outlook blendet das Postfach beim Benutzer automatisch ein.
+                    Add-MailboxPermission -Identity $shared.Alias -User $user -AccessRights FullAccess -InheritanceType All -AutoMapping $true | Out-Null
+                    Write-LabLog "Vollzugriff auf $($shared.Alias) fuer $user."
+                }
+            }
+            $mailboxDn = (Get-Mailbox -Identity $shared.Alias).DistinguishedName
+            foreach ($user in $shared.SendAs) {
+                $existing = Get-ADPermission -Identity $mailboxDn -User $user -ErrorAction SilentlyContinue | Where-Object { "$($_.ExtendedRights)" -match 'Send-As' }
+                if (-not $existing) {
+                    Add-ADPermission -Identity $mailboxDn -User $user -ExtendedRights 'Send As' | Out-Null
+                    Write-LabLog "Senden als $($shared.Alias) fuer $user."
+                }
+            }
+        }
+
+        foreach ($room in $LabData.RoomMailboxes) {
+            if (Get-LabRecipientByAlias -Alias $room.Alias) { continue }
+            Invoke-WithRetry -Activity "Raumpostfach $($room.Alias)" -Attempts 5 -DelaySeconds 30 -ScriptBlock {
+                New-Mailbox -Room -Name $room.Name -Alias $room.Alias -SamAccountName $room.Alias -OrganizationalUnit "$($room.OrganizationalUnit),$companyDn" -Database $database | Out-Null
+            }
+            Invoke-WithRetry -Activity "Kapazitaet $($room.Alias)" -Attempts 5 -DelaySeconds 30 -ScriptBlock {
+                Set-Mailbox -Identity $room.Alias -ResourceCapacity $room.Capacity
+            }
+            Write-LabLog "Raumpostfach $($room.Alias) (Kapazitaet $($room.Capacity)) angelegt."
+        }
+
+        foreach ($contact in $LabData.Contacts) {
+            if (Get-LabRecipientByAlias -Alias $contact.Alias) { continue }
+            New-MailContact -Name $contact.Name -Alias $contact.Alias -ExternalEmailAddress $contact.ExternalEmailAddress -OrganizationalUnit "$($contact.OrganizationalUnit),$companyDn" | Out-Null
+            Write-LabLog "Kontakt $($contact.Alias) angelegt."
+        }
+    }
+    catch {
+        Write-LabLog "WARNUNG: Beispielempfaenger unvollstaendig: $($_.Exception.Message)"
+    }
+}
+
 function Register-InitialUpdate {
     $content = Get-Content -Path $UpdateScriptFile -Raw
     Register-LabUpdateTask -ScriptContent $content -TaskName $UpdateTaskName
@@ -497,14 +580,106 @@ function Register-InitialUpdate {
     }
 }
 
+function Register-LabMaintenance {
+    $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"$MaintenanceScriptFile`""
+    # Nachts ist die VM meist aus (Auto-Shutdown): mittags plus StartWhenAvailable holt verpasste Laeufe nach.
+    $trigger = New-ScheduledTaskTrigger -Daily -At '12:00'
+    $principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
+    $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Hours 1) -StartWhenAvailable
+    Register-ScheduledTask -TaskName $MaintenanceTaskName -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Force | Out-Null
+    Write-LabLog "Wartungs-Task $MaintenanceTaskName registriert (taeglich 12:00, Log-Bereinigung und Zertifikatserneuerung)."
+}
+
+function Write-UrlShortcut {
+    param([Parameter(Mandatory)][string] $Path, [Parameter(Mandatory)][string] $Url)
+    Set-Content -Path $Path -Value "[InternetShortcut]`r`nURL=$Url" -Encoding ASCII
+}
+
+function Publish-LabDesktop {
+    # Orientierung fuer die Azubis direkt auf dem Desktop aller Benutzer. Nicht fatal.
+    param([Parameter(Mandatory)][hashtable] $LabData)
+
+    try {
+        $desktop = Join-Path $env:PUBLIC 'Desktop'
+        $mailHost = "mail.$PublicDomainName"
+        $dcNames = @($DcComputerName, $SecondDcComputerName) | Where-Object { $_ }
+        $certificate = Get-ExchangeCertificate -Server $env:COMPUTERNAME | Where-Object { "$($_.Services)" -match 'IIS' } |
+            Sort-Object -Property NotAfter -Descending | Select-Object -First 1
+
+        $lines = @(
+            "EXCHANGE-LAB $NetbiosName"
+            ''
+            "AD-Domain:           $DomainName (NetBIOS $NetbiosName)"
+            "Oeffentliche Domain: $PublicDomainName"
+            "Exchange-Server:     $env:COMPUTERNAME"
+            "Domain Controller:   $($dcNames -join ', ')"
+            "Administrator:       $NetbiosName\$AdminUser"
+            "OWA:                 https://$mailHost/owa"
+            "ECP:                 https://$mailHost/ecp"
+            "Zertifikat (IIS):    $($certificate.Subject), Aussteller $($certificate.Issuer), gueltig bis $($certificate.NotAfter)"
+            ''
+            'LAB-BENUTZER (Kennwort = Deployment-Parameter labUserPassword)'
+        )
+        foreach ($user in $LabData.Users) {
+            $address = '{0}@{1}' -f $user.SamAccountName.ToLowerInvariant(), $PublicDomainName
+            $lines += '  {0,-40} {1} {2}, {3}, {4}' -f $address, $user.GivenName, $user.Surname, $user.Title, $user.City
+        }
+        $lines += ''
+        $lines += 'VERTEILER'
+        foreach ($group in $LabData.DistributionGroups) {
+            $lines += '  {0,-40} {1}' -f "$($group.Alias)@$PublicDomainName", $group.Name
+        }
+        $lines += ''
+        $lines += 'FREIGEGEBENE POSTFAECHER'
+        foreach ($shared in $LabData.SharedMailboxes) {
+            $lines += '  {0,-40} Vollzugriff: {1}; Senden als: {2}' -f "$($shared.Alias)@$PublicDomainName", ($shared.FullAccess -join ', '), ($shared.SendAs -join ', ')
+        }
+        $lines += ''
+        $lines += 'RAEUME'
+        foreach ($room in $LabData.RoomMailboxes) {
+            $lines += '  {0,-40} {1}, {2} Plaetze' -f "$($room.Alias)@$PublicDomainName", $room.Name, $room.Capacity
+        }
+        $lines += ''
+        $lines += 'EXTERNE KONTAKTE'
+        foreach ($contact in $LabData.Contacts) {
+            $lines += '  {0,-40} {1}' -f $contact.ExternalEmailAddress, $contact.Name
+        }
+        $lines += @(
+            ''
+            'WERKZEUGE (Exchange Management Shell als Administrator, Ordner C:\ExchangeLab\Tools)'
+            '  .\HealthChecker.ps1                      Gesundheitscheck des Servers'
+            '  .\HealthChecker.ps1 -BuildHtmlServersReport   HTML-Bericht aus dem letzten Lauf'
+            '  .\SetupAssist.ps1                        Pruefung vor Setup oder CU-Update'
+            '  .\SetupLogReviewer.ps1 -SetupLog C:\ExchangeSetupLogs\ExchangeSetup.log   Setup-Log auswerten'
+            ''
+            'STATUS UND LOGS (C:\ExchangeLab\Logs)'
+            '  Update-LabServer.log       Update-Lauf nach der Installation, fertig bei "Keine ausstehenden Updates"'
+            '  Invoke-LabMaintenance.log  taegliche Wartung: Log-Bereinigung, Zertifikatserneuerung'
+            '  Die Exchange-VM faehrt abends automatisch herunter (falls aktiviert), der erste DC laeuft durch.'
+        )
+
+        Write-Utf8File -Path (Join-Path $desktop 'Lab-Info.txt') -Content ($lines -join "`r`n")
+        Write-UrlShortcut -Path (Join-Path $desktop 'OWA.url') -Url "https://$mailHost/owa"
+        Write-UrlShortcut -Path (Join-Path $desktop 'ECP.url') -Url "https://$mailHost/ecp"
+        Write-UrlShortcut -Path (Join-Path $desktop 'Lab-Logs.url') -Url 'file:///C:/ExchangeLab/Logs'
+        Write-LabLog "Lab-Info und Verknuepfungen auf $desktop abgelegt."
+    }
+    catch {
+        Write-LabLog "WARNUNG: Lab-Info nicht abgelegt: $($_.Exception.Message)"
+    }
+}
+
 function Invoke-InstallPhase {
     $secret = Get-InstallSecret
-    $users = Initialize-LabDirectory -LabUserPassword (ConvertTo-SecureString -String $secret.LabUserPassword -AsPlainText -Force)
+    $labData = Initialize-LabDirectory -LabUserPassword (ConvertTo-SecureString -String $secret.LabUserPassword -AsPlainText -Force)
     Enable-AdRecycleBin
     Install-Exchange
     Connect-ExchangeSession
-    Initialize-ExchangeConfiguration -Users $users
+    Initialize-ExchangeConfiguration -Users $labData.Users
+    Initialize-LabRecipient -LabData $labData
     Register-InitialUpdate
+    Register-LabMaintenance
+    Publish-LabDesktop -LabData $labData
 }
 
 #endregion

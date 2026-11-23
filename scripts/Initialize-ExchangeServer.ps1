@@ -17,6 +17,7 @@
         Exchange nutzt weiterhin nur Windows PowerShell 5.1 (Side-by-Side ist zulaessig).
       - winget: VC++ 2012/2013, IIS URL Rewrite und optionale Tools,
         Fallback fuer die Exchange-Voraussetzungen: Microsoft-Download mit SHA256-Pruefung
+      - CSS-Exchange-Diagnose (HealthChecker, SetupAssist, SetupLogReviewer) nach C:\ExchangeLab\Tools
       - Exchange-SE-ISO laden und entpacken, UCMA 4.0 aus \UCMARedist installieren
       - optional Let's-Encrypt-Wildcard-Zertifikat ueber die Managed Identity der VM
 
@@ -52,8 +53,21 @@ $LogDir = Join-Path $LabRoot 'Logs'
 $InstallDir = Join-Path $LabRoot 'Install'
 $MediaDir = Join-Path $LabRoot 'Media\ExchangeSE'
 $CertDir = 'C:\Certificates'
+$ToolsDir = Join-Path $LabRoot 'Tools'
 $PoshAcmeHome = 'C:\ProgramData\Posh-ACME'
 $PwshExe = Join-Path $env:ProgramFiles 'PowerShell\7\pwsh.exe'
+
+# Diagnose-Skripte aus microsoft/CSS-Exchange, festes Release (SHA256 aus den Release-Assets,
+# Dateien von Microsoft signiert). Beim Aktualisieren Tag und Hashes gemeinsam aendern.
+$CssExchangeRelease = 'v26.11.03.2200'
+$LabTools = @(
+    @{ Name = 'HealthChecker.ps1'; Sha256 = '512532445dc02b2b0a37d5ab6b7520f9cf5697df11797de3677c47136ebaaa18' }
+    @{ Name = 'SetupAssist.ps1'; Sha256 = '5a94860b765e233ecee6080e55ee6a9e8e31d184f1956385ab372cb8ae1c9d5e' }
+    @{ Name = 'SetupLogReviewer.ps1'; Sha256 = '9df2e070c6899278d49c4142e05b24641a53bba5daec7848ea19d3f13fa340c8' }
+) | ForEach-Object {
+    $_.Url = 'https://github.com/microsoft/CSS-Exchange/releases/download/{0}/{1}' -f $CssExchangeRelease, $_.Name
+    $_
+}
 
 # PowerShell 7 LTS, Quelle: GitHub-Release PowerShell/PowerShell (SHA256 aus den Release-Assets).
 $PowerShell7 = @{
@@ -219,19 +233,31 @@ function Initialize-PowerShellGallery {
     Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
 }
 
+function Save-VerifiedDownload {
+    # Laedt eine Datei und prueft den SHA256. Bei Abweichung wird die Datei geloescht und abgebrochen.
+    param(
+        [Parameter(Mandatory)][string] $Url,
+        [Parameter(Mandatory)][string] $Destination,
+        [Parameter(Mandatory)][string] $Sha256,
+        [Parameter(Mandatory)][string] $Name
+    )
+    Invoke-WithRetry -Activity "Download $Name" -ScriptBlock {
+        Invoke-WebRequest -Uri $Url -OutFile $Destination -UseBasicParsing
+    }
+
+    $hash = (Get-FileHash -Path $Destination -Algorithm SHA256).Hash
+    if ($hash -ne $Sha256) {
+        Remove-Item -Path $Destination -Force -ErrorAction SilentlyContinue
+        throw "SHA256 von $Name passt nicht (erwartet $Sha256, erhalten $hash)."
+    }
+}
+
 function Install-PackageFromDownload {
     param([Parameter(Mandatory)][hashtable] $Package)
 
     $fileName = Split-Path -Path $Package.Url -Leaf
     $target = Join-Path $InstallDir ("{0}-{1}" -f $Package.Id, $fileName)
-    Invoke-WithRetry -Activity "Download $($Package.Id)" -ScriptBlock {
-        Invoke-WebRequest -Uri $Package.Url -OutFile $target -UseBasicParsing
-    }
-
-    $hash = (Get-FileHash -Path $target -Algorithm SHA256).Hash
-    if ($hash -ne $Package.Sha256) {
-        throw "SHA256 von $($Package.Id) passt nicht (erwartet $($Package.Sha256), erhalten $hash)."
-    }
+    Save-VerifiedDownload -Url $Package.Url -Destination $target -Sha256 $Package.Sha256 -Name $Package.Id
 
     if ($target -like '*.msi') {
         $process = Start-Process -FilePath 'msiexec.exe' -ArgumentList "/i `"$target`" $($Package.Arguments)" -Wait -PassThru
@@ -243,6 +269,25 @@ function Install-PackageFromDownload {
         throw "Installation von $($Package.Id) per Download fehlgeschlagen (Exit-Code $($process.ExitCode))."
     }
     Write-LabLog "$($Package.Id) per Microsoft-Download installiert (Exit-Code $($process.ExitCode))."
+}
+
+function Save-LabTool {
+    # Nicht fatal: Die Diagnose-Skripte sind Komfort fuer die Azubis und duerfen das Lab nicht blockieren.
+    New-Item -Path $ToolsDir -ItemType Directory -Force | Out-Null
+    foreach ($tool in $LabTools) {
+        $target = Join-Path $ToolsDir $tool.Name
+        if ((Test-Path -Path $target) -and (Get-FileHash -Path $target -Algorithm SHA256).Hash -eq $tool.Sha256) {
+            Write-LabLog "$($tool.Name) bereits vorhanden."
+            continue
+        }
+        try {
+            Save-VerifiedDownload -Url $tool.Url -Destination $target -Sha256 $tool.Sha256 -Name $tool.Name
+            Write-LabLog "$($tool.Name) nach $ToolsDir geladen."
+        }
+        catch {
+            Write-LabLog "WARNUNG: $($tool.Name) nicht geladen: $($_.Exception.Message)"
+        }
+    }
 }
 
 function Install-PowerShell7 {
@@ -421,6 +466,7 @@ try {
     Initialize-RegionalSetting
     Install-ExchangeWindowsFeature
     Install-LabSoftware
+    Save-LabTool
     Get-ExchangeMedium
     Install-Ucma
     Request-LabCertificate
