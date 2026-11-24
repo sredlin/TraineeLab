@@ -1,5 +1,7 @@
 // Domain Controller: Windows Server 2025, statische IP, keine Public IP,
 // NTDS/SYSVOL auf eigener Datendisk mit Host-Cache None (Microsoft-Empfehlung fuer AD DS in Azure).
+// Modus 'Forest' legt den Forest an (erster DC), Modus 'Replica' stuft einen weiteren DC in die
+// bestehende Domain herauf und wartet dafuer zuerst auf den ersten DC.
 
 @description('Azure-Region.')
 param location string
@@ -42,11 +44,32 @@ param publicDomainName string
 @description('Private IP des Exchange-Servers fuer Split DNS.')
 param exchangeIp string
 
+@description('Forest = erster DC, legt den Forest an. Replica = weiterer DC in der bestehenden Domain.')
+@allowed([
+  'Forest'
+  'Replica'
+])
+param mode string = 'Forest'
+
+@description('Private IP des ersten DC (nur Modus Replica).')
+param firstDcIp string = ''
+
+var isReplica = mode == 'Replica'
+
 resource nic 'Microsoft.Network/networkInterfaces@2025-05-01' = {
   name: 'nic-${vmName}'
   location: location
   tags: tags
   properties: {
+    // Replica: erster DC als DNS, damit die Domain aufloesbar ist, ohne auf die DNS-Umstellung des VNets
+    // zu warten. Azure DNS als zweiter Eintrag, damit Provisionierung und Extensions funktionieren,
+    // solange der erste DC noch nicht antwortet. Nach der Heraufstufung setzt das Skript den DNS-Client fest.
+    dnsSettings: {
+      dnsServers: isReplica ? [
+        firstDcIp
+        '168.63.129.16'
+      ] : []
+    }
     ipConfigurations: [
       {
         name: 'ipconfig1'
@@ -141,6 +164,54 @@ resource vm 'Microsoft.Compute/virtualMachines@2025-04-01' = {
   }
 }
 
+// Replica: wartet, bis der erste DC samt Split DNS fertig ist und der Domain-Admin sich per LDAP anmelden kann.
+resource waitDomainController 'Microsoft.Compute/virtualMachines/runCommands@2025-04-01' = if (isReplica) {
+  parent: vm
+  name: 'Wait-DomainController'
+  location: location
+  tags: tags
+  properties: {
+    source: {
+      script: loadTextContent('../../scripts/Wait-DomainController.ps1')
+    }
+    parameters: [
+      {
+        name: 'DomainName'
+        value: domainName
+      }
+      {
+        name: 'NetbiosName'
+        value: netbiosName
+      }
+      {
+        name: 'AdminUser'
+        value: adminUsername
+      }
+      {
+        name: 'DcIp'
+        value: firstDcIp
+      }
+      {
+        name: 'PublicDomainName'
+        value: publicDomainName
+      }
+      {
+        name: 'ExchangeIp'
+        value: exchangeIp
+      }
+    ]
+    protectedParameters: [
+      {
+        name: 'AdminPasswordB64'
+        value: base64(adminPassword)
+      }
+    ]
+    asyncExecution: false
+    timeoutInSeconds: 3600
+    treatFailureAsDeploymentFailure: true
+  }
+}
+
 resource installDomainController 'Microsoft.Compute/virtualMachines/runCommands@2025-04-01' = {
   parent: vm
   name: 'Install-DomainController'
@@ -150,7 +221,7 @@ resource installDomainController 'Microsoft.Compute/virtualMachines/runCommands@
     source: {
       script: loadTextContent('../../scripts/Install-DomainController.ps1')
     }
-    parameters: [
+    parameters: concat([
       {
         name: 'DomainName'
         value: domainName
@@ -167,17 +238,39 @@ resource installDomainController 'Microsoft.Compute/virtualMachines/runCommands@
         name: 'ExchangeIp'
         value: exchangeIp
       }
-    ]
-    protectedParameters: [
+      {
+        name: 'Mode'
+        value: mode
+      }
+    ], isReplica ? [
+      {
+        name: 'AdminUser'
+        value: adminUsername
+      }
+      {
+        name: 'FirstDcIp'
+        value: firstDcIp
+      }
+    ] : [])
+    // Die Domain-Admin-Anmeldung braucht nur der Replica-Modus fuer Install-ADDSDomainController.
+    protectedParameters: concat([
       {
         name: 'SafeModePasswordB64'
         value: base64(adminPassword)
       }
-    ]
+    ], isReplica ? [
+      {
+        name: 'AdminPasswordB64'
+        value: base64(adminPassword)
+      }
+    ] : [])
     asyncExecution: false
     timeoutInSeconds: 3600
     treatFailureAsDeploymentFailure: true
   }
+  dependsOn: [
+    waitDomainController
+  ]
 }
 
 output vmName string = vm.name

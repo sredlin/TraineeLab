@@ -1,4 +1,4 @@
-// Netzwerk des Labs: NSG, VNet mit einem Subnet und Public IP fuer den Exchange-Server.
+// Netzwerk des Labs: NSG, VNet mit einem Subnet, Public IP fuer den Exchange-Server und optional fuer den Client.
 
 @description('Azure-Region.')
 param location string
@@ -24,8 +24,11 @@ param exchangePrivateIp string
 @description('Quelle fuer RDP (z. B. eigene oeffentliche IP/32).')
 param allowedRdpSourcePrefix string
 
-@description('Quelle fuer HTTP, HTTPS und SMTP zum Exchange-Server.')
+@description('Quelle fuer HTTP und HTTPS zum Exchange-Server.')
 param exchangePublishedSourcePrefix string
+
+@description('Quelle fuer SMTP zum Exchange-Server. Getrennt von HTTP/HTTPS, damit eingehende Mails aus dem Internet nicht auch ECP oeffentlich machen.')
+param smtpSourcePrefix string
 
 @description('Name der Public IP des Exchange-Servers.')
 param publicIpName string
@@ -33,12 +36,41 @@ param publicIpName string
 @description('DNS-Label der Public IP (<label>.<region>.cloudapp.azure.com).')
 param publicIpDnsLabel string
 
+@description('Windows-11-Client bereitstellen (eigene Public IP und RDP-Regel).')
+param deployClient bool
+
+@description('Private IP des Clients (Ziel der RDP-Regel).')
+param clientPrivateIp string
+
+@description('Name der Public IP des Clients.')
+param clientPublicIpName string
+
+@description('DNS-Label der Public IP des Clients.')
+param clientPublicIpDnsLabel string
+
+var clientRules = deployClient ? [
+  {
+    name: 'Allow-RDP-Client'
+    properties: {
+      description: 'RDP auf den Windows-11-Client (z. B. als Lab-Benutzer fuer Outlook-Tests), nur von der freigegebenen Quelle.'
+      priority: 105
+      direction: 'Inbound'
+      access: 'Allow'
+      protocol: 'Tcp'
+      sourceAddressPrefix: allowedRdpSourcePrefix
+      sourcePortRange: '*'
+      destinationAddressPrefix: clientPrivateIp
+      destinationPortRange: '3389'
+    }
+  }
+] : []
+
 resource nsg 'Microsoft.Network/networkSecurityGroups@2025-05-01' = {
   name: nsgName
   location: location
   tags: tags
   properties: {
-    securityRules: [
+    securityRules: concat([
       {
         name: 'Allow-RDP-Exchange'
         properties: {
@@ -54,9 +86,9 @@ resource nsg 'Microsoft.Network/networkSecurityGroups@2025-05-01' = {
         }
       }
       {
-        name: 'Allow-Exchange-Published'
+        name: 'Allow-Exchange-Web'
         properties: {
-          description: 'SMTP, HTTP (Weiterleitung) und HTTPS auf den Exchange-Server.'
+          description: 'HTTP (Weiterleitung) und HTTPS auf den Exchange-Server (OWA, ECP, Outlook, Autodiscover).'
           priority: 110
           direction: 'Inbound'
           access: 'Allow'
@@ -65,13 +97,26 @@ resource nsg 'Microsoft.Network/networkSecurityGroups@2025-05-01' = {
           sourcePortRange: '*'
           destinationAddressPrefix: exchangePrivateIp
           destinationPortRanges: [
-            '25'
             '80'
             '443'
           ]
         }
       }
-    ]
+      {
+        name: 'Allow-Exchange-SMTP'
+        properties: {
+          description: 'SMTP auf den Exchange-Server (eingehende Mails).'
+          priority: 120
+          direction: 'Inbound'
+          access: 'Allow'
+          protocol: 'Tcp'
+          sourceAddressPrefix: smtpSourcePrefix
+          sourcePortRange: '*'
+          destinationAddressPrefix: exchangePrivateIp
+          destinationPortRange: '25'
+        }
+      }
+    ], clientRules)
   }
 }
 
@@ -109,7 +154,26 @@ resource publicIp 'Microsoft.Network/publicIPAddresses@2025-05-01' = {
   }
 }
 
+resource clientPublicIp 'Microsoft.Network/publicIPAddresses@2025-05-01' = if (deployClient) {
+  name: clientPublicIpName
+  location: location
+  tags: tags
+  sku: {
+    name: 'Standard'
+    tier: 'Regional'
+  }
+  properties: {
+    publicIPAllocationMethod: 'Static'
+    publicIPAddressVersion: 'IPv4'
+    dnsSettings: {
+      domainNameLabel: clientPublicIpDnsLabel
+    }
+  }
+}
+
 output subnetId string = vnet.properties.subnets[0].id
 output publicIpId string = publicIp.id
 output publicIpAddress string = publicIp.properties.ipAddress
 output publicIpFqdn string = publicIp.properties.dnsSettings.fqdn
+output clientPublicIpId string = deployClient ? clientPublicIp.id : ''
+output clientPublicIpFqdn string = deployClient ? clientPublicIp!.properties.dnsSettings.fqdn : ''

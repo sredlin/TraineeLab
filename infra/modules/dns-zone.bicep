@@ -56,5 +56,37 @@ resource mxRecord 'Microsoft.Network/dnsZones/MX@2018-05-01' = {
   }
 }
 
+// SPF: nur der MX-Host darf fuer die Domain senden. Ausgehend geht aus Azure ohnehin nur ueber einen Smart Host.
+resource spfRecord 'Microsoft.Network/dnsZones/TXT@2018-05-01' = {
+  parent: zone
+  name: '@'
+  properties: {
+    TTL: 300
+    TXTRecords: [
+      {
+        value: [
+          'v=spf1 mx -all'
+        ]
+      }
+    ]
+  }
+}
+
+// DMARC nur im Beobachtungsmodus, damit Uebungen zu Mail-Hygiene darauf aufbauen koennen.
+resource dmarcRecord 'Microsoft.Network/dnsZones/TXT@2018-05-01' = {
+  parent: zone
+  name: '_dmarc'
+  properties: {
+    TTL: 300
+    TXTRecords: [
+      {
+        value: [
+          'v=DMARC1; p=none'
+        ]
+      }
+    ]
+  }
+}
+
 output zoneId string = zone.id
 output nameServers array = zone.properties.nameServers

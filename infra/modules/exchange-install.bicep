@@ -36,6 +36,12 @@ param companyOu string
 @description('Computername des Domain Controllers.')
 param dcComputerName string
 
+@description('Computername des optionalen zweiten DC. Leer = kein zweiter DC.')
+param secondDcComputerName string = ''
+
+@description('Computername des optionalen Windows-11-Clients, wird in die Client-OU verschoben. Leer = kein Client.')
+param clientComputerName string = ''
+
 @description('Private IP des Domain Controllers.')
 param dcIp string
 
@@ -128,7 +134,8 @@ resource installExchangeServer 'Microsoft.Compute/virtualMachines/runCommands@20
     source: {
       script: loadTextContent('../../scripts/Install-ExchangeServer.ps1')
     }
-    parameters: [
+    // Leere Werte wuerden als Parameter ohne Argument uebergeben, daher optionale Werte nur bei Bedarf.
+    parameters: concat([
       {
         name: 'DomainName'
         value: domainName
@@ -165,7 +172,21 @@ resource installExchangeServer 'Microsoft.Compute/virtualMachines/runCommands@20
         name: 'UpdateScriptB64'
         value: base64(loadTextContent('../../scripts/Update-LabServer.ps1'))
       }
-    ]
+      {
+        name: 'MaintenanceScriptB64'
+        value: base64(loadTextContent('../../scripts/Invoke-LabMaintenance.ps1'))
+      }
+    ], empty(secondDcComputerName) ? [] : [
+      {
+        name: 'SecondDcComputerName'
+        value: secondDcComputerName
+      }
+    ], empty(clientComputerName) ? [] : [
+      {
+        name: 'ClientComputerName'
+        value: clientComputerName
+      }
+    ])
     protectedParameters: [
       {
         name: 'AdminPasswordB64'

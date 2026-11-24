@@ -88,7 +88,9 @@ function Test-DomainControllerReady {
         return "LDAP-Bind als $AdminUser@$DomainName fehlgeschlagen: $($_.Exception.Message)"
     }
     finally {
-        ([IDisposable]$entry).Dispose()
+        # psbase umgeht den DirectoryEntry-Adapter: Sonst sucht PowerShell "Dispose" als AD-Attribut,
+        # bindet dafuer erneut und ueberdeckt bei einem Fehler die eigentliche Meldung.
+        try { $entry.psbase.Dispose() } catch { Write-Verbose -Message "Dispose: $($_.Exception.Message)" }
     }
 
     return $null

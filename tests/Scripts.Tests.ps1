@@ -64,6 +64,48 @@ Describe 'LabUsers.psd1' {
         }
     }
 
+    It 'verweist bei Vorgesetzten nur auf vorhandene Benutzer' {
+        $names = $labUsers.Users.SamAccountName
+        foreach ($entry in $labUsers.Managers.GetEnumerator()) {
+            $names | Should -Contain $entry.Key
+            $names | Should -Contain $entry.Value
+            $entry.Value | Should -Not -Be $entry.Key
+        }
+    }
+
+    It 'hat gueltige, eindeutige Aliase fuer alle Beispielempfaenger' {
+        $recipients = @($labUsers.DistributionGroups) + @($labUsers.SharedMailboxes) + @($labUsers.RoomMailboxes) + @($labUsers.Contacts)
+        $aliases = $recipients.Alias
+        ($aliases | Select-Object -Unique).Count | Should -Be $aliases.Count
+        foreach ($alias in $aliases) {
+            # Alias dient zugleich als SamAccountName (max. 20 Zeichen) und Adressteil.
+            $alias | Should -Match '^[a-z0-9-]{1,20}$'
+            $labUsers.Users.SamAccountName | Should -Not -Contain $alias
+        }
+        foreach ($recipient in $recipients) {
+            $labUsers.OrganizationalUnits | Should -Contain $recipient.OrganizationalUnit
+        }
+    }
+
+    It 'verweist bei Mitgliedern und Berechtigungen nur auf vorhandene Benutzer' {
+        $names = $labUsers.Users.SamAccountName
+        $references = @($labUsers.DistributionGroups.Members) + @($labUsers.SharedMailboxes.FullAccess) + @($labUsers.SharedMailboxes.SendAs)
+        $references | Should -Not -BeNullOrEmpty
+        foreach ($reference in $references) {
+            $names | Should -Contain $reference
+        }
+    }
+
+    It 'hat eine vorhandene Ziel-OU fuer den Client' {
+        $labUsers.OrganizationalUnits | Should -Contain $labUsers.ClientOrganizationalUnit
+    }
+
+    It 'nutzt fuer externe Kontakte nur reservierte Beispiel-Domains' {
+        foreach ($contact in $labUsers.Contacts) {
+            $contact.ExternalEmailAddress | Should -Match '@([a-z0-9-]+\.)*example\.(com|org|net)$'
+        }
+    }
+
     It 'listet uebergeordnete OUs vor untergeordneten' {
         $seen = @()
         foreach ($ou in $labUsers.OrganizationalUnits) {
@@ -92,7 +134,10 @@ Describe 'azuredeploy.json' {
     }
 
     It 'enthaelt keine NSG-Regel mit beliebiger Quelle' {
+        # Literal-JSON und, bei bedingten Regeln, ARM-Ausdruck createObject('sourceAddressPrefix', '*').
         $templateText | Should -Not -Match '"sourceAddressPrefix": "\*"'
+        $templateText | Should -Not -Match "'sourceAddressPrefix', '\*'"
+        $templateText | Should -Match "'sourceAddressPrefix', parameters\('allowedRdpSourcePrefix'\)"
     }
 
     It 'nutzt Windows Server 2025 fuer alle VMs' {
@@ -108,5 +153,59 @@ Describe 'azuredeploy.json' {
     It 'deklariert Passwoerter als securestring' {
         $template.parameters.adminPassword.type | Should -Be 'securestring'
         $template.parameters.labUserPassword.type | Should -Be 'securestring'
+    }
+
+    It 'verlangt ein eigenes Passwort fuer die Lab-Benutzer (kein Rueckfall auf das Admin-Passwort)' {
+        $template.parameters.labUserPassword.PSObject.Properties.Name | Should -Not -Contain 'defaultValue'
+    }
+
+    It 'trennt SMTP von HTTP/HTTPS in der NSG' {
+        $templateText | Should -Match "'name', 'Allow-Exchange-Web'"
+        $templateText | Should -Match "'name', 'Allow-Exchange-SMTP'"
+        $templateText | Should -Not -Match 'Allow-Exchange-Published'
+    }
+
+    It 'uebergibt das Wartungsskript an die Exchange-Installation' {
+        $templateText | Should -Match 'MaintenanceScriptB64'
+    }
+
+    It 'stellt standardmaessig einen Windows-11-Client mit Multitenant Hosting Rights bereit' {
+        $template.parameters.deployClient.defaultValue | Should -BeTrue
+        $template.parameters.clientImageSku.defaultValue | Should -BeLike 'win11-*'
+        $templateText | Should -Match '"publisher": "MicrosoftWindowsDesktop"'
+        $templateText | Should -Match '"offer": "windows-11"'
+        $templateText | Should -Match '"licenseType": "Windows_Client"'
+    }
+
+    It 'erlaubt nur Office-Produkte mit Benutzeraktivierung' {
+        $template.parameters.officeProductId.allowedValues | Should -Be @('O365ProPlusRetail', 'O365BusinessRetail')
+    }
+
+    It 'stellt den zweiten DC nur auf Wunsch bereit' {
+        $template.parameters.deploySecondDc.defaultValue | Should -BeFalse
+        $templateText | Should -Match 'Install-ADDSDomainController'
+    }
+
+    It 'veroeffentlicht SPF und DMARC fuer die Lab-Domain' {
+        $templateText | Should -Match 'v=spf1 mx -all'
+        $templateText | Should -Match 'v=DMARC1; p=none'
+    }
+}
+
+Describe 'infra/main.bicep' {
+    BeforeAll {
+        $mainBicep = Get-Content -Path (Join-Path $repoRoot 'infra/main.bicep') -Raw
+        $shutdownModules = @([regex]::Matches($mainBicep, "(?ms)^module \w+ 'modules/auto-shutdown\.bicep'.*?^\}") | ForEach-Object Value)
+    }
+
+    It 'schaltet die Exchange-VM automatisch ab' {
+        ($shutdownModules -join "`n") | Should -Match 'names\.exchangeVm'
+    }
+
+    It 'deallokiert den ersten DC nie automatisch (SYSVOL waere danach nicht-autoritativ)' {
+        $shutdownModules | Should -Not -BeNullOrEmpty
+        foreach ($module in $shutdownModules) {
+            $module | Should -Not -Match 'names\.dcVm\b'
+        }
     }
 }
