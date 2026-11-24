@@ -288,6 +288,146 @@ Describe 'azuredeploy.json' {
         $nic | Should -Not -BeNullOrEmpty
         $nic.properties.ipConfigurations[0].properties.PSObject.Properties.Name | Should -Not -Contain 'publicIPAddress'
     }
+
+    It 'erzeugt die Beispieldokumente vor dem Domaenenbeitritt, mit Korpus in der userData' {
+        $template.parameters.fileServerDataSizeGB.defaultValue | Should -Be 60
+        $template.parameters.fileServerDataSizeGB.maxValue | Should -Be 120
+        $fileServerModule = ($template.resources | Where-Object name -EQ 'file-server').properties.template
+        $vm = $fileServerModule.resources | Where-Object type -EQ 'Microsoft.Compute/virtualMachines'
+        $vm.properties.userData | Should -Not -BeNullOrEmpty
+        $vm.properties.userData.Length | Should -BeLessOrEqual 65536
+        $vm.properties.storageProfile.dataDisks[0].diskSizeGB | Should -Not -BeNullOrEmpty
+        $fileServerModule.parameters.dataDiskSizeGB.defaultValue | Should -Be 256
+        $generator = $fileServerModule.resources | Where-Object { $_.type -eq 'Microsoft.Compute/virtualMachines/runCommands' -and $_.name -match 'New-SampleDocuments' }
+        $generator | Should -Not -BeNullOrEmpty
+        ($generator.dependsOn -join ' ') | Should -Match 'Initialize-FileServer'
+        $generator.properties.treatFailureAsDeploymentFailure | Should -BeTrue
+        # Der Neustart des Beitritts wuerde die Erzeugung abbrechen: Beitritt erst nach dem Modul file-server.
+        $join = $template.resources | Where-Object name -EQ 'file-server-join'
+        ($join.dependsOn -join ' ') | Should -Match 'file-server'
+    }
+}
+
+Describe 'Beispieldokumente (Korpus, Artefakte, Generator)' {
+    BeforeAll {
+        function Expand-GzipByte([byte[]] $Bytes) {
+            $packed = New-Object -TypeName System.IO.MemoryStream -ArgumentList (, $Bytes)
+            $gzip = New-Object -TypeName System.IO.Compression.GZipStream -ArgumentList $packed, ([IO.Compression.CompressionMode]::Decompress)
+            $plain = New-Object -TypeName System.IO.MemoryStream
+            $gzip.CopyTo($plain)
+            $gzip.Dispose()
+            , $plain.ToArray()
+        }
+        $corpusDir = Join-Path $repoRoot 'scripts/corpus'
+        $corpusFiles = @(Get-ChildItem -Path $corpusDir -Filter '*.psd1' -File | Sort-Object -Property Name)
+        $corpusText = ($corpusFiles | ForEach-Object { [IO.File]::ReadAllText($_.FullName) }) -join "`n"
+        $company = Import-PowerShellDataFile -Path (Join-Path $corpusDir 'Company.psd1')
+        $generatorPath = Join-Path $repoRoot 'scripts/New-SampleDocuments.ps1'
+        $generatorText = [IO.File]::ReadAllText($generatorPath)
+        $rebuild = 'tools/Build-SampleArtifacts.ps1 ausfuehren und die Artefakte committen'
+    }
+
+    It 'SampleCorpus.gz passt in die userData und entspricht den Quellen' {
+        $bytes = [IO.File]::ReadAllBytes((Join-Path $repoRoot 'scripts/SampleCorpus.gz'))
+        [Convert]::ToBase64String($bytes).Length | Should -BeLessOrEqual 65536
+        $json = [Text.Encoding]::UTF8.GetString((Expand-GzipByte $bytes)) | ConvertFrom-Json
+        @($json.PSObject.Properties.Name) | Should -Be @($corpusFiles.Name) -Because $rebuild
+        foreach ($file in $corpusFiles) {
+            $json.($file.Name) | Should -BeExactly ([IO.File]::ReadAllText($file.FullName).Replace("`r`n", "`n")) -Because $rebuild
+        }
+    }
+
+    It 'Start-SampleDocuments.ps1 enthaelt den aktuellen Generator' {
+        $start = [IO.File]::ReadAllText((Join-Path $repoRoot 'scripts/Start-SampleDocuments.ps1'))
+        $payload = [regex]::Match($start, "\`$payload = '([A-Za-z0-9+/=]+)'").Groups[1].Value
+        $payload | Should -Not -BeNullOrEmpty
+        $unpacked = Expand-GzipByte ([Convert]::FromBase64String($payload))
+        [Convert]::ToBase64String($unpacked) | Should -BeExactly ([Convert]::ToBase64String([IO.File]::ReadAllBytes($generatorPath))) -Because $rebuild
+    }
+
+    It 'laedt alle Korpus-Dateien und kennt die Pflichtbereiche des Drehbuchs' {
+        foreach ($file in $corpusFiles) { { Import-PowerShellDataFile -Path $file.FullName } | Should -Not -Throw -Because $file.Name }
+        foreach ($key in 'Company', 'Ci', 'Timeline', 'Employees', 'Customers', 'Suppliers', 'Shops', 'Motifs', 'Labels', 'FolderNames') {
+            $company.Keys | Should -Contain $key
+        }
+        # Drehbuch und LabUsers.psd1 beschreiben dieselben Lab-Benutzer.
+        foreach ($sam in @($company.Employees | Where-Object { $labUsers.Users.SamAccountName -contains $_.Sam } | ForEach-Object Sam)) {
+            $labUsers.Users.SamAccountName | Should -Contain $sam
+        }
+    }
+
+    It 'nutzt nur reservierte Domains (RFC 2606)' {
+        $domains = [regex]::Matches($corpusText, '(?i)\b(?:[a-z0-9-]+\.)+(?:com|org|net|de|eu|io|info|biz)\b') | ForEach-Object Value | Select-Object -Unique
+        foreach ($domain in $domains) { $domain | Should -Match '(^|\.)example\.(com|org|net)$' }
+    }
+
+    It 'nutzt nur Rufnummern fuer Medienproduktionen (Bundesnetzagentur)' {
+        $numbers = [regex]::Matches(($corpusText + "`n" + $generatorText), '\+49 [\d \-]+\d') | ForEach-Object Value | Select-Object -Unique
+        $numbers | Should -Not -BeNullOrEmpty
+        foreach ($number in $numbers) { $number | Should -Match '^\+49 (30 23125|40 66969|221 4710|89 99998|69 90009|171 39200|176 040690)' }
+    }
+
+    It 'nutzt nur Platzhalter, die der Generator fuellt' {
+        $names = [regex]::Matches($corpusText, '\{([A-Za-z][A-Za-z0-9]*)\}') | ForEach-Object { $_.Groups[1].Value } | Select-Object -Unique
+        $context = [regex]::Match($generatorText, '(?s)function Get-TextContext \{.*?\n\}').Value
+        foreach ($name in $names) { $context | Should -Match "\b$name = " -Because "{$name} braucht einen Wert in Get-TextContext" }
+        $apostrophes = '[{0}{1}{2}]' -f [char]0x2018, [char]0x2019, [char]0x201A
+        $corpusText | Should -Not -Match $apostrophes -Because 'typografische Apostrophe beenden Strings in PowerShell'
+    }
+
+    It 'nutzt nur Labels, Ordnernamen und Motivformate aus dem Drehbuch' {
+        foreach ($key in [regex]::Matches($generatorText, '\$L\.([A-Za-z]+)') | ForEach-Object { $_.Groups[1].Value } | Select-Object -Unique) {
+            $company.Labels.Keys | Should -Contain $key
+        }
+        foreach ($key in [regex]::Matches($generatorText, '\$F\.([A-Za-z]+)') | ForEach-Object { $_.Groups[1].Value } | Select-Object -Unique) {
+            $company.FolderNames.Keys | Should -Contain $key
+        }
+        $shapes = [regex]::Match($generatorText, '(?s)\$ShapeSizes = @\{.*?\n\}').Value
+        foreach ($motif in $company.Motifs) { $shapes | Should -Match ("'?{0}'?\s*=\s*@\{{" -f [regex]::Escape($motif.File)) }
+    }
+
+    It 'legt die Altlasten in Ordner, die der Generator befuellt' {
+        $folderNames = @($company.FolderNames.Values | ForEach-Object { $_ })
+        foreach ($item in $fileServer.Legacy | Where-Object { $_.Type -in 'UserAce', 'BrokenInheritance', 'OwnerOnly' }) {
+            $folderNames | Should -Contain (Split-Path -Path ($item.Path -replace '\\', '/') -Leaf)
+        }
+    }
+
+    It 'erzeugt ohne Rastergrafik gueltige Dateien ohne offene Platzhalter (Smoke-Test)' {
+        $target = Join-Path $TestDrive 'daten'
+        $labRoot = Join-Path $TestDrive 'lab'
+        $arguments = @('-NoProfile', '-NonInteractive', '-File', $generatorPath, '-TargetPath', $target, '-TargetSizeMB', '3', '-LabRoot', $labRoot,
+            '-CorpusPath', $corpusDir, '-LabUsersPath', (Join-Path $repoRoot 'scripts/LabUsers.psd1'), '-ReferenceDate', '2026-11-24',
+            '-WorkerCount', '1', '-NoRaster', '-TimeBudgetMinutes', '0')
+        & (Get-Process -Id $PID).Path @arguments | Out-Null
+        $LASTEXITCODE | Should -Be 0 -Because (Get-Content -Path (Join-Path $labRoot 'Logs/New-SampleDocuments.log') -Raw)
+        (Get-Content -Path (Join-Path $labRoot 'Logs/New-SampleDocuments.log') -Raw) | Should -Not -MatchExactly 'WARNUNG:|FEHLER:'
+        $files = @(Get-ChildItem -Path $target -Recurse -File)
+        foreach ($extension in '.docx', '.xlsx', '.pptx', '.pdf') { @($files | Where-Object Extension -EQ $extension).Count | Should -BeGreaterThan 0 -Because "$extension fehlt" }
+        @($files | Where-Object Name -Match '\{[A-Za-z]+\}') | Should -BeNullOrEmpty
+        $years = @($files | ForEach-Object { $_.LastWriteTime.Year } | Select-Object -Unique)
+        $years.Count | Should -BeGreaterThan 5
+        Add-Type -AssemblyName System.IO.Compression
+        foreach ($file in $files | Where-Object Extension -In '.docx', '.xlsx', '.pptx' | Select-Object -First 40) {
+            $zip = [IO.Compression.ZipFile]::OpenRead($file.FullName)
+            try {
+                @($zip.Entries.FullName) | Should -Contain '[Content_Types].xml'
+                foreach ($entry in $zip.Entries | Where-Object { $_.FullName -match '\.(xml|rels)$' }) {
+                    $reader = New-Object -TypeName System.IO.StreamReader -ArgumentList $entry.Open()
+                    $xml = $reader.ReadToEnd()
+                    $reader.Dispose()
+                    { [xml]$xml } | Should -Not -Throw -Because "$($file.Name)/$($entry.FullName)"
+                    $xml | Should -Not -Match '\{[A-Z][A-Za-z0-9]+\}' -Because "$($file.Name)/$($entry.FullName) hat einen offenen Platzhalter"
+                }
+            }
+            finally { $zip.Dispose() }
+        }
+        foreach ($file in $files | Where-Object Extension -EQ '.pdf' | Select-Object -First 40) {
+            $bytes = [IO.File]::ReadAllBytes($file.FullName)
+            [Text.Encoding]::ASCII.GetString($bytes, 0, 5) | Should -Be '%PDF-'
+            [Text.Encoding]::ASCII.GetString($bytes, $bytes.Length - 6, 6) | Should -Match '%%EOF'
+        }
+    }
 }
 
 Describe 'infra/main.bicep' {

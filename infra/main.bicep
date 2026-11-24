@@ -91,12 +91,19 @@ param officeProductId string = 'O365ProPlusRetail'
 @description('Fileserver <K>-FS01 bereitstellen: Freigaben mit AGDLP-Berechtigungen, Basisordner, FSRM und absichtliche Altlasten fuer Uebungen. Keine Public IP.')
 param deployFileServer bool = true
 
-@description('VM-Groesse des Fileservers.')
+@description('VM-Groesse des Fileservers. Mehr vCPUs erzeugen die Beispieldokumente schneller (siehe readme).')
 @allowed([
   'Standard_B2ms'
   'Standard_D2s_v5'
+  'Standard_D4s_v5'
+  'Standard_D8s_v5'
 ])
 param fileServerVmSize string = 'Standard_B2ms'
+
+@description('Umfang der Beispieldokumente auf dem Fileserver in GB (Word, Excel, PowerPoint, PDF), 0 = keine. Was im Deployment nicht fertig wird, entsteht danach im Hintergrund.')
+@minValue(0)
+@maxValue(120)
+param fileServerDataSizeGB int = 60
 
 @description('VM-Groesse des Exchange-Servers (Microsoft empfiehlt fuer Produktion 128 GB RAM; 32 GB reichen fuer das Lab).')
 @allowed([
@@ -365,7 +372,8 @@ module clientJoin 'modules/client-join.bicep' = if (deployClient) {
   ]
 }
 
-// Vorbereitung (Disk, Ordnergeruest) parallel zum DC-Aufbau, Beitritt erst nach der DNS-Umstellung.
+// Vorbereitung (Disk, Ordnergeruest) und Beispieldokumente parallel zum DC-Aufbau und zur Exchange-Installation,
+// Beitritt erst danach und nach der DNS-Umstellung.
 module fileServer 'modules/file-server.bicep' = if (deployFileServer) {
   name: 'file-server'
   params: {
@@ -378,6 +386,7 @@ module fileServer 'modules/file-server.bicep' = if (deployFileServer) {
     privateIp: fileServerPrivateIp
     adminUsername: adminUsername
     adminPassword: adminPassword
+    sampleDataSizeGB: fileServerDataSizeGB
   }
 }
 

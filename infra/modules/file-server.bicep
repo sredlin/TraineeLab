@@ -1,5 +1,6 @@
 // Fileserver (Grundsystem): Windows Server 2025 ohne Public IP, Datendisk F: fuer die Freigaben.
-// Vorbereitung per Run Command (Disk, Regionaleinstellungen, Ordnergeruest) laeuft parallel zum Aufbau des DC.
+// Vorbereitung per Run Command (Disk, Regionaleinstellungen, Ordnergeruest) laeuft parallel zum Aufbau des DC,
+// danach erzeugt New-SampleDocuments die Beispieldokumente (Textkorpus aus der userData der VM).
 // Rollen installiert erst file-server-join.bicep nach dem Neustart des Domaenenbeitritts.
 
 @description('Azure-Region.')
@@ -32,7 +33,13 @@ param adminUsername string
 param adminPassword string
 
 @description('Groesse der Datendisk in GB.')
-param dataDiskSizeGB int = 128
+param dataDiskSizeGB int = 256
+
+@description('Umfang der Beispieldokumente in GB, 0 = keine.')
+param sampleDataSizeGB int = 60
+
+@description('Zeitbudget des Generators im Deployment in Minuten. Danach setzt ein Task im Hintergrund fort.')
+param sampleTimeBudgetMinutes int = 60
 
 resource nic 'Microsoft.Network/networkInterfaces@2025-05-01' = {
   name: 'nic-${vmName}'
@@ -62,6 +69,8 @@ resource vm 'Microsoft.Compute/virtualMachines@2025-04-01' = {
     hardwareProfile: {
       vmSize: vmSize
     }
+    // Textkorpus fuer New-SampleDocuments (gzip-JSON, per IMDS lesbar). Erzeugt von tools/Build-SampleArtifacts.ps1.
+    userData: loadFileAsBase64('../../scripts/SampleCorpus.gz')
     securityProfile: {
       securityType: 'TrustedLaunch'
       uefiSettings: {
@@ -159,6 +168,37 @@ resource prepareFileServer 'Microsoft.Compute/virtualMachines/runCommands@2025-0
     ]
     asyncExecution: false
     timeoutInSeconds: 3600
+    treatFailureAsDeploymentFailure: true
+  }
+}
+
+// Beispieldokumente vor dem Domaenenbeitritt (dessen Neustart wuerde die Erzeugung abbrechen).
+// Nach dem Zeitbudget endet der Run Command erfolgreich, der Task TraineeLab-SampleDocuments setzt fort.
+resource sampleDocuments 'Microsoft.Compute/virtualMachines/runCommands@2025-04-01' = if (sampleDataSizeGB > 0) {
+  parent: vm
+  name: 'New-SampleDocuments'
+  location: location
+  tags: tags
+  dependsOn: [
+    prepareFileServer
+  ]
+  properties: {
+    source: {
+      script: loadTextContent('../../scripts/Start-SampleDocuments.ps1')
+    }
+    parameters: [
+      {
+        name: 'TargetSizeGB'
+        value: string(sampleDataSizeGB)
+      }
+      {
+        name: 'TimeBudgetMinutes'
+        value: string(sampleTimeBudgetMinutes)
+      }
+    ]
+    asyncExecution: false
+    // Zeitbudget plus Reserve fuer laufende Einheiten, Kopien und Ordnerzeitstempel.
+    timeoutInSeconds: (sampleTimeBudgetMinutes + 45) * 60
     treatFailureAsDeploymentFailure: true
   }
 }
