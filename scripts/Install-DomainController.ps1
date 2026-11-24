@@ -373,11 +373,14 @@ function Invoke-PostRebootPhase {
             if ((Get-Service -Name NTDS).Status -eq 'Running' -and (Get-Service -Name DNS).Status -eq 'Running') {
                 Import-Module ActiveDirectory
                 Get-ADDomain -Identity $DomainName | Out-Null
+                # Ein neuer Replikat-DC wartet nach dem ersten Start auf die AD-Erstsynchronisation.
+                # Bis dahin laeuft der Dienst, die DNS-Cmdlets melden aber "Failed to get information for server".
+                Get-DnsServerForwarder -ErrorAction Stop | Out-Null
                 break
             }
         }
         catch {
-            Write-LabLog "AD noch nicht bereit: $($_.Exception.Message)"
+            Write-LabLog "AD/DNS noch nicht bereit: $($_.Exception.Message)"
         }
         if ((Get-Date) -gt $deadline) {
             throw 'AD DS/DNS nach 30 Minuten nicht bereit.'
