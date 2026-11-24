@@ -216,7 +216,7 @@
         Files = 'Personalakten'; Payslips = 'Entgeltabrechnungen'; SickNotes = 'Krankmeldungen'; Applications = 'Bewerbungen'; References = 'Zeugnisse'
         Policies = 'Richtlinien'; Docs = 'Dokumentation'; Bwa = 'BWA'; Agreements = 'Verträge'; Templates = 'Vorlagen'; Ci = 'Corporate Design'
         Branding = 'Branding'; Announcements = 'Rundschreiben'; Events = 'Veranstaltungen'; Documents = 'Dokumente'; Private = 'Privat'; Backup = 'Sicherung'
-        Former = '_Ehemalige'; Onboarding = 'Onboarding'; Kickoff = 'Jahresauftakt'; Receipts = 'Belege'; Proofs = 'Proofs'
+        Former = '_Ehemalige'; Onboarding = 'Onboarding'; Kickoff = 'Jahresauftakt'; Receipts = 'Belege'; Proofs = 'Proofs'; Letters = 'Korrespondenz'
         ProjectSteps = @('01_Angebot', '02_Briefing', '03_Konzept', '04_Entwürfe', '05_Präsentation', '06_Abrechnung')
     }
 }

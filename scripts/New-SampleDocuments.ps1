@@ -76,7 +76,7 @@ $StatusFile = Join-Path $LabRoot 'sample-documents.json'
 $PlanFile = Join-Path $LabRoot 'sample-plan.json'
 $TaskName = 'TraineeLab-SampleDocuments'
 $TempSuffix = '.tmp-sample'
-$DuplicateShare = 0.25
+$DuplicateShare = 0.33
 $ArchiveYears = 6
 $MaxYears = 12
 $SelfText = $MyInvocation.MyCommand.ScriptBlock.ToString()
@@ -3882,6 +3882,21 @@ function Add-Block {
     $Model.Blocks.Add($Data)
 }
 
+function Get-LetterModel {
+    # Geschaeftsbrief: Anschrift, Betreff, Anrede, Text aus dem Korpus, Gruss mit Name.
+    param($Record, [hashtable] $Context, $Author, [datetime] $Date, $Ci, [string[]] $Address)
+    $subject = Expand-SampleText $Record.Subject $Context
+    $letter = Get-DocModel -Title $subject -Author $Author -Created $Date -Modified $Date -Ci $Ci
+    Add-Block $letter 'Address' @{ Lines = $Address }
+    Add-Block $letter 'Info' @{ Rows = [ordered]@{ $L.Date = (Format-DateDe $Date) } }
+    Add-Block $letter 'Title' @{ Text = $subject }
+    Add-Block $letter 'Para' @{ Text = ('{0},' -f $Context.Anrede) }
+    Add-Block $letter 'Para' @{ Text = (Expand-SampleText $Record.Text $Context) }
+    Add-Block $letter 'Para' @{ Text = $L.Regards }
+    Add-Block $letter 'Sign' @{ Name = $Author.Name; Role = $C.Company.Name; Seed = $Date.DayOfYear }
+    $letter
+}
+
 function Add-DocComment {
     # Kommentar am zuletzt hinzugefuegten Block.
     param($Model, $Person, [datetime] $Date, [string] $Text)
@@ -4155,12 +4170,57 @@ function Build-ProjectUnit {
     Add-Block $invoice 'Info' @{ Rows = [ordered]@{ $L.Number = "RE-$num"; $L.Date = (Format-DateDe $dInvoice); $L.CustomerNo = $customerNo; $L.Project = $name } }
     Add-Block $invoice 'Title' @{ Text = "$($L.Invoice) RE-$num" }
     Add-Block $invoice 'Para' @{ Text = ('{0},' -f $ctx.Anrede) }
-    $null = Add-PositionTable $invoice $lines
+    $invoiceTotal = Add-PositionTable $invoice $lines
     Add-Block $invoice 'Para' @{ Text = ('{0} {1}' -f $L.Regards, $C.Company.Name) }
     $invoiceName = 'RE-{0}_{1}.pdf' -f $num, $short
     Add-Spec $specs ('{0}\{1}\{2}' -f $base, $step[5], $invoiceName) 'pdf' $dInvoice $rng @{ Model = $invoice }
     $accounting = Get-AreaPath $dInvoice ('Abteilungen\Buchhaltung\{0}\{1}' -f $F.Outgoing, $year) ('Buchhaltung\{0}' -f $F.Outgoing)
     Add-Spec $specs ('{0}\{1}' -f $accounting, $invoiceName) 'copy' $dInvoice.AddMinutes(5) $rng @{ Source = ('{0}\{1}\{2}' -f $base, $step[5], $invoiceName) }
+
+    # Korrespondenz: Brief an den Kunden, bei Druckprojekten gelegentlich an die Druckerei
+    if ($rng.Next(0, 10) -lt 4 -and $T.LetterCustomer) {
+        # Nur projektbezogene Briefe; Rundbriefe wie Preisanpassungen gehoeren nicht in den Projektordner.
+        $record = Get-RandomEntry $rng @($T.LetterCustomer | Where-Object { ('{0} {1}' -f $_.Subject, $_.Text) -match '\{Projekt\}' })
+        $dLetter = if ($record.Subject -match 'Danke') { Get-WorkDate $dInvoice $rng 3 10 } else { Get-WorkDate $dBrief $rng 2 12 }
+        $letterCtx = Get-TextContext -Rng $rng -Date $dLetter -Customer $customer -Project $name -Author $owner
+        $letterCtx.Claim = $ctx.Claim
+        Add-Spec $specs ('{0}\{1}\{2:yyyy-MM-dd}_{3}.docx' -f $base, $F.Letters, $dLetter, (ConvertTo-SafeName (Expand-SampleText $record.Subject $letterCtx))) 'docx' $dLetter $rng @{ Model = (Get-LetterModel $record $letterCtx $owner $dLetter $ci $address) }
+    }
+    if ($printFiles.Count -gt 0 -and $rng.Next(0, 10) -lt 2 -and $T.LetterSupplier) {
+        $printer = $C.Suppliers | Select-Object -First 1
+        $record = Get-RandomEntry $rng @($T.LetterSupplier | Where-Object { $_.Subject -match '\{Projekt\}' })
+        $dLetter = Get-WorkDate $dRelease $rng 3 9
+        $letterCtx = Get-TextContext -Rng $rng -Date $dLetter -Customer $customer -Project $name -Author $owner
+        $printerAddress = @($printer.Name, ('www.{0}' -f $printer.Domain), $printer.City)
+        Add-Spec $specs ('{0}\{1}\{2:yyyy-MM-dd}_{3}.docx' -f $base, $F.Letters, $dLetter, (ConvertTo-SafeName (Expand-SampleText $record.Subject $letterCtx))) 'docx' $dLetter $rng @{ Model = (Get-LetterModel $record $letterCtx $owner $dLetter $ci $printerAddress) }
+    }
+    # Zahlungserinnerung und Mahnung, wenn der Kunde nicht zahlt
+    if ($rng.Next(0, 10) -lt 2 -and $T.Reminder) {
+        $booker = Get-Person 'DHoffmann' $dInvoice 'Berlin' $rng
+        if ($booker.Department -ne 'Buchhaltung') { $booker = $PeopleBySam['MMustermann'] }
+        $level = 1
+        $dRemind = Get-WorkDate $dInvoice $rng 21 30
+        while ($level -le 2 -and $dRemind -lt $Reference) {
+            $record = Get-RandomEntry $rng @($T.Reminder | Where-Object { [int]$_.Level -eq $level })
+            $remindCtx = Get-TextContext -Rng $rng -Date $dRemind -Customer $customer -Project $name -Author $booker
+            $remindCtx.Vortermin = Format-DateDe $(if ($level -eq 1) { $dInvoice.AddDays(14) } else { $dPrevious })
+            $title = if ($level -eq 1) { $L.Reminder } else { $L.Dunning }
+            $remind = Get-DocModel -Title "$title RE-$num" -Author $booker -Created $dRemind -Modified $dRemind -Ci $ci
+            Add-Block $remind 'Address' @{ Lines = $address }
+            Add-Block $remind 'Info' @{ Rows = [ordered]@{ $L.Number = "RE-$num"; $L.Date = (Format-DateDe $dRemind); $L.CustomerNo = $customerNo } }
+            Add-Block $remind 'Title' @{ Text = "$title RE-$num" }
+            Add-Block $remind 'Para' @{ Text = ('{0},' -f $remindCtx.Anrede) }
+            Add-Block $remind 'Para' @{ Text = (Expand-SampleText $record.Text $remindCtx) }
+            Add-Block $remind 'Table' @{ Header = [string[]]@($L.Invoice, $L.Date, $L.Amount); Rows = @(, [string[]]@("RE-$num", (Format-DateDe $dInvoice), (Format-Money $invoiceTotal))); Widths = @(0.4, 0.3, 0.3); Align = 'LLR' }
+            Add-Block $remind 'Para' @{ Text = ('{0} {1}' -f $L.Regards, $C.Company.Name) }
+            $remindPath = Get-AreaPath $dRemind ('Abteilungen\Buchhaltung\{0}\{1}' -f $F.Reminders, $dRemind.Year) ('Buchhaltung\{0}' -f $F.Reminders)
+            Add-Spec $specs ('{0}\{1:yyyy-MM-dd}_{2}_RE-{3}.pdf' -f $remindPath, $dRemind, $title, $num) 'pdf' $dRemind $rng @{ Model = $remind }
+            if ($rng.Next(0, 10) -lt 6) { break }
+            $dPrevious = $dRemind
+            $dRemind = Get-WorkDate $dRemind $rng 14 21
+            $level++
+        }
+    }
 
     if ($name -match 'Kampagne|Aktion|Mailing|Social|Saison|Neujahr') {
         $dReport = Get-WorkDate $dInvoice $rng 30 60
@@ -4521,10 +4581,12 @@ function Build-PersonUnit {
         if ($privateCount -eq 0) { break }
         $record = Get-TextRecord -Kind 'PrivateNote' -Rng $rng
         $date = Get-WorkDate $p.Entry $rng 10 ([int]($end - $p.Entry).TotalDays - 2)
-        $priv = Get-DocModel -Title $record.Subject -Author $p -Created $date -Modified $date -Ci (Get-DocumentCi $date $p.Site) -SenderKind 'None'
-        Add-Block $priv 'Title' @{ Text = $record.Subject }
-        Add-Block $priv 'Para' @{ Text = $record.Text }
-        Add-Spec $specs ('{0}\{1}\{2}.docx' -f $homeFolder, $F.Private, (ConvertTo-SafeName $record.Subject)) 'docx' $date $rng @{ Model = $priv }
+        $privCtx = Get-TextContext -Rng $rng -Date $date -Author $p
+        $subject = Expand-SampleText $record.Subject $privCtx
+        $priv = Get-DocModel -Title $subject -Author $p -Created $date -Modified $date -Ci (Get-DocumentCi $date $p.Site) -SenderKind 'None'
+        Add-Block $priv 'Title' @{ Text = $subject }
+        Add-Block $priv 'Para' @{ Text = (Expand-SampleText $record.Text $privCtx) }
+        Add-Spec $specs ('{0}\{1}\{2}.docx' -f $homeFolder, $F.Private, (ConvertTo-SafeName $subject)) 'docx' $date $rng @{ Model = $priv }
     }
     , $specs.ToArray()
 }
@@ -4568,9 +4630,9 @@ function Build-ApplicationUnit {
         $replies = @($T.ApplicationReply | Where-Object { ($_.Subject -match 'Einladung') -eq $invite })
         if ($replies) { $reply = Get-RandomEntry $rng $replies }
         $replyDate = Get-WorkDate $date $rng 5 20
-        $answer = Get-DocModel -Title $reply.Subject -Author $hr -Created $replyDate -Modified $replyDate -Ci (Get-DocumentCi $replyDate 'Berlin') -Classification $L.Confidential
+        $answer = Get-DocModel -Title (Expand-SampleText $reply.Subject $ctx) -Author $hr -Created $replyDate -Modified $replyDate -Ci (Get-DocumentCi $replyDate 'Berlin') -Classification $L.Confidential
         Add-Block $answer 'Address' @{ Lines = @("$given $sur", $pdata.Street, $pdata.City) }
-        Add-Block $answer 'Title' @{ Text = $reply.Subject }
+        Add-Block $answer 'Title' @{ Text = (Expand-SampleText $reply.Subject $ctx) }
         Add-Block $answer 'Para' @{ Text = (Expand-SampleText $reply.Text $ctx) }
         Add-Block $answer 'Para' @{ Text = $L.Regards }
         Add-Block $answer 'Sign' @{ Name = $hr.Name; Role = $hr.Role; Seed = 21 }
@@ -4591,12 +4653,14 @@ function Build-ApplicationUnit {
 function Get-PolicyModel {
     param($Record, $Author, [datetime] $Date, [int] $Version)
     $marking = if ($Record.Classification -in $L.Confidential, $L.Secret) { $Record.Classification } else { $null }
-    $model = Get-DocModel -Title $Record.Title -Author $Author -Created $Date -Modified $Date -Ci (Get-DocumentCi $Date 'Berlin') -SenderKind 'None' -Marking $marking -Classification $Record.Classification
-    Add-Block $model 'Title' @{ Text = $Record.Title }
+    $policyCtx = Get-TextContext -Rng (Get-Rng -Index $Version -Salt 3) -Date $Date -Author $Author
+    $title = Expand-SampleText $Record.Title $policyCtx
+    $model = Get-DocModel -Title $title -Author $Author -Created $Date -Modified $Date -Ci (Get-DocumentCi $Date 'Berlin') -SenderKind 'None' -Marking $marking -Classification $Record.Classification
+    Add-Block $model 'Title' @{ Text = $title }
     Add-Block $model 'Para' @{ Text = ($L.VersionOf -f $Version, (Format-DateDe $Date)) }
     foreach ($section in $Record.Sections) {
-        Add-Block $model 'Heading' @{ Text = $section.Title }
-        Add-Block $model 'Para' @{ Text = (Expand-SampleText $section.Text (Get-TextContext -Rng (Get-Rng -Index $Version -Salt 3) -Date $Date -Author $Author)) }
+        Add-Block $model 'Heading' @{ Text = (Expand-SampleText $section.Title $policyCtx) }
+        Add-Block $model 'Para' @{ Text = (Expand-SampleText $section.Text $policyCtx) }
     }
     $model
 }
@@ -4657,7 +4721,8 @@ function Build-YearUnit {
     }
     # Onboarding fuer neue Mitarbeitende des Jahres
     if (@($People | Where-Object { $_.Entry.Year -eq $year }) -and $T.OnboardingSlide) {
-        $slides = @(@{ Layout = 'Title'; Title = $L.Welcome; Subtitle = $C.Company.Name }) + @($T.OnboardingSlide | ForEach-Object { @{ Layout = 'Content'; Title = $_.Title; Bullets = @(($_.Text -split "`n") | Where-Object { $_ }) } })
+        $onboardingCtx = Get-TextContext -Rng $rng -Date $jan.AddDays(30) -Author (Get-Person 'NPohl' $jan 'Berlin' $rng)
+        $slides = @(@{ Layout = 'Title'; Title = $L.Welcome; Subtitle = $C.Company.Name }) + @($T.OnboardingSlide | ForEach-Object { @{ Layout = 'Content'; Title = (Expand-SampleText $_.Title $onboardingCtx); Bullets = @(((Expand-SampleText $_.Text $onboardingCtx) -split "`n") | Where-Object { $_ }) } })
         Add-Spec $specs ('Abteilungen\Allgemein\{0}\{0}_{1}.pptx' -f $F.Onboarding, $year) 'pptx' $jan.AddDays(30) $rng @{ Model = @{ Title = "$($L.Welcome) $year"; Author = (Get-Person 'NPohl' $jan 'Berlin' $rng).Name; Company = $C.Company.Name; Ci = $ci; Wide = $true; Slides = $slides } }
     }
     # Fehlablagen (Uebung Datenklassifizierung): Gehaltsliste ohne Kennzeichnung im Basisordner und im Marketing
@@ -4718,19 +4783,20 @@ function Build-EventUnit {
         }
     }
     if ($timelineEvent.Event -eq 'Anniversary') {
-        $slides = @(@{ Layout = 'Title'; Title = '10 Jahre'; Subtitle = $C.Company.Name }) + @(@($T.KickoffSlide) | Select-Object -First 3 | ForEach-Object { @{ Layout = 'Content'; Title = $_.Title; Bullets = @(($_.Text -split "`n") | Where-Object { $_ }) } })
+        $anniversaryCtx = Get-TextContext -Rng $rng -Date $date -Author $author
+        $slides = @(@{ Layout = 'Title'; Title = '10 Jahre'; Subtitle = $C.Company.Name }) + @(@($T.KickoffSlide) | Select-Object -First 3 | ForEach-Object { @{ Layout = 'Content'; Title = (Expand-SampleText $_.Title $anniversaryCtx); Bullets = @(((Expand-SampleText $_.Text $anniversaryCtx) -split "`n") | Where-Object { $_ }) } })
         Add-Spec $specs ('Abteilungen\Allgemein\{0}\10_Jahre_{1}.pptx' -f $F.Events, $C.Company.Short.Replace(' ', '_')) 'pptx' $date $rng @{ Model = @{ Title = '10 Jahre'; Author = $author.Name; Company = $C.Company.Name; Ci = $ci; Wide = $true; Slides = $slides } }
     }
     if ($timelineEvent.Event -eq 'Rebranding') {
         $hb = Get-DocModel -Title 'Corporate-Design-Handbuch' -Author $PeopleBySam['EMustermann'] -Created $date -Modified $date -Ci $ci -SenderKind 'None' -Classification $L.Internal
         Add-Block $hb 'Title' @{ Text = 'Corporate-Design-Handbuch' }
-        foreach ($i in (Get-LogoItem 0 0 40 $ci)) { $null = $i }
         if ($UseRaster) { $logo = Get-LogoPng $ci 60 200; Add-Block $hb 'Image' @{ Bytes = $logo.Bytes; Format = 'png'; WidthPx = $logo.WidthPx; HeightPx = $logo.HeightPx; WidthCm = 10 } }
-        foreach ($chapter in @($T.CiHandbook)) { Add-Block $hb 'Heading' @{ Text = $chapter.Title }; Add-Block $hb 'Para' @{ Text = $chapter.Text } }
+        $hbCtx = Get-TextContext -Rng $rng -Date $date -Author $PeopleBySam['EMustermann']
+        foreach ($chapter in @($T.CiHandbook)) { Add-Block $hb 'Heading' @{ Text = (Expand-SampleText $chapter.Title $hbCtx) }; Add-Block $hb 'Para' @{ Text = (Expand-SampleText $chapter.Text $hbCtx) } }
         $ciFolder = 'Abteilungen\Allgemein\{0}' -f $F.Ci
         Add-Spec $specs "$ciFolder\Corporate-Design-Handbuch.docx" 'docx' $date $rng @{ Model = $hb }
         Add-Spec $specs "$ciFolder\Corporate-Design-Handbuch.pdf" 'pdf' $date.AddHours(1) $rng @{ Model = $hb }
-        $slides = @(@{ Layout = 'Title'; Title = 'Unser neuer Auftritt'; Subtitle = $C.Company.Name }) + @($T.CiHandbook | ForEach-Object { @{ Layout = 'Content'; Title = $_.Title; Text = $_.Text } })
+        $slides = @(@{ Layout = 'Title'; Title = 'Unser neuer Auftritt'; Subtitle = $C.Company.Name }) + @($T.CiHandbook | ForEach-Object { @{ Layout = 'Content'; Title = (Expand-SampleText $_.Title $hbCtx); Text = (Expand-SampleText $_.Text $hbCtx) } })
         Add-Spec $specs "$ciFolder\Corporate-Design-Handbuch.pptx" 'pptx' $date.AddHours(2) $rng @{ Model = @{ Title = 'Corporate Design'; Author = $PeopleBySam['EMustermann'].Name; Company = $C.Company.Name; Ci = $ci; Wide = $true; Slides = $slides } }
         Build-TemplateSpec $specs $date $ci $rng
     }
@@ -4774,7 +4840,7 @@ function Build-MeetingUnit {
                 Add-Block $model 'Title' @{ Text = ('{0} {1} {2}' -f $L.Minutes, $MidDot, (Format-DateDe $date)) }
                 Add-Block $model 'Info' @{ Rows = [ordered]@{ $L.Attendees = (($team | Select-Object -First 7 | ForEach-Object { $_.Name }) -join ', '); $L.Owner = $keeper.Name } }
                 foreach ($topic in (Get-RandomSubset $rng $T.MinutesTopic (2 + $rng.Next(0, 2)))) {
-                    Add-Block $model 'Heading' @{ Text = $topic.Title }
+                    Add-Block $model 'Heading' @{ Text = (Expand-SampleText $topic.Title $ctx) }
                     Add-Block $model 'Para' @{ Text = (Expand-SampleText $topic.Text $ctx) }
                 }
                 $path = Get-AreaPath $date ('Abteilungen\Marketing\{0}\{1}\{2}' -f $Unit.Site, $F.Minutes, $year) ('Marketing\{0}\{1}' -f $Unit.Site, $F.Minutes)
@@ -4832,7 +4898,8 @@ function Build-BrandingSpec {
     foreach ($doc in @(@{ Kind = 'BrandingGuide'; Name = 'Anleitung_Entra-Branding' }, @{ Kind = 'SignInText'; Name = 'Anmeldeseite_Texte' })) {
         $model = Get-DocModel -Title ($doc.Name -replace '_', ' ') -Author (Get-Person 'NPohl' $Date 'Berlin' $Rng) -Created $Date -Modified $Date -Ci $ciNew -SenderKind 'None' -Classification $L.Internal
         Add-Block $model 'Title' @{ Text = ($doc.Name -replace '_', ' ') }
-        foreach ($chapter in @($T[$doc.Kind])) { Add-Block $model 'Heading' @{ Text = $chapter.Title }; Add-Block $model 'Para' @{ Text = $chapter.Text } }
+        $docCtx = Get-TextContext -Rng $Rng -Date $Date -Author (Get-Person 'NPohl' $Date 'Berlin' $Rng)
+        foreach ($chapter in @($T[$doc.Kind])) { Add-Block $model 'Heading' @{ Text = (Expand-SampleText $chapter.Title $docCtx) }; Add-Block $model 'Para' @{ Text = (Expand-SampleText $chapter.Text $docCtx) } }
         Add-Spec $Specs "$folder\$($doc.Name).docx" 'docx' $Date $Rng @{ Model = $model }
     }
 }

@@ -38,6 +38,12 @@ param dcIp string
 @description('Private IP des Exchange-Servers.')
 param exchangeIp string
 
+@description('Dauergroesse der VM nach den Beispieldokumenten, leer = Groesse bleibt.')
+param finalVmSize string = ''
+
+@description('Verkleinern erst nach fertigen Beispieldokumenten.')
+param waitForSampleDocuments bool = true
+
 resource vm 'Microsoft.Compute/virtualMachines@2025-04-01' existing = {
   name: vmName
 }
@@ -152,6 +158,18 @@ resource completeFileServer 'Microsoft.Compute/virtualMachines/runCommands@2025-
       {
         name: 'UpdateScriptB64'
         value: loadFileAsBase64('../../scripts/Update-LabServer.ps1')
+      }
+      {
+        name: 'FinalVmSize'
+        value: finalVmSize
+      }
+      {
+        name: 'ResizeScriptB64'
+        value: empty(finalVmSize) ? '' : loadFileAsBase64('../../scripts/Resize-FileServer.ps1')
+      }
+      {
+        name: 'WaitForSampleDocuments'
+        value: waitForSampleDocuments ? 'true' : 'false'
       }
     ]
     protectedParameters: [

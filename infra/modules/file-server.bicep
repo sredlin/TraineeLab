@@ -41,6 +41,12 @@ param sampleDataSizeGB int = 60
 @description('Zeitbudget des Generators im Deployment in Minuten. Danach setzt ein Task im Hintergrund fort.')
 param sampleTimeBudgetMinutes int = 60
 
+@description('Dauergroesse nach den Beispieldokumenten, leer = Groesse bleibt. Die VM verkleinert sich selbst (Resize-FileServer.ps1).')
+param finalVmSize string = ''
+
+// Virtual Machine Contributor: Groessenaenderung inklusive der verknuepften NIC und Disks.
+var vmContributorRoleId = '9980e02c-c2be-4d73-94e8-173b1dc7cf3c'
+
 resource nic 'Microsoft.Network/networkInterfaces@2025-05-01' = {
   name: 'nic-${vmName}'
   location: location
@@ -65,6 +71,9 @@ resource vm 'Microsoft.Compute/virtualMachines@2025-04-01' = {
   name: vmName
   location: location
   tags: tags
+  identity: {
+    type: 'SystemAssigned'
+  }
   properties: {
     hardwareProfile: {
       vmSize: vmSize
@@ -200,6 +209,18 @@ resource sampleDocuments 'Microsoft.Compute/virtualMachines/runCommands@2025-04-
     // Zeitbudget plus Reserve fuer laufende Einheiten, Kopien und Ordnerzeitstempel.
     timeoutInSeconds: (sampleTimeBudgetMinutes + 45) * 60
     treatFailureAsDeploymentFailure: true
+  }
+}
+
+// Die VM verkleinert sich nach der Erzeugung selbst. Rolle auf der Ressourcengruppe, weil die Aenderung
+// auch die verknuepfte NIC und die Disks prueft; die Trainees sind ohnehin Owner der Gruppe.
+resource resizeRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!empty(finalVmSize)) {
+  name: guid(resourceGroup().id, vm.id, vmContributorRoleId)
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', vmContributorRoleId)
+    principalId: vm.identity.principalId
+    principalType: 'ServicePrincipal'
+    description: 'Automatische Verkleinerung des Fileservers ${vmName} nach den Beispieldokumenten'
   }
 }
 

@@ -22,6 +22,8 @@
       - Basisordner Home\<Benutzer> mit Besitzer und AD-Attributen HomeDrive/HomeDirectory
       - absichtliche Altlasten aus FileServer.psd1 (Kapitel 8 der Uebungen)
       - einmaliger Update-Task (Update-LabServer.ps1) und Lab-Info.txt auf dem oeffentlichen Desktop
+      - optional Task TraineeLab-FileServerResize: verkleinert die VM nach Beispieldokumenten und Updates
+        auf FinalVmSize (Resize-FileServer.ps1, verwaltete Identitaet der VM)
 
     Das Skript ist idempotent und enthaelt bewusst nur ASCII-Zeichen (Windows PowerShell 5.1).
 #>
@@ -46,6 +48,11 @@ param(
     [string] $CompanyOu,
     [string] $UpdateScriptB64,
 
+    # Optional: Dauergroesse der VM nach den Beispieldokumenten (leer = Groesse bleibt).
+    [string] $FinalVmSize = '',
+    [string] $ResizeScriptB64 = '',
+    [string] $WaitForSampleDocuments = 'true',
+
     [int] $UserWaitMinutes = 90
 )
 
@@ -59,7 +66,9 @@ $LabUsersFile = Join-Path $ScriptDir 'LabUsers.psd1'
 $FileServerFile = Join-Path $ScriptDir 'FileServer.psd1'
 $SampleStatusFile = Join-Path $LabRoot 'sample-documents.json'
 $HomeOwnerMarker = Join-Path $LabRoot 'fs-home-owner.done'
+$CompleteMarker = Join-Path $LabRoot 'fs-complete.done'
 $UpdateTaskName = 'ExchangeLab-InitialUpdates'
+$ResizeTaskName = 'TraineeLab-FileServerResize'
 
 # Well-known SIDs (sprachunabhaengig).
 $SidAdministrators = 'S-1-5-32-544'
@@ -561,6 +570,26 @@ function Register-LabUpdateTask {
     Write-LabLog "Update-Task $TaskName registriert und gestartet."
 }
 
+function Register-ResizeTask {
+    # Verkleinert die VM, sobald Beispieldokumente, Einrichtung und Updates fertig sind (Resize-FileServer.ps1).
+    if (-not $FinalVmSize -or -not $ResizeScriptB64) {
+        Write-LabLog 'Keine Dauergroesse angegeben, die VM-Groesse bleibt.'
+        return
+    }
+    $scriptPath = Join-Path $ScriptDir 'Resize-FileServer.ps1'
+    Set-Content -Path $scriptPath -Value (ConvertFrom-Base64String $ResizeScriptB64) -Encoding ASCII
+    $wait = if ($WaitForSampleDocuments -eq 'false') { '$false' } else { '$true' }
+    $arguments = '-NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "& ''{0}'' -TargetSize {1} -WaitForSampleDocuments {2}"' -f $scriptPath, $FinalVmSize, $wait
+    $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument $arguments
+    $atStartup = New-ScheduledTaskTrigger -AtStartup
+    $atStartup.Delay = 'PT10M'
+    $repeat = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(15) -RepetitionInterval (New-TimeSpan -Minutes 15)
+    $principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
+    $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minutes 10) -StartWhenAvailable -MultipleInstances IgnoreNew
+    Register-ScheduledTask -TaskName $ResizeTaskName -Action $action -Trigger @($atStartup, $repeat) -Principal $principal -Settings $settings -Force | Out-Null
+    Write-LabLog "Task $ResizeTaskName registriert: Verkleinerung auf $FinalVmSize nach Beispieldokumenten und Updates."
+}
+
 function Get-SampleStatusText {
     if (-not (Test-Path -Path $SampleStatusFile)) {
         return 'keine (Generator nicht gelaufen)'
@@ -585,6 +614,7 @@ function Publish-FileServerDesktop {
             "Domain:        $DomainName (NetBIOS $NetbiosName)"
             "Datenlaufwerk: $($Config.Root)"
             "Beispieldaten: $(Get-SampleStatusText)"
+            $(if ($FinalVmSize) { "VM-Groesse:    nach Beispieldaten und Updates automatisch $FinalVmSize (Resize-FileServer.log)" } else { '' })
             ''
             'FREIGABEN (zugriffsbasierte Aufzaehlung aktiv)'
         )
@@ -648,6 +678,8 @@ function Invoke-CompletePhase {
     Add-LegacyPermission -Config $config
     Register-LabUpdateTask -ScriptContent (ConvertFrom-Base64String $UpdateScriptB64) -TaskName $UpdateTaskName
     Publish-FileServerDesktop -Config $config
+    Set-Content -Path $CompleteMarker -Value (Get-Date -Format 's') -Encoding ASCII
+    Register-ResizeTask
 }
 
 #endregion

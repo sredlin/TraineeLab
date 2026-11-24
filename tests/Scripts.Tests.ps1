@@ -306,6 +306,20 @@ Describe 'azuredeploy.json' {
         $join = $template.resources | Where-Object name -EQ 'file-server-join'
         ($join.dependsOn -join ' ') | Should -Match 'file-server'
     }
+
+    It 'erzeugt mit D4s_v5 und verkleinert den Fileserver danach selbst auf B2ms' {
+        $template.parameters.fileServerVmSize.defaultValue | Should -Be 'Standard_D4s_v5'
+        $template.parameters.fileServerFinalVmSize.defaultValue | Should -Be 'Standard_B2ms'
+        $fileServerModule = ($template.resources | Where-Object name -EQ 'file-server').properties.template
+        $vm = $fileServerModule.resources | Where-Object type -EQ 'Microsoft.Compute/virtualMachines'
+        $vm.identity.type | Should -Be 'SystemAssigned'
+        $role = $fileServerModule.resources | Where-Object type -EQ 'Microsoft.Authorization/roleAssignments'
+        $role | Should -Not -BeNullOrEmpty
+        $role.properties.roleDefinitionId | Should -Match 'vmContributorRoleId'
+        $fileServerModule.variables.vmContributorRoleId | Should -Be '9980e02c-c2be-4d73-94e8-173b1dc7cf3c'  # Virtual Machine Contributor
+        $templateText | Should -Match 'TraineeLab-FileServerResize'
+        $templateText | Should -Match 'ResizeScriptB64'
+    }
 }
 
 Describe 'Beispieldokumente (Korpus, Artefakte, Generator)' {
@@ -396,7 +410,7 @@ Describe 'Beispieldokumente (Korpus, Artefakte, Generator)' {
     It 'erzeugt ohne Rastergrafik gueltige Dateien ohne offene Platzhalter (Smoke-Test)' {
         $target = Join-Path $TestDrive 'daten'
         $labRoot = Join-Path $TestDrive 'lab'
-        $arguments = @('-NoProfile', '-NonInteractive', '-File', $generatorPath, '-TargetPath', $target, '-TargetSizeMB', '3', '-LabRoot', $labRoot,
+        $arguments = @('-NoProfile', '-NonInteractive', '-File', $generatorPath, '-TargetPath', $target, '-TargetSizeMB', '6', '-LabRoot', $labRoot,
             '-CorpusPath', $corpusDir, '-LabUsersPath', (Join-Path $repoRoot 'scripts/LabUsers.psd1'), '-ReferenceDate', '2026-11-24',
             '-WorkerCount', '1', '-NoRaster', '-TimeBudgetMinutes', '0')
         & (Get-Process -Id $PID).Path @arguments | Out-Null

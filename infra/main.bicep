@@ -98,7 +98,16 @@ param deployFileServer bool = true
   'Standard_D4s_v5'
   'Standard_D8s_v5'
 ])
-param fileServerVmSize string = 'Standard_B2ms'
+param fileServerVmSize string = 'Standard_D4s_v5'
+
+@description('Dauergroesse des Fileservers: Nach Beispieldokumenten und Updates verkleinert sich die VM selbst darauf. Leer = fileServerVmSize bleibt.')
+@allowed([
+  ''
+  'Standard_B2ms'
+  'Standard_D2s_v5'
+  'Standard_D4s_v5'
+])
+param fileServerFinalVmSize string = 'Standard_B2ms'
 
 @description('Umfang der Beispieldokumente auf dem Fileserver in GB (Word, Excel, PowerPoint, PDF), 0 = keine. Was im Deployment nicht fertig wird, entsteht danach im Hintergrund.')
 @minValue(0)
@@ -130,6 +139,7 @@ var dcPrivateIp = '10.0.1.4'
 var exchangePrivateIp = '10.0.1.5'
 var dc2PrivateIp = '10.0.1.6'
 var fileServerPrivateIp = '10.0.1.7'
+var fileServerResizeTo = fileServerFinalVmSize == fileServerVmSize ? '' : fileServerFinalVmSize
 var clientPrivateIp = '10.0.1.10'
 
 var names = {
@@ -387,6 +397,7 @@ module fileServer 'modules/file-server.bicep' = if (deployFileServer) {
     adminUsername: adminUsername
     adminPassword: adminPassword
     sampleDataSizeGB: fileServerDataSizeGB
+    finalVmSize: fileServerResizeTo
   }
 }
 
@@ -406,6 +417,8 @@ module fileServerJoin 'modules/file-server-join.bicep' = if (deployFileServer) {
     dcComputerName: names.dcComputer
     dcIp: dcPrivateIp
     exchangeIp: exchangePrivateIp
+    finalVmSize: fileServerResizeTo
+    waitForSampleDocuments: fileServerDataSizeGB > 0
   }
   dependsOn: [
     fileServer
