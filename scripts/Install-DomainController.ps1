@@ -14,6 +14,11 @@
       - Modus 'Replica': weiterer DC in der bestehenden Domain (Domain-Admin im UPN-Format)
       - registriert einen einmaligen Startup-Task fuer Phase 'PostReboot'
       - verzoegerter Neustart (120 s), damit der Run Command seinen Status melden kann
+      - hat die Windows-Wartung bereits einen Neustart vorgemerkt, verweigert dcpromo die Heraufstufung:
+        dann Kennwoerter DPAPI-geschuetzt ablegen, Startup-Task fuer Phase 'Promote' registrieren, neu starten
+
+    Phase 'Promote' (einmaliger Startup-Task, SYSTEM, nur nach vorgemerktem Neustart):
+      - liest und loescht die Kennwoerter, stuft herauf wie oben, danach weiter mit 'PostReboot'
 
     Phase 'PostReboot' (einmaliger Startup-Task, SYSTEM, keine Secrets):
       - DNS-Forwarder 168.63.129.16, DNS-Registrierung des DC
@@ -52,7 +57,7 @@ param(
     [string] $AdminPasswordB64,
     [string] $FirstDcIp,
 
-    [ValidateSet('Install', 'PostReboot')]
+    [ValidateSet('Install', 'Promote', 'PostReboot')]
     [string] $Phase = 'Install'
 )
 
@@ -63,6 +68,10 @@ $LabRoot = 'C:\ExchangeLab'
 $LogDir = Join-Path $LabRoot 'Logs'
 $ScriptDir = Join-Path $LabRoot 'Scripts'
 $TaskName = 'ExchangeLab-CompleteDomainController'
+$PromoteTaskName = 'ExchangeLab-PromoteDomainController'
+$SecretDir = Join-Path $LabRoot 'Secrets'
+$SecretFile = Join-Path $SecretDir 'promote.dat'
+$PromoteAttemptFile = Join-Path $LabRoot 'promote-attempts.txt'
 $MarkerFile = Join-Path $LabRoot 'dc-ready.txt'
 $SelfText = $MyInvocation.MyCommand.ScriptBlock.ToString()
 
@@ -111,6 +120,10 @@ function Initialize-DataDisk {
     Format-Volume -DriveLetter $DriveLetter -FileSystem $FileSystem -NewFileSystemLabel $Label -Confirm:$false | Out-Null
 }
 
+function Test-CbsRebootPending {
+    Test-Path -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending'
+}
+
 function Initialize-RegionalSetting {
     Write-LabLog 'Setze deutsche Regionaleinstellungen (Zeitzone, Gebietsschema, Tastatur).'
     Set-TimeZone -Id 'W. Europe Standard Time'
@@ -127,6 +140,10 @@ function Initialize-RegionalSetting {
 function Save-OwnScript {
     param([Parameter(Mandatory)][string] $Destination)
     if ($PSCommandPath -and (Test-Path -Path $PSCommandPath)) {
+        # Startup-Tasks laufen bereits aus der Kopie (Phase Promote): nicht auf sich selbst kopieren.
+        if ([IO.Path]::GetFullPath($PSCommandPath) -ieq [IO.Path]::GetFullPath($Destination)) {
+            return
+        }
         Copy-Item -Path $PSCommandPath -Destination $Destination -Force
     }
     else {
@@ -171,14 +188,61 @@ function Add-ReverseLookupZone {
     Write-LabLog "Reverse-Zone $zoneName ($networkId) angelegt."
 }
 
+function Register-PhaseTask {
+    # Startup-Task fuer eine spaetere Phase. Keine Secrets in den Argumenten.
+    param(
+        [Parameter(Mandatory)][string] $Name,
+        [Parameter(Mandatory)][ValidateSet('Promote', 'PostReboot')][string] $TargetPhase
+    )
+    $scriptCopy = Join-Path $ScriptDir 'Install-DomainController.ps1'
+    Save-OwnScript -Destination $scriptCopy
+    $arguments = '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "{0}" -Phase {1} -DomainName {2} -NetbiosName {3} -PublicDomainName {4} -ExchangeIp {5} -Mode {6}' -f $scriptCopy, $TargetPhase, $DomainName, $NetbiosName, $PublicDomainName, $ExchangeIp, $Mode
+    if ($Mode -eq 'Replica') {
+        $arguments += " -AdminUser $AdminUser -FirstDcIp $FirstDcIp"
+    }
+    $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument $arguments
+    $trigger = New-ScheduledTaskTrigger -AtStartup
+    $principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
+    $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Hours 2) -StartWhenAvailable
+    Register-ScheduledTask -TaskName $Name -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Force | Out-Null
+    Write-LabLog "Startup-Task $Name (Phase $TargetPhase) registriert."
+}
+
+function Save-PromotionSecret {
+    # DPAPI (LocalMachine), Ordner nur fuer Administratoren und SYSTEM; wird nach der Heraufstufung geloescht.
+    Add-Type -AssemblyName System.Security
+    New-Item -Path $SecretDir -ItemType Directory -Force | Out-Null
+    & icacls.exe $SecretDir /inheritance:r /grant:r '*S-1-5-32-544:(OI)(CI)F' '*S-1-5-18:(OI)(CI)F' | Out-Null
+    $payload = @{ SafeModePasswordB64 = $SafeModePasswordB64; AdminPasswordB64 = $AdminPasswordB64 } | ConvertTo-Json -Compress
+    $protected = [Security.Cryptography.ProtectedData]::Protect([Text.Encoding]::UTF8.GetBytes($payload), $null, [Security.Cryptography.DataProtectionScope]::LocalMachine)
+    [IO.File]::WriteAllBytes($SecretFile, $protected)
+}
+
+function Get-PromotionSecret {
+    Add-Type -AssemblyName System.Security
+    $bytes = [Security.Cryptography.ProtectedData]::Unprotect([IO.File]::ReadAllBytes($SecretFile), $null, [Security.Cryptography.DataProtectionScope]::LocalMachine)
+    [Text.Encoding]::UTF8.GetString($bytes) | ConvertFrom-Json
+}
+
 function Invoke-InstallPhase {
     if ((Get-CimInstance -ClassName Win32_ComputerSystem).DomainRole -ge 4) {
         Write-LabLog 'Server ist bereits Domain Controller, nichts zu tun.'
         return
     }
+    if (Get-ScheduledTask -TaskName $PromoteTaskName -ErrorAction SilentlyContinue) {
+        Write-LabLog 'Heraufstufung nach Neustart ist bereits geplant, nichts zu tun.'
+        return
+    }
 
     if (-not $SafeModePasswordB64) {
         throw 'SafeModePasswordB64 fehlt.'
+    }
+    if ($Mode -eq 'Replica') {
+        foreach ($name in 'AdminUser', 'AdminPasswordB64', 'FirstDcIp') {
+            if (-not (Get-Variable -Name $name -ValueOnly)) {
+                throw "Parameter $name fehlt (Modus Replica)."
+            }
+        }
     }
 
     Initialize-DataDisk -DriveLetter 'F' -FileSystem NTFS -Label 'ADDS'
@@ -190,16 +254,76 @@ function Invoke-InstallPhase {
         throw 'Installation von AD-Domain-Services/DNS fehlgeschlagen.'
     }
 
+    # Windows-Wartung nach dem ersten Start (CbsTask, LanguageFeaturesOnDemand) merkt nach etwa
+    # 12-16 Minuten einen Neustart vor. Danach verweigert dcpromo die Heraufstufung ("Role change is in
+    # progress or this computer needs to be restarted"), auch mit -SkipPreChecks. Je nach Zeitpunkt trifft
+    # das den ersten oder den weiteren DC (im Testdeployment nachgewiesen). In diesem Fall erst neu starten
+    # und per Startup-Task heraufstufen. Der Run Command meldet trotzdem Erfolg: Alle nachfolgenden Schritte
+    # warten ohnehin per Wait-DomainController, bis der erste DC wirklich bereit ist.
+    if (Test-CbsRebootPending) {
+        Save-PromotionSecret
+        Register-PhaseTask -Name $PromoteTaskName -TargetPhase Promote
+        Write-LabLog 'Windows-Wartung hat einen Neustart vorgemerkt (CBS RebootPending). Heraufstufung nach dem Neustart, Neustart in 60 Sekunden.'
+        & shutdown.exe /r /t 60 /c 'ExchangeLab: Neustart vor der DC-Heraufstufung (Windows-Wartung)' /d p:4:2 | Out-Null
+        return
+    }
+
+    Invoke-Promotion
+}
+
+function Invoke-PromotePhase {
+    try {
+        if ((Get-CimInstance -ClassName Win32_ComputerSystem).DomainRole -ge 4) {
+            Write-LabLog 'Server ist bereits Domain Controller, nichts zu tun.'
+            return
+        }
+        if (Test-CbsRebootPending) {
+            # Wartung noch nicht abgeschlossen: hoechstens zwei weitere Neustarts, danach abbrechen.
+            $attempt = 1
+            if (Test-Path -Path $PromoteAttemptFile) {
+                $attempt = [int](Get-Content -Path $PromoteAttemptFile -Raw) + 1
+            }
+            Set-Content -Path $PromoteAttemptFile -Value $attempt -Encoding ASCII
+            if ($attempt -gt 2) {
+                throw 'Nach zwei weiteren Neustarts ist immer noch ein Neustart vorgemerkt, Heraufstufung abgebrochen.'
+            }
+            Write-LabLog "Immer noch Neustart vorgemerkt, weiterer Neustart (Versuch $attempt von 2)."
+            & shutdown.exe /r /t 30 /c 'ExchangeLab: weiterer Neustart vor der DC-Heraufstufung' /d p:4:2 | Out-Null
+            return
+        }
+
+        # Startup-Tasks laufen frueh im Boot: erst warten, bis das Netz bzw. der erste DC erreichbar ist.
+        if ($Mode -eq 'Replica') {
+            $deadline = (Get-Date).AddMinutes(10)
+            while (-not (Test-NetConnection -ComputerName $FirstDcIp -Port 389 -InformationLevel Quiet -WarningAction SilentlyContinue)) {
+                if ((Get-Date) -gt $deadline) {
+                    throw "Erster DC $FirstDcIp nach 10 Minuten nicht per LDAP erreichbar."
+                }
+                Start-Sleep -Seconds 15
+            }
+        }
+        else {
+            Start-Sleep -Seconds 30
+        }
+
+        $secret = Get-PromotionSecret
+        $script:SafeModePasswordB64 = $secret.SafeModePasswordB64
+        $script:AdminPasswordB64 = $secret.AdminPasswordB64
+        Remove-Item -Path $SecretFile -Force
+        Unregister-ScheduledTask -TaskName $PromoteTaskName -Confirm:$false -ErrorAction SilentlyContinue
+        Invoke-Promotion
+    }
+    catch {
+        # Ohne Secret und Task kein endloser Kreislauf; der Fehler steht im Log.
+        Remove-Item -Path $SecretFile -Force -ErrorAction SilentlyContinue
+        Unregister-ScheduledTask -TaskName $PromoteTaskName -Confirm:$false -ErrorAction SilentlyContinue
+        throw
+    }
+}
+
+function Invoke-Promotion {
     # Erst Registrierung des Startup-Tasks, dann Heraufstufung: so laeuft PostReboot garantiert nach dem Neustart.
-    $scriptCopy = Join-Path $ScriptDir 'Install-DomainController.ps1'
-    Save-OwnScript -Destination $scriptCopy
-    $arguments = '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "{0}" -Phase PostReboot -DomainName {1} -NetbiosName {2} -PublicDomainName {3} -ExchangeIp {4} -Mode {5}' -f $scriptCopy, $DomainName, $NetbiosName, $PublicDomainName, $ExchangeIp, $Mode
-    $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument $arguments
-    $trigger = New-ScheduledTaskTrigger -AtStartup
-    $principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
-    $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Hours 2) -StartWhenAvailable
-    Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Force | Out-Null
-    Write-LabLog "Startup-Task $TaskName registriert."
+    Register-PhaseTask -Name $TaskName -TargetPhase PostReboot
 
     $safeModePassword = ConvertTo-SecureString -String (ConvertFrom-Base64String $SafeModePasswordB64) -AsPlainText -Force
     Import-Module ADDSDeployment
@@ -222,11 +346,6 @@ function Invoke-InstallPhase {
         $dnsServers = @('127.0.0.1')
     }
     else {
-        foreach ($name in 'AdminUser', 'AdminPasswordB64', 'FirstDcIp') {
-            if (-not (Get-Variable -Name $name -ValueOnly)) {
-                throw "Parameter $name fehlt (Modus Replica)."
-            }
-        }
         # UPN-Format: von einem Rechner ausserhalb der Domain scheitert NETBIOS\Benutzer.
         $adminPassword = ConvertTo-SecureString -String (ConvertFrom-Base64String $AdminPasswordB64) -AsPlainText -Force
         $credential = New-Object -TypeName System.Management.Automation.PSCredential -ArgumentList "$AdminUser@$DomainName", $adminPassword
@@ -300,6 +419,7 @@ try {
     Write-LabLog "Start (Domain $DomainName)."
     switch ($Phase) {
         'Install' { Invoke-InstallPhase }
+        'Promote' { Invoke-PromotePhase }
         'PostReboot' { Invoke-PostRebootPhase }
     }
     Write-LabLog 'Ende ohne Fehler.'

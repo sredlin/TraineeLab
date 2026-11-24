@@ -667,8 +667,16 @@ function Publish-LabDesktop {
         $desktop = Join-Path $env:PUBLIC 'Desktop'
         $mailHost = "mail.$PublicDomainName"
         $dcNames = @($DcComputerName, $SecondDcComputerName) | Where-Object { $_ }
-        $certificate = Get-ExchangeCertificate -Server $env:COMPUTERNAME | Where-Object { "$($_.Services)" -match 'IIS' } |
+        # Lokaler Zertifikatsspeicher statt Get-ExchangeCertificate: In der Remote-Sitzung liefert der Filter
+        # auf Services nichts (im Testdeployment nachgewiesen).
+        $certificate = Get-ChildItem -Path Cert:\LocalMachine\My | Where-Object { $_.Subject -like "*$PublicDomainName*" } |
             Sort-Object -Property NotAfter -Descending | Select-Object -First 1
+        $certificateText = if ($certificate) {
+            "$($certificate.Subject), Aussteller $($certificate.Issuer), gueltig bis $($certificate.NotAfter)"
+        }
+        else {
+            'selbstsigniert, kein Let''s-Encrypt-Zertifikat (siehe C:\ExchangeLab\letsencrypt-failed.txt)'
+        }
 
         $lines = @(
             "EXCHANGE-LAB $NetbiosName"
@@ -681,7 +689,7 @@ function Publish-LabDesktop {
             "Administrator:       $NetbiosName\$AdminUser"
             "OWA:                 https://$mailHost/owa"
             "ECP:                 https://$mailHost/ecp"
-            "Zertifikat (IIS):    $($certificate.Subject), Aussteller $($certificate.Issuer), gueltig bis $($certificate.NotAfter)"
+            "Zertifikat (IIS):    $certificateText"
             ''
             'LAB-BENUTZER (Kennwort = Deployment-Parameter labUserPassword)'
         )
@@ -734,6 +742,36 @@ function Publish-LabDesktop {
     }
 }
 
+function Register-LabPtrRecord {
+    # Azure-DHCP traegt keine PTR-Records ein, und Windows ueberlaesst sie bei DHCP-Adaptern dem DHCP-Server.
+    # Die Reverse-Zone bliebe leer (im Testdeployment nachgewiesen). Deshalb hier fuer alle Lab-Rechner aus
+    # deren A-Records in der AD-Zone. Laeuft am Ende, wenn alle VMs registriert sind. Nicht fatal.
+    try {
+        Import-Module -Name DnsServer
+        $dnsServer = "$DcComputerName.$DomainName"
+        $ownIp = (Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.IPAddress -notlike '127.*' -and $_.IPAddress -notlike '169.254.*' } | Select-Object -First 1).IPAddress
+        $octets = $ownIp.Split('.')
+        $prefix = '{0}.{1}.{2}.' -f $octets[0], $octets[1], $octets[2]
+        $zone = '{0}.{1}.{2}.in-addr.arpa' -f $octets[2], $octets[1], $octets[0]
+
+        $records = Get-DnsServerResourceRecord -ComputerName $dnsServer -ZoneName $DomainName -RRType A |
+            Where-Object { $_.HostName -notin '@', 'DomainDnsZones', 'ForestDnsZones' -and $_.RecordData.IPv4Address.IPAddressToString -like "$prefix*" }
+        foreach ($record in $records) {
+            $ip = $record.RecordData.IPv4Address.IPAddressToString
+            $name = $ip.Split('.')[3]
+            if (Get-DnsServerResourceRecord -ComputerName $dnsServer -ZoneName $zone -Name $name -RRType Ptr -ErrorAction SilentlyContinue) {
+                continue
+            }
+            $fqdn = ('{0}.{1}.' -f $record.HostName, $DomainName).ToLowerInvariant()
+            Add-DnsServerResourceRecordPtr -ComputerName $dnsServer -ZoneName $zone -Name $name -PtrDomainName $fqdn
+            Write-LabLog "PTR-Record $ip -> $fqdn angelegt."
+        }
+    }
+    catch {
+        Write-LabLog "WARNUNG: PTR-Records nicht vollstaendig angelegt: $($_.Exception.Message)"
+    }
+}
+
 function Invoke-InstallPhase {
     $secret = Get-InstallSecret
     $labData = Initialize-LabDirectory -LabUserPassword (ConvertTo-SecureString -String $secret.LabUserPassword -AsPlainText -Force)
@@ -746,6 +784,7 @@ function Invoke-InstallPhase {
     Register-InitialUpdate
     Register-LabMaintenance
     Move-LabClientComputer -LabData $labData
+    Register-LabPtrRecord
     Publish-LabDesktop -LabData $labData
 }
 

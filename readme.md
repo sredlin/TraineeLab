@@ -83,6 +83,7 @@ flowchart LR
 | --- | --- | --- |
 | Forest anlegen, Neustart, Split DNS | DC | `C:\ExchangeLab\Logs\Install-DomainController-*.log` |
 | Warten auf DC01, Heraufstufung (optional) | DC02 | `C:\ExchangeLab\Logs\Wait-DomainController.log`, `Install-DomainController-*.log` |
+| Heraufstufung nach Neustart (nur wenn Windows-Wartung einen Neustart vorgemerkt hat) | DC | `C:\ExchangeLab\Logs\Install-DomainController-Promote.log` |
 | Voraussetzungen, ISO, Zertifikat (parallel) | Exchange | `C:\ExchangeLab\Logs\Initialize-ExchangeServer.log` |
 | Sprachpaket, Microsoft 365 Apps (parallel) | Client | `C:\ExchangeLab\Logs\Initialize-LabClient-Prepare.log` |
 | Warten auf DC, Domänenbeitritt, RDP für Lab-Benutzer | Client | `C:\ExchangeLab\Logs\Wait-DomainController.log`, `Initialize-LabClient-Complete.log` |

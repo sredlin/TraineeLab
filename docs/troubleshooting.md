@@ -6,7 +6,12 @@ Platzhalter wie in [betrieb.md](betrieb.md). „EMS“ = Exchange Management She
 
 1. Im Portal unter Ressourcengruppe → *Bereitstellungen* den fehlgeschlagenen Schritt suchen. Meist ist es ein Run Command (`Install-DomainController`, `Initialize-ExchangeServer`, `Wait-DomainController`, `Install-ExchangeServer`, `Initialize-LabClient`, `Complete-LabClient`).
 2. Die Fehlermeldung enthält das Ende des passenden Logs. Das vollständige Log liegt auf der VM unter `C:\ExchangeLab\Logs`.
-3. Alle Skripte sind idempotent: Ursache beheben (z. B. Kontingent, Rechte, Zone) und **mit denselben Parametern erneut deployen**. Bereits erledigte Schritte werden übersprungen.
+3. Ursache beheben (z. B. Kontingent, Rechte, Zone), dann den **fehlgeschlagenen Run Command löschen** und **mit denselben Parametern erneut deployen**. Ohne das Löschen führt Azure einen fehlgeschlagenen Run Command mit unveränderten Eigenschaften nicht noch einmal aus, das Deployment meldet nur den alten Fehler. Die Skripte sind idempotent, bereits erledigte Schritte werden übersprungen.
+
+   ```bash
+   az vm run-command list -g rg-exlab-<k> --vm-name vm-<k>-dc02 --query "[].{name:name, state:provisioningState}" -o table
+   az vm run-command delete -g rg-exlab-<k> --vm-name vm-<k>-dc02 --name Install-DomainController --yes
+   ```
 
 Typische Ursachen:
 
@@ -14,7 +19,8 @@ Typische Ursachen:
 | --- | --- | --- |
 | `QuotaExceeded` | zu wenig vCPU in der Region | Kontingent erhöhen lassen oder `deployClient`/`deploySecondDc` aus |
 | `AuthorizationFailed` bei der Rollenzuweisung | kein Owner auf der Ressourcengruppe | Rechte vom Ausbilder holen oder `enableLetsEncrypt = false` |
-| `Wait-DomainController` läuft in Timeout | DC nicht fertig geworden | `Install-DomainController-*.log` auf dem DC lesen |
+| `Wait-DomainController` läuft in Timeout | DC nicht fertig geworden | `Install-DomainController-*.log` auf dem DC lesen, bei vorgemerktem Neustart auch `Install-DomainController-Promote.log` |
+| „Role change is in progress or this computer needs to be restarted“ | Windows-Wartung nach dem ersten Start hat einen Neustart vorgemerkt | Das Skript stuft dann automatisch nach einem Neustart herauf. Steht der Fehler trotzdem im Log: DC im Gast neu starten, Run Command löschen, erneut deployen |
 | `letsencrypt-failed.txt` in `C:\ExchangeLab` | Zertifikat nicht ausgestellt, Exchange nutzt selbstsigniertes Zertifikat | Delegation der Subdomain prüfen, siehe unten |
 
 ## OWA meldet Zertifikatsfehler
