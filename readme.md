@@ -2,7 +2,7 @@
 
 [![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2Fsredlin%2FTraineeLab%2Fmaster%2Fazuredeploy.json)
 
-Lab-Umgebung für die Ausbildung: ein **Domain Controller** und ein **Exchange Server SE** auf getrennten VMs mit Windows Server 2025, dazu ein **Windows-11-Client** mit Microsoft 365 Apps. Nach dem Deployment ist alles fertig eingerichtet: Split DNS, Let's-Encrypt-Zertifikat, URLs, Accepted Domain, Postfächer für 12 Lab-Benutzer und Beispielempfänger (Verteiler, freigegebene Postfächer, Räume, Kontakte) als Ausgangspunkt für Übungen.
+Lab-Umgebung für die Ausbildung: ein **Domain Controller**, ein **Exchange Server SE** und ein **Fileserver** auf getrennten VMs mit Windows Server 2025, dazu ein **Windows-11-Client** mit Microsoft 365 Apps. Nach dem Deployment ist alles fertig eingerichtet: Split DNS, Let's-Encrypt-Zertifikat, URLs, Accepted Domain, Postfächer für 12 Lab-Benutzer und Beispielempfänger (Verteiler, freigegebene Postfächer, Räume, Kontakte). Der Fileserver bringt Freigaben mit AGDLP-Berechtigungen und rund 60 GB Word-, Excel-, PowerPoint- und PDF-Dateien einer fiktiven Werbeagentur mit, samt absichtlicher Altlasten. Alles zusammen ist Ausgangspunkt für Übungen bis hin zur Migration nach SharePoint Online.
 
 ## Architektur
 
@@ -17,6 +17,7 @@ flowchart LR
                 DC2[vm-&lt;k&gt;-dc02 optional<br/>10.0.1.6<br/>AD DS + DNS]
                 EX[vm-&lt;k&gt;-ex01<br/>10.0.1.5<br/>Exchange SE]
                 CL[vm-&lt;k&gt;-cl01<br/>10.0.1.10<br/>Windows 11 + M365 Apps]
+                FS[vm-&lt;k&gt;-fs01<br/>10.0.1.7<br/>Dateiserver + FSRM]
             end
         end
         ZONE[DNS-Zone &lt;k&gt;.&lt;zone&gt;]
@@ -25,6 +26,8 @@ flowchart LR
     PIPCL --- CL
     EX -->|LDAP/Kerberos/DNS| DC
     CL -->|Outlook MAPI/HTTP, Autodiscover| EX
+    CL -->|SMB: Freigaben, H:| FS
+    FS -->|LDAP/Kerberos/DNS| DC
     DC <-->|AD-Replikation| DC2
     PARENT[&lt;zone&gt;<br/>rg-publicdns] -->|NS-Delegation| ZONE
 ```
@@ -37,6 +40,7 @@ flowchart LR
 | Zweiter DC (optional) | `deploySecondDc = true`: `<K>-DC02` mit gleicher Ausstattung, wird parallel zum ersten DC aufgebaut und heraufgestuft, DNS des VNets zeigt dann auf beide DCs |
 | Exchange-Server | `Standard_E4s_v5` (32 GB RAM), Windows Server 2025, Exchange Server SE (Mailbox), OS- und Datendisk **Premium SSD**, DB und Logs auf ReFS-Datendisk |
 | Windows-11-Client | `deployClient = true` (Standard): `<K>-CL01`, `Standard_B2ms`, Windows 11 Enterprise mit deutscher Oberfläche, Microsoft 365 Apps (de-de, ohne Access/Publisher/Teams), Domänenmitglied in `OU=Computers,OU=Berlin`, eigene Public IP für RDP, aktualisiert sich selbst (Neustarts nur außerhalb 06–23 Uhr) |
+| Fileserver | `deployFileServer = true` (Standard): `<K>-FS01`, Windows Server 2025, keine Public IP. Erzeugt die Beispieldaten mit `Standard_D4s_v5` und verkleinert sich danach selbst auf `Standard_B2ms`. Datendisk `F:` mit 256 GB Standard SSD. Freigaben `Abteilungen`, `Projekte`, `Archiv`, `Scans` und `Home$` mit zugriffsbasierter Aufzählung und AGDLP-Gruppen, Basisordner `H:`, FSRM. Rund 60 GB Beispieldokumente einer fiktiven Agentur (zwölf Jahre Projekte, Buchhaltung, Personal, Corporate Design, Logos für das Entra-Branding) mit fiktiven personenbezogenen Daten und absichtlichen Altlasten. Definiert in `scripts/FileServer.psd1` und `scripts/corpus` |
 | Netzwerk | ein VNet, ein Subnet, eine NSG (kein Allow-All, SMTP getrennt von HTTP/HTTPS), Standard-Public-IPs für Exchange und Client |
 | DNS | öffentliche Zone `<k>.<zone>` (mail, autodiscover, MX, SPF, DMARC `p=none`) mit Delegation in `<zone>`; intern Split DNS und Reverse-Zone `1.0.10.in-addr.arpa` auf dem DC |
 | AD | OU-Baum `LEARN-<k>` (Branch Berlin/Hamburg, Administration), 12 Lab-Benutzer mit Postfach, Adresse `@<k>.<zone>`, Vorgesetzten und fiktiven Rufnummern der Bundesnetzagentur (030 23125, 040 66969, 0171 39200), AD-Papierkorb aktiv |
@@ -45,10 +49,10 @@ flowchart LR
 
 ## Voraussetzungen
 
-- **Rechte:** Owner auf der eigenen Ziel-Ressourcengruppe (für die Rollenzuweisung der Managed Identity) und *DNS Zone Contributor* auf `rg-publicdns`. Eine Entra-/Global-Admin-Rolle ist **nicht** nötig. Ohne Owner: Parameter `enableLetsEncrypt = false`.
+- **Rechte:** Owner auf der eigenen Ziel-Ressourcengruppe (für die Rollenzuweisungen der Managed Identities von Exchange-Server und Fileserver) und *DNS Zone Contributor* auf `rg-publicdns`. Eine Entra-/Global-Admin-Rolle ist **nicht** nötig. Ohne Owner: Parameter `enableLetsEncrypt = false` und `fileServerFinalVmSize` leer (der Fileserver verkleinert sich dann nicht selbst).
 - **Kürzel** darf noch nicht als Subdomain in `<zone>` existieren.
 - **Übergeordnete Zone:** Existiert `<zone>` in der Ressourcengruppe `parentDnsZoneResourceGroup`, bleibt sie unverändert, das Deployment ergänzt nur den NS-Eintrag `<k>`. Fehlt sie, wird sie angelegt. Die Ressourcengruppe selbst muss existieren. Eine neu angelegte Zone muss einmalig beim Registrar delegiert werden, sonst schlägt Let's Encrypt fehl.
-- **Kontingent:** 8 vCPU in der Region (4 × BS-Familie für DC und Client, 4 × ESv5-Familie), mit zweitem DC 10 vCPU (6 × BS-Familie). Ohne Client 2 vCPU weniger.
+- **Kontingent:** 8 vCPU in der Region (4 × BS-Familie für DC und Client, 4 × ESv5-Familie), mit zweitem DC 10 vCPU (6 × BS-Familie). Ohne Client 2 vCPU weniger. Der Fileserver braucht während der Erzeugung der Beispieldaten zusätzlich 4 × DSv5-Familie, danach 2 × BS-Familie: insgesamt also 12 vCPU, mit zweitem DC 14. Reicht das Kontingent nicht, `fileServerVmSize = Standard_B2ms` setzen; die Beispieldaten entstehen dann über viele Stunden im Hintergrund.
 - **Windows-11-Lizenz (Client):** Windows 11 auf Azure braucht Multitenant Hosting Rights, laut Microsoft z. B. Windows Enterprise E3/E5 oder VDA pro Benutzer (Lizenzgrundlage u. a. auch M365 E3/E5/F3 und Business Premium), alternativ ein Dev/Test-Angebot der Subscription. Ohne passende Lizenz `deployClient = false` setzen.
 - **Office-Lizenz (Client):** Microsoft 365 Apps aktiviert der Azubi mit seinem Firmenkonto (eine von fünf Installationen). `officeProductId` muss zur Lizenz passen: `O365ProPlusRetail` für Apps for enterprise (M365 E3/E5), `O365BusinessRetail` für Apps for business (Business Standard/Premium).
 
@@ -67,15 +71,18 @@ flowchart LR
    | `parentDnsZoneResourceGroup` | nein | Ressourcengruppe der übergeordneten Zone, Standard `rg-publicdns` |
    | `exchangePublishedSourcePrefix` | nein | Quelle für 443/80, leer = wie RDP |
    | `smtpSourcePrefix` | nein | Quelle für 25, leer = wie 443/80. Für eingehende Mails erst nach dem Update-Lauf auf `Internet` stellen |
-   | `autoShutdownTime` | nein | tägliches Herunterfahren der Exchange-VM (`HHmm`), Standard `1900`, leer = aus |
+   | `autoShutdownTime` | nein | tägliches Herunterfahren von Exchange-VM, Client, Fileserver und zweitem DC (`HHmm`), Standard `1900`, leer = aus |
    | `deploySecondDc` | nein | zweiten Domain Controller `<K>-DC02` bereitstellen, Standard `false` |
    | `deployClient` | nein | Windows-11-Client `<K>-CL01` bereitstellen, Standard `true` |
    | `officeProductId` | nein | `O365ProPlusRetail` (Standard, Apps for enterprise) oder `O365BusinessRetail` (Apps for business) |
    | `clientImageSku` / `clientVmSize` | nein | Windows-11-Image (Standard `win11-25h2-ent`) und VM-Größe des Clients |
+   | `deployFileServer` | nein | Fileserver `<K>-FS01` bereitstellen, Standard `true` |
+   | `fileServerDataSizeGB` | nein | Umfang der Beispieldokumente in GB, Standard `60`, `0` = keine |
+   | `fileServerVmSize` / `fileServerFinalVmSize` | nein | Größe während der Erzeugung (Standard `Standard_D4s_v5`) und Dauergröße danach (Standard `Standard_B2ms`, leer = bleibt). Bei einem erneuten Deployment `fileServerVmSize = Standard_B2ms` übergeben, sonst wird der Fileserver kurz wieder vergrößert |
    | `enableLetsEncrypt` / `letsEncryptStaging` | nein | Zertifikat an/aus, Test-CA für Testdeployments |
    | `wingetPackages` | nein | zusätzliche Tools per winget, Standard `Microsoft.VisualStudioCode` |
 
-3. Das Deployment dauert **ca. 1–1,5 Stunden**. Im Test waren es rund 65 Minuten, davon allein 31 Minuten Exchange-Setup. Danach startet der Exchange-Server neu und installiert im Hintergrund alle Updates, inklusive Exchange-Sicherheitsupdate über Microsoft Update. Der DC macht das parallel. Rechne mit weiteren 30–60 Minuten.
+3. Das Deployment dauert **ca. 1–1,5 Stunden**. Im Test waren es rund 65 Minuten, davon allein 31 Minuten Exchange-Setup. Danach startet der Exchange-Server neu und installiert im Hintergrund alle Updates, inklusive Exchange-Sicherheitsupdate über Microsoft Update. DC und Fileserver machen das parallel. Rechne mit weiteren 30–60 Minuten. Die Beispieldaten des Fileservers entstehen höchstens 60 Minuten lang im Deployment, der Rest im Hintergrund: Mit `Standard_D4s_v5` sind 60 GB nach etwa 1 Stunde 45 Minuten fertig. Danach verkleinert sich der Fileserver selbst auf `Standard_B2ms` und startet dafür einmal neu.
 
 ### Ablauf und Logs
 
@@ -89,6 +96,10 @@ flowchart LR
 | Warten auf DC, Domänenbeitritt, RDP für Lab-Benutzer | Client | `C:\ExchangeLab\Logs\Wait-DomainController.log`, `Initialize-LabClient-Complete.log` |
 | Warten auf DC, Domänenbeitritt | Exchange | `C:\ExchangeLab\Logs\Wait-DomainController.log` |
 | Exchange-Setup und Konfiguration | Exchange | `C:\ExchangeLab\Logs\Install-ExchangeServer-*.log`, `C:\ExchangeSetupLogs\` |
+| Datendisk, Regionaleinstellungen, Ordnergerüst (parallel) | Fileserver | `C:\ExchangeLab\Logs\Initialize-FileServer-Prepare.log` |
+| Beispieldokumente (höchstens 60 Minuten, Rest per Task `TraineeLab-SampleDocuments`) | Fileserver | `C:\ExchangeLab\Logs\New-SampleDocuments*.log`, Stand in `C:\ExchangeLab\sample-documents.json` |
+| Warten auf DC, Domänenbeitritt, Rollen, Gruppen, Berechtigungen, Freigaben, Altlasten | Fileserver | `C:\ExchangeLab\Logs\Wait-DomainController.log`, `Initialize-FileServer-Complete.log` |
+| Verkleinerung nach Beispieldaten und Updates (Task `TraineeLab-FileServerResize`) | Fileserver | `C:\ExchangeLab\Logs\Resize-FileServer.log` |
 | Updates nach der Installation | alle Server | `C:\ExchangeLab\Logs\Update-LabServer.log` |
 | tägliche Wartung (Log-Bereinigung, Zertifikat) | Exchange | `C:\ExchangeLab\Logs\Invoke-LabMaintenance.log` |
 
@@ -99,6 +110,7 @@ Status von außen: `az vm run-command show -g <rg> --vm-name vm-<k>-ex01 --name 
 - **RDP:** auf den Exchange-Server (Ausgabe `rdpHost`) als `<K>\azadmin`. Den DC erreichst du per RDP vom Exchange-Server aus (`<K>-DC01`). DNS-Konsole, GPMC und AD-Verwaltung sind auch direkt auf dem Exchange-Server installiert.
 - **Client:** RDP auf `clientRdpHost` als Lab-Benutzer, z. B. `<K>\mmustermann`. Beim ersten Start von Word oder Outlook mit dem eigenen Firmenkonto anmelden, damit sich Office aktiviert. Die Registrierung des Lab-Clients im Entra ID der Firma ist per Richtlinie (`BlockAADWorkplaceJoin`) blockiert. Outlook (klassisch) legt das Profil per Autodiscover selbst an. Meldet Office eine fehlende Lizenz, passt `officeProductId` nicht zur Lizenz.
 - **Lab-Info:** Auf dem Desktop des Exchange-Servers liegen `Lab-Info.txt` (Domain, URLs, alle Benutzer und Beispielempfänger, Zertifikat, Logs) und Verknüpfungen zu OWA, ECP und den Logs.
+- **Fileserver:** RDP vom Exchange-Server aus auf `<K>-FS01` (keine Public IP). Dort zeigt `Lab-Info.txt` Freigaben, Gruppen und den Stand der Beispieldaten. Auf dem Client sind die Freigaben unter `\\<K>-FS01\Abteilungen`, `\Projekte`, `\Archiv` und `\Scans` erreichbar, der Basisordner als `H:`. Ob die Beispieldaten fertig sind, steht in `C:\ExchangeLab\sample-documents.json` (`State` = `fertig`), siehe auch [Betrieb](docs/betrieb.md#fileserver-beispieldaten-und-vm-größe).
 - **OWA/ECP:** `https://mail.<k>.<zone>/owa` bzw. `/ecp`, z. B. als `mmustermann@<k>.<zone>`.
 - **Diagnose:** In `C:\ExchangeLab\Tools` liegen `HealthChecker.ps1`, `SetupAssist.ps1` und `SetupLogReviewer.ps1` aus [CSS-Exchange](https://github.com/microsoft/CSS-Exchange) (festes Release, SHA256-geprüft). Aufruf in der Exchange Management Shell als Administrator.
 - **Eingehende Mails aus dem Internet:** erst wenn `Update-LabServer.log` fertig ist, die NSG-Regel `Allow-Exchange-SMTP` auf Quelle `Internet` stellen.
@@ -113,6 +125,7 @@ Status von außen: `az vm run-command show -g <rg> --vm-name vm-<k>-ex01 --name 
 - Den **DC nie im Portal stoppen oder deallokieren.** Laut Microsoft setzt das Deallokieren die VM-Generation-ID zurück, der DC verwirft seinen RID-Pool und markiert SYSVOL als nicht-autoritativ. Mit nur einem DC gibt es keinen Partner, von dem SYSVOL kommen könnte, dann fehlen NETLOGON und die Gruppenrichtlinien, bis jemand von Hand eingreift. Der DC (`Standard_B2ms`) ist günstig und läuft deshalb durch. Neustarts nur im Gast.
 - **Mit zweitem DC:** `<K>-DC02` fährt zusammen mit der Exchange-VM herunter. Beim Start holt er sich SYSVOL vom durchlaufenden `<K>-DC01`. Der erste DC bleibt die Ausnahme und läuft immer. Werden beide DCs gleichzeitig deallokiert, gibt es keinen autoritativen Partner mehr und SYSVOL muss von Hand repariert werden.
 - **Client:** `<K>-CL01` fährt ebenfalls zur Abschaltzeit herunter. Windows-Updates installiert er selbst, Neustarts dafür fallen auf das Herunterfahren oder liegen außerhalb 06–23 Uhr.
+- **Fileserver:** `<K>-FS01` fährt ebenfalls zur Abschaltzeit herunter. Sind die Beispieldaten bis dahin nicht fertig, setzt der Task `TraineeLab-SampleDocuments` nach dem nächsten Start fort. Deshalb möglichst morgens deployen. `Standard_D4s_v5` kostet pro Stunde deutlich mehr als `Standard_B2ms`, läuft aber nur bis zur automatischen Verkleinerung. Die 256-GB-Datendisk kostet auch bei deallokierter VM.
 - **Budget:** optional im Portal unter Ressourcengruppe → *Kostenverwaltung* → *Budgets* mit E-Mail-Benachrichtigung anlegen. Nicht im Template, weil Budgets ein Startdatum im laufenden Monat brauchen und Redeploys in späteren Monaten sonst scheitern können.
 
 ## Supportbarkeit
@@ -150,9 +163,9 @@ Enable-ExchangeCertificate -Thumbprint $new.Thumbprint -Services IIS,SMTP -Force
 
 ## Übungen und Betrieb
 
-- [Übungen](docs/uebungen/README.md): sieben Kapitel von Empfängerverwaltung über Mailfluss, Zertifikate und Backup bis Active Directory und Updates, jede Übung mit Prüfbefehl.
-- [Betrieb](docs/betrieb.md): Starten und Stoppen, neue eigene IP, Status, Kosten, Abbau.
-- [Troubleshooting](docs/troubleshooting.md): fehlgeschlagenes Deployment, Zertifikat, SYSVOL-Reparatur, Warteschlangen, Outlook und Office.
+- [Übungen](docs/uebungen/README.md): zehn Kapitel von Empfängerverwaltung über Mailfluss, Zertifikate, Backup, Active Directory und Updates bis zu Fileserver, Migration nach SharePoint Online und Datenklassifizierung, jede Übung mit Prüfbefehl.
+- [Betrieb](docs/betrieb.md): Starten und Stoppen, neue eigene IP, Status, Beispieldaten und Größe des Fileservers, Kosten, Abbau.
+- [Troubleshooting](docs/troubleshooting.md): fehlgeschlagenes Deployment, Zertifikat, SYSVOL-Reparatur, Warteschlangen, Outlook und Office, Beispieldaten und Fileserver.
 
 ## Aufräumen
 
@@ -170,6 +183,19 @@ az network dns record-set ns delete -g rg-publicdns -z <zone> -n <k>
 
 ```bash
 az bicep build --file infra/main.bicep --outfile azuredeploy.json
+```
+
+- Beispieldokumente: Drehbuch und Texte liegen lesbar in `scripts/corpus` (Regeln in [scripts/corpus/README.md](scripts/corpus/README.md)), der Generator in `scripts/New-SampleDocuments.ps1`. Daraus entstehen die eingebetteten Artefakte `scripts/SampleCorpus.gz` (userData der VM) und `scripts/Start-SampleDocuments.ps1` (gepackter Generator). Nach jeder Änderung neu bauen, die Tests prüfen den Abgleich:
+
+```powershell
+./tools/Build-SampleArtifacts.ps1
+```
+
+- Generator lokal ausprobieren (Windows PowerShell 5.1, ohne Azure):
+
+```powershell
+.\scripts\New-SampleDocuments.ps1 -TargetPath C:\Temp\Daten -TargetSizeMB 500 -LabRoot C:\Temp\Lab `
+    -CorpusPath .\scripts\corpus -LabUsersPath .\scripts\LabUsers.psd1 -ReferenceDate 2026-11-24
 ```
 
 - Prüfungen (laufen auch in der CI):

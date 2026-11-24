@@ -4,7 +4,7 @@ Platzhalter wie in [betrieb.md](betrieb.md). „EMS“ = Exchange Management She
 
 ## Deployment ist fehlgeschlagen
 
-1. Im Portal unter Ressourcengruppe → *Bereitstellungen* den fehlgeschlagenen Schritt suchen. Meist ist es ein Run Command (`Install-DomainController`, `Initialize-ExchangeServer`, `Wait-DomainController`, `Install-ExchangeServer`, `Initialize-LabClient`, `Complete-LabClient`).
+1. Im Portal unter Ressourcengruppe → *Bereitstellungen* den fehlgeschlagenen Schritt suchen. Meist ist es ein Run Command (`Install-DomainController`, `Initialize-ExchangeServer`, `Wait-DomainController`, `Install-ExchangeServer`, `Initialize-LabClient`, `Complete-LabClient`, auf dem Fileserver `Initialize-FileServer`, `New-SampleDocuments`, `Complete-FileServer`).
 2. Die Fehlermeldung enthält das Ende des passenden Logs. Das vollständige Log liegt auf der VM unter `C:\ExchangeLab\Logs`.
 3. Ursache beheben (z. B. Kontingent, Rechte, Zone), dann den **fehlgeschlagenen Run Command löschen** und **mit denselben Parametern erneut deployen**. Ohne das Löschen führt Azure einen fehlgeschlagenen Run Command mit unveränderten Eigenschaften nicht noch einmal aus, das Deployment meldet nur den alten Fehler. Die Skripte sind idempotent, bereits erledigte Schritte werden übersprungen.
 
@@ -17,8 +17,9 @@ Typische Ursachen:
 
 | Meldung / Symptom | Ursache | Lösung |
 | --- | --- | --- |
-| `QuotaExceeded` | zu wenig vCPU in der Region | Kontingent erhöhen lassen oder `deployClient`/`deploySecondDc` aus |
-| `AuthorizationFailed` bei der Rollenzuweisung | kein Owner auf der Ressourcengruppe | Rechte vom Ausbilder holen oder `enableLetsEncrypt = false` |
+| `QuotaExceeded` | zu wenig vCPU in der Region | Kontingent erhöhen lassen oder `deployClient`/`deploySecondDc` aus. Betrifft es die DSv5-Familie: `fileServerVmSize = Standard_B2ms` |
+| `AuthorizationFailed` bei der Rollenzuweisung | kein Owner auf der Ressourcengruppe | Rechte vom Ausbilder holen oder `enableLetsEncrypt = false` und `fileServerFinalVmSize` leer lassen |
+| `New-SampleDocuments` meldet einen Fehler | Datendisk fehlt oder Textkorpus aus der userData nicht lesbar | `New-SampleDocuments.log` auf dem Fileserver lesen. Ein reines Zeitproblem ist kein Fehler: Nach 60 Minuten endet der Run Command erfolgreich und der Task setzt fort |
 | `Wait-DomainController` läuft in Timeout | DC nicht fertig geworden | `Install-DomainController-*.log` auf dem DC lesen, bei vorgemerktem Neustart auch `Install-DomainController-Promote.log` |
 | „Role change is in progress or this computer needs to be restarted“ | Windows-Wartung nach dem ersten Start hat einen Neustart vorgemerkt | Das Skript stuft dann automatisch nach einem Neustart herauf. Steht der Fehler trotzdem im Log: DC im Gast neu starten, Run Command löschen, erneut deployen |
 | `letsencrypt-failed.txt` in `C:\ExchangeLab` | Zertifikat nicht ausgestellt, Exchange nutzt selbstsigniertes Zertifikat | Delegation der Subdomain prüfen, siehe unten |
@@ -110,6 +111,40 @@ Install-Language de-DE -CopyToSettings
 Set-SystemPreferredUILanguage de-DE
 Restart-Computer
 ```
+
+## Beispieldaten fehlen oder wachsen nicht mehr
+
+Stand auf `<K>-FS01` (PowerShell als Administrator):
+
+```powershell
+Get-Content C:\ExchangeLab\sample-documents.json
+Get-Content C:\ExchangeLab\Logs\New-SampleDocuments.log -Tail 20
+Get-ScheduledTask -TaskName TraineeLab-SampleDocuments | Get-ScheduledTaskInfo
+```
+
+- **`State` = `wird im Hintergrund fortgesetzt`, Log steht still:** Die VM wurde zur Abschaltzeit heruntergefahren. Der Task startet beim nächsten Start von selbst, sofort geht es mit `Start-ScheduledTask -TaskName TraineeLab-SampleDocuments`. Der Generator überspringt vorhandene Dateien und räumt halbfertige auf.
+- **`WARNUNG`-Zeilen im Log:** Einzelne Dateien oder Einheiten sind fehlgeschlagen. Das stört die übrigen Daten nicht. Bei vielen gleichen Warnungen das Log an den Ausbilder geben.
+- **Kein Statusfile:** Der Run Command `New-SampleDocuments` ist nicht gelaufen (`fileServerDataSizeGB = 0` oder Fehler im Deployment).
+
+## Fileserver bleibt groß
+
+Der Fileserver verkleinert sich erst, wenn Beispieldaten, Einrichtung und Update-Lauf fertig sind und er mindestens 30 Minuten läuft. Den Grund fürs Warten nennt das Log:
+
+```powershell
+Get-Content C:\ExchangeLab\Logs\Resize-FileServer.log -Tail 10
+```
+
+Steht dort, dass die Größe im aktuellen Cluster nicht verfügbar ist, von Hand verkleinern (Cloud Shell):
+
+```bash
+az vm deallocate -g rg-exlab-<k> -n vm-<k>-fs01
+az vm resize -g rg-exlab-<k> -n vm-<k>-fs01 --size Standard_B2ms
+az vm start -g rg-exlab-<k> -n vm-<k>-fs01
+```
+
+## Zugriff verweigert auf `Home\JFrick\Privat`
+
+Das ist gewollt: Der Ordner ist eine der Altlasten aus [Kapitel 8](uebungen/08-fileserver.md). Nur Johann Frick und SYSTEM haben Rechte, Domain-Admins nicht. Wie man damit umgeht, ohne die Rechte zu zerstören, ist Übung 8.3.
 
 ## Kennwort eines Lab-Benutzers vergessen
 
