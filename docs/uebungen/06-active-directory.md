@@ -19,8 +19,8 @@ Resolve-DnsName 10.0.1.5                         # Reverse-Lookup
 **Aufgabe:** Lege einen Testbenutzer an, lösche ihn und stelle ihn wieder her.
 
 ```powershell
-New-ADUser -Name 'Test Papierkorb' -Path 'OU=Users,OU=Kiel,OU=Branch,OU=LEARN-<k>,DC=<k>,DC=intern'
-Remove-ADUser 'CN=Test Papierkorb,OU=Users,OU=Kiel,OU=Branch,OU=LEARN-<k>,DC=<k>,DC=intern' -Confirm:$false
+New-ADUser -Name 'Test Papierkorb' -Path 'OU=Users,OU=Berlin,OU=Branch,OU=LEARN-<k>,DC=<k>,DC=intern'
+Remove-ADUser 'CN=Test Papierkorb,OU=Users,OU=Berlin,OU=Branch,OU=LEARN-<k>,DC=<k>,DC=intern' -Confirm:$false
 Get-ADObject -Filter 'isDeleted -eq $true -and Name -like "Test Papierkorb*"' -IncludeDeletedObjects | Restore-ADObject
 ```
 
@@ -32,7 +32,7 @@ Get-ADObject -Filter 'isDeleted -eq $true -and Name -like "Test Papierkorb*"' -I
 
 ```powershell
 New-GPO -Name 'LAB - Anmeldehinweis' |
-  New-GPLink -Target 'OU=Computers,OU=Kiel,OU=Branch,OU=LEARN-<k>,DC=<k>,DC=intern'
+  New-GPLink -Target 'OU=Computers,OU=Berlin,OU=Branch,OU=LEARN-<k>,DC=<k>,DC=intern'
 $key = 'HKLM\Software\Microsoft\Windows\CurrentVersion\Policies\System'
 Set-GPRegistryValue -Name 'LAB - Anmeldehinweis' -Key $key -ValueName LegalNoticeCaption -Type String -Value 'Ausbildungs-Lab'
 Set-GPRegistryValue -Name 'LAB - Anmeldehinweis' -Key $key -ValueName LegalNoticeText -Type String -Value 'Nur fuer Schulungszwecke.'
@@ -40,13 +40,13 @@ Set-GPRegistryValue -Name 'LAB - Anmeldehinweis' -Key $key -ValueName LegalNotic
 
 Auf dem Client: `gpupdate /force`, dann abmelden und neu anmelden.
 
-**Prüfen:** Vor der Anmeldung erscheint der Hinweis. `gpresult /r /scope computer` listet die GPO. Warum wirkt sie nur, weil der Client in `OU=Computers,OU=Kiel` liegt?
+**Prüfen:** Vor der Anmeldung erscheint der Hinweis. `gpresult /r /scope computer` listet die GPO. Warum wirkt sie nur, weil der Client in `OU=Computers,OU=Berlin` liegt?
 
 ## 6.4 Delegation ★★
 
 **Aufgabe:** Celina Herz soll Kennwörter der Hamburger Benutzer zurücksetzen dürfen, sonst nichts. Nutze in *Active Directory-Benutzer und -Computer* auf `OU=Users,OU=Hamburg,OU=Branch` den Assistenten *Objektverwaltung zuweisen*.
 
-**Prüfen:** Starte auf dem Exchange-Server eine PowerShell als Celina (`runas /user:<K>\cherz powershell`). Dort klappt `Set-ADAccountPassword -Identity rjung -Reset -NewPassword (Read-Host -AsSecureString)`, für `mmustermann` (Kiel) gibt es „Zugriff verweigert“.
+**Prüfen:** Starte auf dem Exchange-Server eine PowerShell als Celina (`runas /user:<K>\cherz powershell`). Dort klappt `Set-ADAccountPassword -Identity rjung -Reset -NewPassword (Read-Host -AsSecureString)`, für `mmustermann` (Berlin) gibt es „Zugriff verweigert“.
 
 ## 6.5 Replikation mit zwei DCs ★★
 
@@ -55,7 +55,7 @@ Voraussetzung: `deploySecondDc = true`.
 **Aufgabe:** Lege auf `<K>-DC02` einen Benutzer an und prüfe, ob er auf `<K>-DC01` ankommt.
 
 ```powershell
-New-ADUser -Name 'Test Replikation' -Server <K>-DC02 -Path 'OU=Users,OU=Kiel,OU=Branch,OU=LEARN-<k>,DC=<k>,DC=intern'
+New-ADUser -Name 'Test Replikation' -Server <K>-DC02 -Path 'OU=Users,OU=Berlin,OU=Branch,OU=LEARN-<k>,DC=<k>,DC=intern'
 Get-ADUser -Filter 'Name -eq "Test Replikation"' -Server <K>-DC01
 repadmin /replsummary
 repadmin /showrepl <K>-DC01
