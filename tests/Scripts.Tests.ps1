@@ -11,6 +11,7 @@ BeforeDiscovery {
 BeforeAll {
     $repoRoot = Split-Path -Path $PSScriptRoot -Parent
     $labUsers = Import-PowerShellDataFile -Path (Join-Path -Path $repoRoot -ChildPath 'scripts/LabUsers.psd1')
+    $fileServer = Import-PowerShellDataFile -Path (Join-Path -Path $repoRoot -ChildPath 'scripts/FileServer.psd1')
     $templateText = Get-Content -Path (Join-Path $repoRoot 'azuredeploy.json') -Raw
     $template = $templateText | ConvertFrom-Json -Depth 100
 }
@@ -128,6 +129,84 @@ Describe 'LabUsers.psd1' {
     }
 }
 
+Describe 'FileServer.psd1' {
+    BeforeAll {
+        $groupNames = @($fileServer.GlobalGroups.Name)
+        $folderPaths = @($fileServer.Folders.Path)
+        $specialPrincipals = '@DomainUsers', '@Everyone', '@AuthenticatedUsers'
+    }
+
+    It 'hat eindeutige globale Gruppen mit Mitgliedern aus LabUsers.psd1' {
+        ($groupNames | Select-Object -Unique).Count | Should -Be $groupNames.Count
+        foreach ($group in $fileServer.GlobalGroups) {
+            $group.Name | Should -Match '^GG-[A-Za-z-]+$'
+            $labUsers.OrganizationalUnits | Should -Contain $group.OrganizationalUnit
+            foreach ($member in $group.Members) {
+                $labUsers.Users.SamAccountName | Should -Contain $member -Because "$($group.Name) verweist auf $member"
+            }
+        }
+        $labUsers.OrganizationalUnits | Should -Contain $fileServer.DomainLocalGroupOrganizationalUnit
+    }
+
+    It 'listet jeden Ordner einmal und uebergeordnete Ordner vor untergeordneten' {
+        ($folderPaths | Select-Object -Unique).Count | Should -Be $folderPaths.Count
+        $seen = @()
+        foreach ($path in $folderPaths) {
+            if ($path -match '\\') {
+                $seen | Should -Contain (Split-Path -Path $path -Parent) -Because "$path braucht zuerst den uebergeordneten Ordner"
+            }
+            $seen += $path
+        }
+    }
+
+    It 'berechtigt nur bekannte Gruppen und Sonderprinzipale (AGDLP: keine Benutzer im Soll-Zustand)' {
+        foreach ($folder in $fileServer.Folders) {
+            foreach ($principal in @($folder.Modify) + @($folder.Read) + @($folder.List) | Where-Object { $_ }) {
+                ($groupNames + $specialPrincipals) | Should -Contain $principal -Because "$($folder.Path) nutzt $principal"
+            }
+            if ($folder.Stem) {
+                # DL-FS-<Stem>-M ist der laengste Name, SamAccountName darf hoechstens 64 Zeichen haben.
+                ('DL-FS-{0}-M' -f $folder.Stem).Length | Should -BeLessOrEqual 64
+            }
+        }
+        $stems = @($fileServer.Folders | Where-Object { $_.Stem } | ForEach-Object Stem)
+        ($stems | Select-Object -Unique).Count | Should -Be $stems.Count
+    }
+
+    It 'gibt nur Ordner frei, die als geschuetzte Wurzel definiert sind' {
+        $shareNames = @($fileServer.Shares.Name)
+        ($shareNames | Select-Object -Unique).Count | Should -Be $shareNames.Count
+        foreach ($share in $fileServer.Shares) {
+            $root = $fileServer.Folders | Where-Object Path -EQ $share.Path
+            $root | Should -Not -BeNullOrEmpty -Because "Freigabe $($share.Name) braucht einen Ordner"
+            $root.Protected | Should -BeTrue -Because "Freigabe $($share.Name) darf keine Rechte von F:\ erben"
+        }
+        ($fileServer.Shares | Where-Object Name -EQ $fileServer.HomeFolders.Share).Path | Should -Be $fileServer.HomeFolders.Path
+    }
+
+    It 'definiert Altlasten mit gueltigen Zielen' {
+        $fileServer.Legacy | Should -Not -BeNullOrEmpty
+        foreach ($item in $fileServer.Legacy) {
+            $item.Type | Should -BeIn @('UserAce', 'BrokenInheritance', 'OrphanedSid', 'OwnerOnly', 'EveryoneFull')
+            $paths = @($item.Path) + @($item.Paths) + @($item.SampleSource) | Where-Object { $_ }
+            foreach ($path in $paths) {
+                # Jeder Pfad liegt unter einer Freigabe-Wurzel aus der Ordnerliste.
+                $folderPaths | Should -Contain ($path -split '\\')[0]
+            }
+            if ($item.Type -in 'UserAce', 'OwnerOnly') {
+                $labUsers.Users.SamAccountName | Should -Contain $item.Principal
+            }
+            if ($item.Type -eq 'OrphanedSid') {
+                $labUsers.Users.SamAccountName | Should -Not -Contain $item.SamAccountName -Because 'der Praktikant wird geloescht und darf kein Lab-Benutzer sein'
+                $labUsers.OrganizationalUnits | Should -Contain $item.OrganizationalUnit
+            }
+            if ($item.Type -eq 'EveryoneFull') {
+                $fileServer.Shares.Name | Should -Contain $item.Share
+            }
+        }
+    }
+}
+
 Describe 'azuredeploy.json' {
     It 'enthaelt keine abgekuendigten oder entfernten Komponenten' {
         $templateText | Should -Not -Match '"type":\s*"DSC"'                # DSC-Extension
@@ -200,6 +279,15 @@ Describe 'azuredeploy.json' {
         $templateText | Should -Match 'v=spf1 mx -all'
         $templateText | Should -Match 'v=DMARC1; p=none'
     }
+
+    It 'stellt standardmaessig einen Fileserver ohne Public IP bereit' {
+        $template.parameters.deployFileServer.defaultValue | Should -BeTrue
+        $templateText | Should -Match 'Complete-FileServer'
+        $fileServerModule = ($template.resources | Where-Object name -EQ 'file-server').properties.template
+        $nic = $fileServerModule.resources | Where-Object type -EQ 'Microsoft.Network/networkInterfaces'
+        $nic | Should -Not -BeNullOrEmpty
+        $nic.properties.ipConfigurations[0].properties.PSObject.Properties.Name | Should -Not -Contain 'publicIPAddress'
+    }
 }
 
 Describe 'infra/main.bicep' {
@@ -210,6 +298,10 @@ Describe 'infra/main.bicep' {
 
     It 'schaltet die Exchange-VM automatisch ab' {
         ($shutdownModules -join "`n") | Should -Match 'names\.exchangeVm'
+    }
+
+    It 'schaltet den Fileserver automatisch ab' {
+        ($shutdownModules -join "`n") | Should -Match 'names\.fsVm'
     }
 
     It 'deallokiert den ersten DC nie automatisch (SYSVOL waere danach nicht-autoritativ)' {

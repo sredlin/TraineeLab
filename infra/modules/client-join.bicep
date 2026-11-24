@@ -33,6 +33,9 @@ param dcIp string
 @description('Private IP des Exchange-Servers.')
 param exchangeIp string
 
+@description('Computername des optionalen Fileservers, nur fuer Lab-Info.txt. Leer = kein Fileserver.')
+param fileServerComputerName string = ''
+
 resource vm 'Microsoft.Compute/virtualMachines@2025-04-01' existing = {
   name: vmName
 }
@@ -119,7 +122,8 @@ resource completeClient 'Microsoft.Compute/virtualMachines/runCommands@2025-04-0
     source: {
       script: loadTextContent('../../scripts/Initialize-LabClient.ps1')
     }
-    parameters: [
+    // Leere Werte wuerden als Parameter ohne Argument uebergeben, daher optionale Werte nur bei Bedarf.
+    parameters: concat([
       {
         name: 'Phase'
         value: 'Complete'
@@ -136,7 +140,12 @@ resource completeClient 'Microsoft.Compute/virtualMachines/runCommands@2025-04-0
         name: 'PublicDomainName'
         value: publicDomainName
       }
-    ]
+    ], empty(fileServerComputerName) ? [] : [
+      {
+        name: 'FileServerComputerName'
+        value: fileServerComputerName
+      }
+    ])
     asyncExecution: false
     timeoutInSeconds: 3600
     treatFailureAsDeploymentFailure: true

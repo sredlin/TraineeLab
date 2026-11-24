@@ -32,7 +32,8 @@ param(
     # Nur Phase 'Complete':
     [string] $DomainName,
     [string] $NetbiosName,
-    [string] $PublicDomainName
+    [string] $PublicDomainName,
+    [string] $FileServerComputerName = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -254,6 +255,7 @@ function Publish-ClientDesktop {
         "Anmeldung:    $NetbiosName\mmustermann (oder ein anderer Lab-Benutzer), Kennwort = Deployment-Parameter labUserPassword"
         "OWA:          $owaUrl"
         "Office:       Microsoft 365 Apps $officeStatus"
+        "Fileserver:   $(if ($FileServerComputerName) { "\\$FileServerComputerName, Basisordner H: = \\$FileServerComputerName\Home$\<Benutzer>" } else { 'keiner' })"
         ''
         'OFFICE AKTIVIEREN'
         '  Beim ersten Start von Word oder Outlook mit dem eigenen Firmenkonto anmelden (Lizenz der Firma).'

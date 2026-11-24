@@ -58,6 +58,9 @@ param(
     # Optionaler Windows-11-Client, wird in die Client-OU aus LabUsers.psd1 verschoben.
     [string] $ClientComputerName = '',
 
+    # Optionaler Fileserver, nur fuer Lab-Info.txt.
+    [string] $FileServerComputerName = '',
+
     # Nur Phase 'Orchestrate':
     [string] $AdminPasswordB64,
     [string] $LabUserPasswordB64,
@@ -234,6 +237,9 @@ function Invoke-InstallTask {
     }
     if ($ClientComputerName) {
         $arguments += " -ClientComputerName $ClientComputerName"
+    }
+    if ($FileServerComputerName) {
+        $arguments += " -FileServerComputerName $FileServerComputerName"
     }
     $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument $arguments
     $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Hours 3)
@@ -686,6 +692,7 @@ function Publish-LabDesktop {
             "Exchange-Server:     $env:COMPUTERNAME"
             "Domain Controller:   $($dcNames -join ', ')"
             "Client:              $(if ($ClientComputerName) { "$ClientComputerName (Windows 11, Microsoft 365 Apps, RDP direkt ueber Ausgabe clientRdpHost)" } else { 'keiner' })"
+            "Fileserver:          $(if ($FileServerComputerName) { "\\$FileServerComputerName (Freigaben Abteilungen, Projekte, Archiv, Scans, Home$; RDP von hier aus)" } else { 'keiner' })"
             "Administrator:       $NetbiosName\$AdminUser"
             "OWA:                 https://$mailHost/owa"
             "ECP:                 https://$mailHost/ecp"

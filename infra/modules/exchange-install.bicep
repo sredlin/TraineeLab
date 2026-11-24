@@ -42,6 +42,9 @@ param secondDcComputerName string = ''
 @description('Computername des optionalen Windows-11-Clients, wird in die Client-OU verschoben. Leer = kein Client.')
 param clientComputerName string = ''
 
+@description('Computername des optionalen Fileservers, nur fuer Lab-Info.txt. Leer = kein Fileserver.')
+param fileServerComputerName string = ''
+
 @description('Private IP des Domain Controllers.')
 param dcIp string
 
@@ -185,6 +188,11 @@ resource installExchangeServer 'Microsoft.Compute/virtualMachines/runCommands@20
       {
         name: 'ClientComputerName'
         value: clientComputerName
+      }
+    ], empty(fileServerComputerName) ? [] : [
+      {
+        name: 'FileServerComputerName'
+        value: fileServerComputerName
       }
     ])
     protectedParameters: [

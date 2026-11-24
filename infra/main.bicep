@@ -88,6 +88,16 @@ param clientImageSku string = 'win11-25h2-ent'
 ])
 param officeProductId string = 'O365ProPlusRetail'
 
+@description('Fileserver <K>-FS01 bereitstellen: Freigaben mit AGDLP-Berechtigungen, Basisordner, FSRM und absichtliche Altlasten fuer Uebungen. Keine Public IP.')
+param deployFileServer bool = true
+
+@description('VM-Groesse des Fileservers.')
+@allowed([
+  'Standard_B2ms'
+  'Standard_D2s_v5'
+])
+param fileServerVmSize string = 'Standard_B2ms'
+
 @description('VM-Groesse des Exchange-Servers (Microsoft empfiehlt fuer Produktion 128 GB RAM; 32 GB reichen fuer das Lab).')
 @allowed([
   'Standard_E4s_v5'
@@ -112,6 +122,7 @@ var addressPrefix = '10.0.0.0/16'
 var dcPrivateIp = '10.0.1.4'
 var exchangePrivateIp = '10.0.1.5'
 var dc2PrivateIp = '10.0.1.6'
+var fileServerPrivateIp = '10.0.1.7'
 var clientPrivateIp = '10.0.1.10'
 
 var names = {
@@ -128,6 +139,8 @@ var names = {
   clientVm: 'vm-${traineeLower}-cl01'
   clientComputer: '${traineeUpper}-CL01'
   clientPublicIp: 'pip-${traineeLower}-cl01'
+  fsVm: 'vm-${traineeLower}-fs01'
+  fsComputer: '${traineeUpper}-FS01'
 }
 
 // Einzige Quelle der Subnet-Definition: wird bei Erstanlage und DNS-Umstellung identisch verwendet.
@@ -302,6 +315,7 @@ module exchangeInstall 'modules/exchange-install.bicep' = {
     dcComputerName: names.dcComputer
     secondDcComputerName: deploySecondDc ? names.dc2Computer : ''
     clientComputerName: deployClient ? names.clientComputer : ''
+    fileServerComputerName: deployFileServer ? names.fsComputer : ''
     dcIp: dcPrivateIp
     exchangeIp: exchangePrivateIp
   }
@@ -343,9 +357,49 @@ module clientJoin 'modules/client-join.bicep' = if (deployClient) {
     publicDomainName: publicDomainName
     dcIp: dcPrivateIp
     exchangeIp: exchangePrivateIp
+    fileServerComputerName: deployFileServer ? names.fsComputer : ''
   }
   dependsOn: [
     client
+    vnetDns
+  ]
+}
+
+// Vorbereitung (Disk, Ordnergeruest) parallel zum DC-Aufbau, Beitritt erst nach der DNS-Umstellung.
+module fileServer 'modules/file-server.bicep' = if (deployFileServer) {
+  name: 'file-server'
+  params: {
+    location: location
+    tags: allTags
+    vmName: names.fsVm
+    computerName: names.fsComputer
+    vmSize: fileServerVmSize
+    subnetId: network.outputs.subnetId
+    privateIp: fileServerPrivateIp
+    adminUsername: adminUsername
+    adminPassword: adminPassword
+  }
+}
+
+// Gruppen und Basisordner brauchen die Lab-Benutzer, die Phase Complete wartet selbst auf die Exchange-Installation.
+module fileServerJoin 'modules/file-server-join.bicep' = if (deployFileServer) {
+  name: 'file-server-join'
+  params: {
+    location: location
+    tags: allTags
+    vmName: names.fsVm
+    adminUsername: adminUsername
+    adminPassword: adminPassword
+    domainName: adDomainName
+    netbiosName: traineeUpper
+    publicDomainName: publicDomainName
+    companyOu: companyOu
+    dcComputerName: names.dcComputer
+    dcIp: dcPrivateIp
+    exchangeIp: exchangePrivateIp
+  }
+  dependsOn: [
+    fileServer
     vnetDns
   ]
 }
@@ -393,6 +447,20 @@ module clientShutdown 'modules/auto-shutdown.bicep' = if (deployClient && !empty
   ]
 }
 
+module fileServerShutdown 'modules/auto-shutdown.bicep' = if (deployFileServer && !empty(autoShutdownTime)) {
+  name: 'auto-shutdown-${names.fsVm}'
+  params: {
+    location: location
+    tags: allTags
+    vmName: names.fsVm
+    shutdownTime: autoShutdownTime
+  }
+  dependsOn: [
+    exchangeInstall
+    fileServerJoin
+  ]
+}
+
 // ---------------------------------------------------------------------------------------------
 // Ausgaben
 // ---------------------------------------------------------------------------------------------
@@ -402,3 +470,4 @@ output rdpHost string = network.outputs.publicIpFqdn
 output adDomain string = adDomainName
 output publicDomain string = publicDomainName
 output clientRdpHost string = deployClient ? network.outputs.clientPublicIpFqdn : ''
+output fileServerUnc string = deployFileServer ? '\\\\${names.fsComputer}' : ''
