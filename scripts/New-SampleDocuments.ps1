@@ -3335,8 +3335,8 @@ function Get-PersonProfile {
         Name     = '{0} {1}' -f $GivenName, $Surname
         Birth    = $birth
         BirthPlace = Get-RandomEntry $rng $C.BirthPlaces
-        Street   = '{0} {1}' -f (Get-RandomEntry $rng $C.Streets), $rng.Next(1, 140)
-        City     = '{0} {1}' -f (Get-PostalCode $rng $City), $City
+        Street   = $Locale.StreetLine -f (Get-RandomEntry $rng $C.Streets), $rng.Next(1, 140)
+        City     = $Locale.CityLine -f (Get-PostalCode $rng $City), $City
         Phone    = Get-DramaPhone $rng $City
         Mobile   = Get-DramaPhone $rng -Mobile
         Mail     = Get-PrivateMail $rng $GivenName $Surname
@@ -3427,7 +3427,8 @@ function Initialize-World {
             @{
                 Sam = $e.Sam; GivenName = $given; Surname = $surname; Name = "$given $surname"; Initials = ('{0}{1}' -f $given[0], $surname[0]).ToLowerInvariant()
                 Role = $e.Role; Department = $e.Department; Site = $e.Site; Salary = $e.Salary; Born = $e.Born; Grade = $e.Grade
-                Entry = $entryDate; Leave = $leaveDate; Lab = [bool]$lab; Female = (Test-Female $given)
+                # Female im Drehbuch schlaegt die Erkennung am Vornamen (Patterns.Female), z. B. fuer Megan oder Lee.
+                Entry = $entryDate; Leave = $leaveDate; Lab = [bool]$lab; Female = $(if ($e.ContainsKey('Female')) { [bool]$e.Female } else { Test-Female $given })
             }
         })
     $script:PeopleBySam = @{}
@@ -3452,10 +3453,13 @@ function Get-ActivePerson {
 }
 
 function Get-Person {
-    # Bevorzugt die genannte Person, sonst jemand Aktives vom Standort.
-    param([string] $Sam, [datetime] $Date, [string] $Site = $HqSite.Name, $Rng)
-    $p = $PeopleBySam[$Sam]
-    if ($p -and $p.Entry -le $Date -and (-not $p.Leave -or $p.Leave -gt $Date)) { return $p }
+    # Bevorzugt die genannte Person (bei einer Liste, z. B. Roles mit Nachfolge, die erste am Datum beschaeftigte),
+    # sonst jemand Aktives vom Standort.
+    param($Sam, [datetime] $Date, [string] $Site = $HqSite.Name, $Rng)
+    foreach ($candidate in @($Sam)) {
+        $p = $PeopleBySam[[string]$candidate]
+        if ($p -and $p.Entry -le $Date -and (-not $p.Leave -or $p.Leave -gt $Date)) { return $p }
+    }
     $active = Get-ActivePerson -Date $Date -Site $Site
     if (-not $active) { $active = Get-ActivePerson -Date $Date }
     if (-not $active) { return $People[0] }
@@ -3481,9 +3485,9 @@ function Get-DocumentCi {
     $street = if ($siteData.OldStreet -and $Date -lt $Reference.AddDays( - 5 * 365)) { $siteData.OldStreet } else { $siteData.Street }
     $ci = @{
         Primary = $base.Primary; Accent = $base.Accent; Light = $base.Light; Dark = $base.Dark; Font = $base.Font; TitleFont = $base.TitleFont; Mark = $base.Mark
-        HeaderLines = @($C.Company.Name, $street, ('{0} {1}' -f $siteData.PostalCode, $siteData.City))
+        HeaderLines = @($C.Company.Name, $street, ($Locale.CityLine -f $siteData.PostalCode, $siteData.City))
         FooterLines = @(
-            ('{0} {1} {2} {3} {4} {5} {9} {6} {7} {8}' -f $C.Company.Name, $MidDot, $street, $siteData.PostalCode, $siteData.City, $MidDot, $siteData.Phone, $MidDot, $C.Company.Web, $L.Phone)
+            ('{0} {1} {2} {3} {4} {8} {5} {6} {7}' -f $C.Company.Name, $MidDot, $street, ($Locale.CityLine -f $siteData.PostalCode, $siteData.City), $MidDot, $siteData.Phone, $MidDot, $C.Company.Web, $L.Phone)
             ('{0} {1} {2} {3} {7} {4} {5} {6}' -f $C.Company.Managers, $MidDot, $C.Company.Register, $MidDot, $script:CompanyIban, $MidDot, $C.Company.VatId, $L.Iban)
         )
         LogoPng = $null; LogoWidthPx = 0; LogoHeightPx = 0
@@ -4057,7 +4061,7 @@ function Build-ProjectUnit {
     $step = $F.ProjectSteps
     $short = ConvertTo-SafeName $customer.Short
     $lines = @(1..(3 + $rng.Next(0, 4)) | ForEach-Object { Get-ServiceLine $rng })
-    $address = @($customer.Name, $customer.Contact, ('{0} {1}' -f (Get-RandomEntry (Get-Rng -Index $customer.Name.Length -Salt 29) $C.Streets), (3 + $customer.Name.Length)), ('{0} {1}' -f (Get-PostalCode (Get-Rng -Index $customer.Domain.Length -Salt 31) $customer.City), $customer.City))
+    $address = @($customer.Name, $customer.Contact, ($Locale.StreetLine -f (Get-RandomEntry (Get-Rng -Index $customer.Name.Length -Salt 29) $C.Streets), (3 + $customer.Name.Length)), ($Locale.CityLine -f (Get-PostalCode (Get-Rng -Index $customer.Domain.Length -Salt 31) $customer.City), $customer.City))
     $customerNo = '{0}{1}' -f $L.CustomerId, (10001 + $C.Customers.IndexOf($customer))
     # Nummern von Angebot, Auftragsbestaetigung und Rechnung, z. B. AN-2024-0001.
     $offerNo = $L.OfferId + $num
@@ -4323,7 +4327,7 @@ function Get-RaffleModel {
         $given = Get-RandomEntry $Rng $C.FirstNames
         $sur = Get-RandomEntry $Rng $C.LastNames
         $city = Get-RandomEntry $Rng $C.LocalCities
-        $rows.Add(@{ Cells = @(@{ V = "$given $sur" }, @{ V = ('{0} {1}, {2} {3}' -f (Get-RandomEntry $Rng $C.Streets), $Rng.Next(1, 120), (Get-PostalCode $Rng $city), $city) }, @{ V = (New-Object -TypeName DateTime -ArgumentList (1950 + $Rng.Next(0, 55)), (1 + $Rng.Next(0, 12)), (1 + $Rng.Next(0, 28))); Fmt = 'Date' }, @{ V = (Get-PrivateMail $Rng $given $sur) }, @{ V = (Get-DramaPhone $Rng -Mobile) }) })
+        $rows.Add(@{ Cells = @(@{ V = "$given $sur" }, @{ V = ('{0}, {1}' -f ($Locale.StreetLine -f (Get-RandomEntry $Rng $C.Streets), $Rng.Next(1, 120)), ($Locale.CityLine -f (Get-PostalCode $Rng $city), $city)) }, @{ V = (New-Object -TypeName DateTime -ArgumentList (1950 + $Rng.Next(0, 55)), (1 + $Rng.Next(0, 12)), (1 + $Rng.Next(0, 28))); Fmt = 'Date' }, @{ V = (Get-PrivateMail $Rng $given $sur) }, @{ V = (Get-DramaPhone $Rng -Mobile) }) })
     }
     @{ Title = "$($L.Raffle) $Project"; Author = $Author.Name; Company = $C.Company.Name; Ci = $Ci; Sheets = @(@{ Name = $L.Participants; Columns = @(@{ Width = 24 }, @{ Width = 40 }, @{ Width = 14 }, @{ Width = 32 }, @{ Width = 20 }); Rows = $rows.ToArray(); Freeze = 1; AutoFilter = $true }) }
 }
@@ -4398,7 +4402,7 @@ function Get-IncomingInvoiceModel {
     $supplier = $C.Suppliers[$supplierIndex]
     $number = '{0}-{1:D6}' -f $supplier.Name.Substring(0, 2).ToUpperInvariant(), (($Index * 37) % 1000000)
     $stable = Get-Rng -Index $supplierIndex -Salt 31
-    $foreign = @{ Name = $supplier.Name; Lines = @(('{0} {1} {2} {3} {4}' -f (Get-RandomEntry $stable $C.Streets), $stable.Next(1, 90), $MidDot, (Get-PostalCode $stable $supplier.City), $supplier.City), ('www.{0} {1} {2}@{0}' -f $supplier.Domain, $MidDot, $L.MailInvoice)) }
+    $foreign = @{ Name = $supplier.Name; Lines = @(('{0} {1} {2}' -f ($Locale.StreetLine -f (Get-RandomEntry $stable $C.Streets), $stable.Next(1, 90)), $MidDot, ($Locale.CityLine -f (Get-PostalCode $stable $supplier.City), $supplier.City)), ('www.{0} {1} {2}@{0}' -f $supplier.Domain, $MidDot, $L.MailInvoice)) }
     $model = Get-DocModel -Title "$($L.Invoice) $number" -Author @{ Name = $supplier.Name } -Created $Date -Modified $Date -Ci $Ci -SenderKind 'Foreign' -Foreign $foreign
     $stamp = @{ Text = $L.Received; Text2 = (Format-LocalDate $Date.AddDays($Rng.Next(1, 5))); Color = 'Red' }
     if ($Rng.Next(0, 3) -gt 0) { $stamp.Text3 = $L.Booked }

@@ -26,8 +26,10 @@
     # Sprache und Land. Country waehlt die Erzeugung von Steuer-ID, Sozialversicherungs-, Ausweisnummer und IBAN.
     # Money: {0} = Betrag im Format N2 der Culture. Vat, Mileage (je Entfernungseinheit), Allowance, Tax, Social: Saetze.
     # Mobiles: Format mit {0} = Min + Zufall unter Span. PostalCodes: Ort = @(Format, Min, Anzahl), sonst PostalCode.
+    # StreetLine: {0} = Strasse, {1} = Hausnummer. CityLine: {0} = Postleitzahl, {1} = Ort.
     Locale        = @{
         Culture = 'de-DE'; Country = 'DE'; Date = 'dd.MM.yyyy'; ReceiptDate = 'dd.MM.yyyy  HH:mm'; Money = '{0} €'; ListSeparator = ';'; PdfZone = '+01''00'''
+        StreetLine = '{0} {1}'; CityLine = '{0} {1}'
         XlsxDate = 'dd\.mm\.yyyy'; XlsxMoney = '#,##0.00 [$€-407]'
         Vat = 0.19; Mileage = 0.3; Distance = 'km'; Allowance = 28; Tax = 0.14; Social = 0.205
         Salutations = @{ Frau = 'Sehr geehrte Frau'; Herr = 'Sehr geehrter Herr' }
@@ -44,8 +46,8 @@
         Sales = 'Abteilungen\Vertrieb'; IT = 'Abteilungen\IT'; General = 'Abteilungen\Allgemein'; Projects = 'Projekte'; Home = 'Home'; Scans = 'Scans'; Archive = 'Archiv'
     }
 
-    # Wer welche Aufgabe im Drehbuch hat (SamAccountName aus Employees).
-    Roles         = @{ Ceo = 'MMustermann'; ManagingDirector = 'EMustermann'; Accountant = 'DHoffmann'; Office = 'NPohl'; Designer = 'VSpula'; PrivateFiles = 'JFrick'; Intern = 'PPraktikant' }
+    # Wer welche Aufgabe im Drehbuch hat (SamAccountName aus Employees). Liste = Nachfolge: die erste am Datum beschaeftigte Person.
+    Roles         = @{ Ceo = 'MMustermann'; ManagingDirector = 'EMustermann'; Accountant = @('DHoffmann', 'PradeepG'); Office = @('NPohl', 'JoniS'); Designer = 'VSpula'; PrivateFiles = 'JFrick'; Intern = 'PPraktikant' }
 
     # Anzeigenamen der IDs in Employees.Department und Customers.Industry bzw. Texts-*.Industry.
     Departments   = @{ Management = 'Geschäftsleitung'; Marketing = 'Marketing'; Accounting = 'Buchhaltung'; HR = 'Personal'; Sales = 'Vertrieb'; IT = 'IT' }
@@ -112,6 +114,23 @@
         @{ Sam = 'SHarz'; Role = 'Grafiker'; Department = 'Marketing'; Site = 'Hamburg'; Entry = 5; Leave = 0; Salary = 3700; Born = 1992; Grade = 2 }
         @{ Sam = 'WLonska'; Role = 'Grafikerin'; Department = 'Marketing'; Site = 'Hamburg'; Entry = 3; Leave = 0; Salary = 3600; Born = 1994; Grade = 1 }
         @{ Sam = 'RJung'; Role = 'Junior-Grafiker'; Department = 'Marketing'; Site = 'Hamburg'; Entry = 1; Leave = 0; Salary = 2800; Born = 2002; Grade = 3 }
+        # Microsoft-Demo-Personas (Namen aus LabUsers.psd1). Female, wo der Vorname die Erkennung taeuscht.
+        @{ Sam = 'PattiF'; Role = 'Leiterin Vertrieb'; Department = 'Sales'; Site = 'Berlin'; Entry = 9; Leave = 0; Salary = 5600; Born = 1978; Grade = 1; Female = $true }
+        @{ Sam = 'IsaiahL'; Role = 'Kundenberater'; Department = 'Sales'; Site = 'Berlin'; Entry = 5; Leave = 0; Salary = 4100; Born = 1989; Grade = 2 }
+        @{ Sam = 'LidiaH'; Role = 'Projektmanagerin'; Department = 'Sales'; Site = 'Berlin'; Entry = 6; Leave = 0; Salary = 4300; Born = 1986; Grade = 1 }
+        @{ Sam = 'MiriamG'; Role = 'Kreativdirektorin'; Department = 'Marketing'; Site = 'Berlin'; Entry = 8; Leave = 0; Salary = 6100; Born = 1980; Grade = 1; Female = $true }
+        @{ Sam = 'MeganB'; Role = 'Marketingmanagerin'; Department = 'Marketing'; Site = 'Berlin'; Entry = 7; Leave = 0; Salary = 4500; Born = 1987; Grade = 1; Female = $true }
+        @{ Sam = 'AlexW'; Role = 'Marketing-Assistent'; Department = 'Marketing'; Site = 'Berlin'; Entry = 2; Leave = 0; Salary = 3000; Born = 1998; Grade = 2 }
+        @{ Sam = 'HenriettaM'; Role = 'Webentwicklerin'; Department = 'Marketing'; Site = 'Berlin'; Entry = 3; Leave = 0; Salary = 4400; Born = 1991; Grade = 1 }
+        @{ Sam = 'NestorW'; Role = 'Leiter Produktion'; Department = 'Marketing'; Site = 'Berlin'; Entry = 6; Leave = 0; Salary = 4900; Born = 1976; Grade = 2 }
+        @{ Sam = 'DiegoS'; Role = 'Personalleiter'; Department = 'HR'; Site = 'Berlin'; Entry = 4; Leave = 0; Salary = 5200; Born = 1979; Grade = 1 }
+        @{ Sam = 'JoniS'; Role = 'Assistenz der Geschäftsführung'; Department = 'HR'; Site = 'Berlin'; Entry = 2; Leave = 0; Salary = 3300; Born = 1995; Grade = 2; Female = $true }
+        @{ Sam = 'PradeepG'; Role = 'Buchhalter'; Department = 'Accounting'; Site = 'Berlin'; Entry = 3; Leave = 0; Salary = 3900; Born = 1984; Grade = 1 }
+        @{ Sam = 'AdeleV'; Role = 'Kundenberaterin'; Department = 'Sales'; Site = 'Hamburg'; Entry = 4; Leave = 0; Salary = 4000; Born = 1990; Grade = 1 }
+        @{ Sam = 'LeeG'; Role = 'Leiter Digital'; Department = 'Marketing'; Site = 'Hamburg'; Entry = 5; Leave = 0; Salary = 5000; Born = 1983; Grade = 1; Female = $false }
+        @{ Sam = 'GradyA'; Role = 'Grafiker'; Department = 'Marketing'; Site = 'Hamburg'; Entry = 4; Leave = 0; Salary = 3800; Born = 1992; Grade = 2 }
+        @{ Sam = 'LynneR'; Role = 'Mediaplanerin'; Department = 'Marketing'; Site = 'Hamburg'; Entry = 3; Leave = 0; Salary = 3700; Born = 1993; Grade = 2 }
+        @{ Sam = 'JohannaL'; Role = 'Texterin'; Department = 'Marketing'; Site = 'Hamburg'; Entry = 2; Leave = 0; Salary = 3500; Born = 1996; Grade = 1 }
         @{ Sam = 'DHoffmann'; GivenName = 'Dirk'; Surname = 'Hoffmann'; Role = 'Buchhalter (Teilzeit)'; Department = 'Accounting'; Site = 'Berlin'; Entry = 12; Leave = 3; Salary = 2400; Born = 1962; Grade = 1 }
         @{ Sam = 'TSchneider'; GivenName = 'Tanja'; Surname = 'Schneider'; Role = 'Grafikerin'; Department = 'Marketing'; Site = 'Berlin'; Entry = 11; Leave = 4; Salary = 3500; Born = 1985; Grade = 1 }
         @{ Sam = 'NPohl'; GivenName = 'Nadine'; Surname = 'Pohl'; Role = 'Office-Managerin'; Department = 'HR'; Site = 'Berlin'; Entry = 10; Leave = 1; Salary = 3100; Born = 1980; Grade = 2 }

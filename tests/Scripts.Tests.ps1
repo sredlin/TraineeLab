@@ -610,7 +610,7 @@ Describe 'Beispieldokumente (Korpus, Artefakte, Generator)' {
         foreach ($layout in 'Title', 'Content', 'ImageRight', 'ImageFull', 'Section', 'Closing') { $company.Office.Layouts.Keys | Should -Contain $layout }
         foreach ($site in 'HQ', 'Branch') { @($company.Company.Sites.Key) | Should -Contain $site }
         foreach ($site in $company.Company.Sites) { foreach ($key in 'Key', 'Code', 'Name', 'City', 'Dial') { $site.Keys | Should -Contain $key } }
-        foreach ($sam in $company.Roles.Values) { @($company.Employees.Sam) | Should -Contain $sam }
+        foreach ($sam in @($company.Roles.Values | ForEach-Object { $_ })) { @($company.Employees.Sam) | Should -Contain $sam }
         @($company.Suppliers | Where-Object { $_.Role -eq 'TaxAdvisor' }) | Should -HaveCount 1
     }
 
