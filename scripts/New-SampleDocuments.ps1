@@ -5,7 +5,7 @@
 .DESCRIPTION
     Laeuft als Azure Managed Run Command (LocalSystem) auf <K>-FS01, vor dem Domaenenbeitritt.
     Inhalt: zwoelf Jahre Geschichte der fiktiven Mustermann Medien GmbH nach dem Drehbuch in
-    scripts/corpus (Kundenprojekte mit vollstaendigem Lebenszyklus, Buchhaltung, Personalakten mit
+    scripts/data/<Sprache>/corpus (Kundenprojekte mit vollstaendigem Lebenszyklus, Buchhaltung, Personalakten mit
     fiktiven Personendaten, Bewerbungen, Protokolle, Richtlinien, Firmenereignisse, Corporate Design,
     Entra-Branding). Der Korpus kommt gzip-gepackt als userData der VM (IMDS); die Dokumente liegen nie im Repo.
 
@@ -23,7 +23,7 @@
 
     Das Skript enthaelt bewusst nur ASCII-Zeichen (Windows PowerShell 5.1). Lokaler Test:
       .\New-SampleDocuments.ps1 -TargetPath C:\Temp\Daten -TargetSizeMB 200 -LabRoot C:\Temp\Lab `
-          -CorpusPath .\corpus -LabUsersPath .\LabUsers.psd1 -ReferenceDate 2026-11-24 -WorkerCount 1
+          -CorpusPath .\data\de\corpus -LabUsersPath .\data\de\LabUsers.psd1 -ReferenceDate 2026-11-24 -WorkerCount 1
 #>
 [CmdletBinding()]
 param(
@@ -3482,7 +3482,7 @@ function Get-Salutation {
 }
 
 function Get-TextContext {
-    # Platzhalterwerte fuer Texte (siehe corpus/README.md).
+    # Platzhalterwerte fuer Texte (siehe scripts/data/README.md).
     param([Parameter(Mandatory)] $Rng, [datetime] $Date, $Customer = $null, [string] $Project = '', $Author = $null, $Colleague = $null)
     if (-not $Author) { $Author = Get-Person 'MMustermann' $Date 'Berlin' $Rng }
     if (-not $Colleague) {

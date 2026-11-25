@@ -79,7 +79,7 @@ resource vm 'Microsoft.Compute/virtualMachines@2025-04-01' = {
       vmSize: vmSize
     }
     // Textkorpus fuer New-SampleDocuments (gzip-JSON, per IMDS lesbar). Erzeugt von tools/Build-SampleArtifacts.ps1.
-    userData: loadFileAsBase64('../../scripts/SampleCorpus.gz')
+    userData: loadFileAsBase64('../../scripts/SampleCorpus.de.gz')
     securityProfile: {
       securityType: 'TrustedLaunch'
       uefiSettings: {
@@ -168,11 +168,11 @@ resource prepareFileServer 'Microsoft.Compute/virtualMachines/runCommands@2025-0
       }
       {
         name: 'LabUsersB64'
-        value: loadFileAsBase64('../../scripts/LabUsers.psd1')
+        value: loadFileAsBase64('../../scripts/data/de/LabUsers.psd1')
       }
       {
         name: 'FileServerB64'
-        value: loadFileAsBase64('../../scripts/FileServer.psd1')
+        value: loadFileAsBase64('../../scripts/data/de/FileServer.psd1')
       }
     ]
     asyncExecution: false

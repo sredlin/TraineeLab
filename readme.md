@@ -40,11 +40,11 @@ flowchart LR
 | Zweiter DC (optional) | `deploySecondDc = true`: `<K>-DC02` mit gleicher Ausstattung, wird parallel zum ersten DC aufgebaut und heraufgestuft, DNS des VNets zeigt dann auf beide DCs |
 | Exchange-Server | `Standard_E4s_v5` (32 GB RAM), Windows Server 2025, Exchange Server SE (Mailbox), OS- und Datendisk **Premium SSD**, DB und Logs auf ReFS-Datendisk |
 | Windows-11-Client | `deployClient = true` (Standard): `<K>-CL01`, `Standard_B2ms`, Windows 11 Enterprise mit deutscher Oberfläche, Microsoft 365 Apps (de-de, ohne Access/Publisher/Teams), Domänenmitglied in `OU=Computers,OU=Berlin`, eigene Public IP für RDP, aktualisiert sich selbst (Neustarts nur außerhalb 06–23 Uhr). Einstieg ins Lab: Devolutions Remote Desktop Manager Free mit fertigen RDP-Verbindungen zu allen Lab-Servern (Domain-Admin, für jeden Benutzer am Client) |
-| Fileserver | `deployFileServer = true` (Standard): `<K>-FS01`, Windows Server 2025, keine Public IP. Erzeugt die Beispieldaten mit `Standard_D4s_v5` und verkleinert sich danach selbst auf `Standard_B2s_v2`. Datendisk `F:` mit 256 GB Standard SSD. Freigaben `Abteilungen`, `Projekte`, `Archiv`, `Scans` und `Home$` mit zugriffsbasierter Aufzählung und AGDLP-Gruppen, Basisordner `H:`, FSRM. Rund 60 GB Beispieldokumente einer fiktiven Agentur (zwölf Jahre Projekte, Buchhaltung, Personal, Corporate Design, Logos für das Entra-Branding) mit fiktiven personenbezogenen Daten und absichtlichen Altlasten. Definiert in `scripts/FileServer.psd1` und `scripts/corpus` |
+| Fileserver | `deployFileServer = true` (Standard): `<K>-FS01`, Windows Server 2025, keine Public IP. Erzeugt die Beispieldaten mit `Standard_D4s_v5` und verkleinert sich danach selbst auf `Standard_B2s_v2`. Datendisk `F:` mit 256 GB Standard SSD. Freigaben `Abteilungen`, `Projekte`, `Archiv`, `Scans` und `Home$` mit zugriffsbasierter Aufzählung und AGDLP-Gruppen, Basisordner `H:`, FSRM. Rund 60 GB Beispieldokumente einer fiktiven Agentur (zwölf Jahre Projekte, Buchhaltung, Personal, Corporate Design, Logos für das Entra-Branding) mit fiktiven personenbezogenen Daten und absichtlichen Altlasten. Definiert in `scripts/data/de/FileServer.psd1` und `scripts/data/de/corpus` |
 | Netzwerk | ein VNet, ein Subnet, eine NSG (kein Allow-All, SMTP getrennt von HTTP/HTTPS), Standard-Public-IPs für Exchange und Client |
 | DNS | öffentliche Zone `<k>.<zone>` (mail, autodiscover, MX, SPF, DMARC `p=none`) mit Delegation in `<zone>`; intern Split DNS und Reverse-Zone `1.0.10.in-addr.arpa` auf dem DC |
 | AD | OU-Baum `LEARN-<k>` (Branch Berlin/Hamburg, Administration), 12 Lab-Benutzer mit Postfach, Adresse `@<k>.<zone>`, Vorgesetzten und fiktiven Rufnummern der Bundesnetzagentur (030 23125, 040 66969, 0171 39200), AD-Papierkorb aktiv |
-| Beispielempfänger | Verteiler `geschaeftsleitung`, `marketing-berlin`, `marketing-hamburg`, `alle`; freigegebene Postfächer `info`, `buchhaltung` (Vollzugriff mit Automapping, Senden als); Räume `raum-berlin`, `raum-hamburg`; zwei externe Kontakte. Definiert in `scripts/LabUsers.psd1` |
+| Beispielempfänger | Verteiler `geschaeftsleitung`, `marketing-berlin`, `marketing-hamburg`, `alle`; freigegebene Postfächer `info`, `buchhaltung` (Vollzugriff mit Automapping, Senden als); Räume `raum-berlin`, `raum-hamburg`; zwei externe Kontakte. Definiert in `scripts/data/de/LabUsers.psd1` |
 | Verwaltung | Remote Desktop Manager auf dem Client als Einstieg zu allen Servern; DNS-Konsole und GPMC zusätzlich auf dem Exchange-Server; GPO `LAB - Outlook klassisch` an `LEARN-<k>` blendet das neue Outlook aus (unterstützt kein Exchange on Premises) |
 
 ## Voraussetzungen
@@ -189,7 +189,7 @@ az network dns record-set ns delete -g rg-publicdns -z <zone> -n <k>
 az bicep build --file infra/main.bicep --outfile azuredeploy.json
 ```
 
-- Beispieldokumente: Drehbuch und Texte liegen lesbar in `scripts/corpus` (Regeln in [scripts/corpus/README.md](scripts/corpus/README.md)), der Generator in `scripts/New-SampleDocuments.ps1`. Daraus entstehen die eingebetteten Artefakte `scripts/SampleCorpus.gz` (userData der VM) und `scripts/Start-SampleDocuments.ps1` (gepackter Generator). Nach jeder Änderung neu bauen, die Tests prüfen den Abgleich:
+- Beispieldokumente: Drehbuch und Texte liegen lesbar in `scripts/data/de/corpus` (Regeln in [scripts/data/README.md](scripts/data/README.md)), der Generator in `scripts/New-SampleDocuments.ps1`. Daraus entstehen die eingebetteten Artefakte `scripts/SampleCorpus.de.gz` (userData der VM) und `scripts/Start-SampleDocuments.ps1` (gepackter Generator). Nach jeder Änderung neu bauen, die Tests prüfen den Abgleich:
 
 ```powershell
 ./tools/Build-SampleArtifacts.ps1
@@ -199,7 +199,7 @@ az bicep build --file infra/main.bicep --outfile azuredeploy.json
 
 ```powershell
 .\scripts\New-SampleDocuments.ps1 -TargetPath C:\Temp\Daten -TargetSizeMB 500 -LabRoot C:\Temp\Lab `
-    -CorpusPath .\scripts\corpus -LabUsersPath .\scripts\LabUsers.psd1 -ReferenceDate 2026-11-24
+    -CorpusPath .\scripts\data\de\corpus -LabUsersPath .\scripts\data\de\LabUsers.psd1 -ReferenceDate 2026-11-24
 ```
 
 - Prüfungen (laufen auch in der CI):

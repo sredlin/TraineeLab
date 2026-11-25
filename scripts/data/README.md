@@ -1,6 +1,6 @@
 # Textkorpus der Beispieldokumente
 
-Aus diesen Dateien erzeugt `scripts/New-SampleDocuments.ps1` auf dem Fileserver Word-, Excel-, PowerPoint- und PDF-Dokumente der fiktiven **Mustermann Medien GmbH**, einer Werbeagentur mit Zentrale in Berlin und Niederlassung in Hamburg. Die erzeugten Dokumente liegen nie im Repo, nur diese Quellen.
+Aus den Dateien in `de/corpus` erzeugt `scripts/New-SampleDocuments.ps1` auf dem Fileserver Word-, Excel-, PowerPoint- und PDF-Dokumente der fiktiven **Mustermann Medien GmbH**, einer Werbeagentur mit Zentrale in Berlin und Niederlassung in Hamburg. Die erzeugten Dokumente liegen nie im Repo, nur diese Quellen.
 
 | Datei | Inhalt |
 | --- | --- |
@@ -10,7 +10,7 @@ Aus diesen Dateien erzeugt `scripts/New-SampleDocuments.ps1` auf dem Fileserver 
 | `Texts-People.psd1` | Personal: Arbeitsvertrag, Zeugnisse, Bewerbungen, Mitarbeitergespräche, Onboarding |
 | `Texts-Company.psd1` | Richtlinien und Handbücher, CI-Handbuch, Entra-Branding-Anleitung, Verträge, IT-Dokumentation, Jahresauftakt |
 
-`tools/Build-SampleArtifacts.ps1` packt alle `*.psd1` dieses Ordners in `scripts/SampleCorpus.gz`. Dieses Paket geht als `userData` auf die VM und darf höchstens 48 KB haben, denn `userData` erlaubt 64 KB Base64. Dasselbe Skript packt den Generator in `scripts/Start-SampleDocuments.ps1`. Ein Pester-Test prüft Größe und Übereinstimmung mit den Quellen. **Nach jeder Änderung hier oder am Generator das Build-Skript ausführen.**
+`tools/Build-SampleArtifacts.ps1` packt alle `*.psd1` aus `<Sprache>/corpus` in `scripts/SampleCorpus.<Sprache>.gz`. Jedes Paket geht als `userData` auf die VM und darf höchstens 48 KB haben, denn `userData` erlaubt 64 KB Base64. Dasselbe Skript packt den Generator in `scripts/Start-SampleDocuments.ps1`. Ein Pester-Test prüft Größe und Übereinstimmung mit den Quellen. **Nach jeder Änderung hier oder am Generator das Build-Skript ausführen.**
 
 Besondere Listen in `Company.psd1`:
 

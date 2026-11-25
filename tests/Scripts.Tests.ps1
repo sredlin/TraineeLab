@@ -10,8 +10,8 @@ BeforeDiscovery {
 
 BeforeAll {
     $repoRoot = Split-Path -Path $PSScriptRoot -Parent
-    $labUsers = Import-PowerShellDataFile -Path (Join-Path -Path $repoRoot -ChildPath 'scripts/LabUsers.psd1')
-    $fileServer = Import-PowerShellDataFile -Path (Join-Path -Path $repoRoot -ChildPath 'scripts/FileServer.psd1')
+    $labUsers = Import-PowerShellDataFile -Path (Join-Path -Path $repoRoot -ChildPath 'scripts/data/de/LabUsers.psd1')
+    $fileServer = Import-PowerShellDataFile -Path (Join-Path -Path $repoRoot -ChildPath 'scripts/data/de/FileServer.psd1')
     $templateText = Get-Content -Path (Join-Path $repoRoot 'azuredeploy.json') -Raw
     $template = $templateText | ConvertFrom-Json -Depth 100
 }
@@ -391,7 +391,7 @@ Describe 'Beispieldokumente (Korpus, Artefakte, Generator)' {
             $gzip.Dispose()
             , $plain.ToArray()
         }
-        $corpusDir = Join-Path $repoRoot 'scripts/corpus'
+        $corpusDir = Join-Path $repoRoot 'scripts/data/de/corpus'
         $corpusFiles = @(Get-ChildItem -Path $corpusDir -Filter '*.psd1' -File | Sort-Object -Property Name)
         $corpusText = ($corpusFiles | ForEach-Object { [IO.File]::ReadAllText($_.FullName) }) -join "`n"
         $company = Import-PowerShellDataFile -Path (Join-Path $corpusDir 'Company.psd1')
@@ -401,7 +401,7 @@ Describe 'Beispieldokumente (Korpus, Artefakte, Generator)' {
     }
 
     It 'SampleCorpus.gz passt in die userData und entspricht den Quellen' {
-        $bytes = [IO.File]::ReadAllBytes((Join-Path $repoRoot 'scripts/SampleCorpus.gz'))
+        $bytes = [IO.File]::ReadAllBytes((Join-Path $repoRoot 'scripts/SampleCorpus.de.gz'))
         [Convert]::ToBase64String($bytes).Length | Should -BeLessOrEqual 65536
         $json = [Text.Encoding]::UTF8.GetString((Expand-GzipByte $bytes)) | ConvertFrom-Json
         @($json.PSObject.Properties.Name) | Should -Be @($corpusFiles.Name) -Because $rebuild
@@ -470,7 +470,7 @@ Describe 'Beispieldokumente (Korpus, Artefakte, Generator)' {
         $target = Join-Path $TestDrive 'daten'
         $labRoot = Join-Path $TestDrive 'lab'
         $arguments = @('-NoProfile', '-NonInteractive', '-File', $generatorPath, '-TargetPath', $target, '-TargetSizeMB', '6', '-LabRoot', $labRoot,
-            '-CorpusPath', $corpusDir, '-LabUsersPath', (Join-Path $repoRoot 'scripts/LabUsers.psd1'), '-ReferenceDate', '2026-11-24',
+            '-CorpusPath', $corpusDir, '-LabUsersPath', (Join-Path $repoRoot 'scripts/data/de/LabUsers.psd1'), '-ReferenceDate', '2026-11-24',
             '-WorkerCount', '1', '-NoRaster', '-TimeBudgetMinutes', '0')
         & (Get-Process -Id $PID).Path @arguments | Out-Null
         $LASTEXITCODE | Should -Be 0 -Because (Get-Content -Path (Join-Path $labRoot 'Logs/New-SampleDocuments.log') -Raw)
