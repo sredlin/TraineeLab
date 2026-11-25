@@ -4,7 +4,7 @@
 
 .DESCRIPTION
     Laeuft als Azure Managed Run Command (LocalSystem) auf <K>-FS01, vor dem Domaenenbeitritt.
-    Inhalt: zwoelf Jahre Geschichte der fiktiven Mustermann Medien GmbH nach dem Drehbuch in
+    Inhalt: zwoelf Jahre Geschichte der fiktiven Agentur (Mustermann Medien GmbH bzw. Contoso Ltd) nach dem Drehbuch in
     scripts/data/<Sprache>/corpus (Kundenprojekte mit vollstaendigem Lebenszyklus, Buchhaltung, Personalakten mit
     fiktiven Personendaten, Bewerbungen, Protokolle, Richtlinien, Firmenereignisse, Corporate Design,
     Entra-Branding). Der Korpus kommt gzip-gepackt als userData der VM (IMDS); die Dokumente liegen nie im Repo.
@@ -4063,7 +4063,7 @@ function Add-PositionTable {
         $rows.Add([string[]]@([string]$pos, $line.Text, (Format-Number $line.Qty), $line.Unit, (Format-Money $line.Price), (Format-Money $amount)))
         $pos++
     }
-    $vat = [Math]::Round($net * 0.19, 2)
+    $vat = [Math]::Round($net * $Locale.Vat, 2)
     Add-Block $Model 'Table' @{ Header = [string[]]@($L.Pos, $L.Description, $L.Quantity, $L.Unit, $L.Price, $L.Amount); Rows = $rows.ToArray(); Widths = @(0.07, 0.41, 0.1, 0.1, 0.16, 0.16); Align = 'LLRLRR' }
     $sums = [System.Collections.Generic.List[object]]::new()
     $sums.Add([string[]]@($L.Net, (Format-Money $net)))
@@ -4207,7 +4207,7 @@ function Build-ProjectUnit {
         }
         if ($v -ge 1 -and $moodboard) { Add-Block $concept 'Image' @{ Bytes = $moodboard.Bytes; Format = 'jpeg'; WidthPx = $moodboard.WidthPx; HeightPx = $moodboard.HeightPx; WidthCm = 15; Caption = $L.Moodboard } }
         if ($v -eq 2) {
-            $rows = @(foreach ($phase in 0..3) { , [string[]]@($C.Phases[$phase], ('{0} {1}' -f $L.Week, (Get-Culture).Calendar.GetWeekOfYear($dConcept.AddDays(7 * $phase), 2, 1))) })
+            $rows = @(foreach ($phase in 0..3) { , [string[]]@($C.Phases[$phase], ('{0} {1}' -f $L.Week, $Culture.Calendar.GetWeekOfYear($dConcept.AddDays(7 * $phase), 2, 1))) })
             Add-Block $concept 'Heading' @{ Text = $L.Schedule }
             Add-Block $concept 'Table' @{ Header = [string[]]@($L.Phase, $L.Due); Rows = $rows; Widths = @(0.6, 0.4); Align = 'LL' }
         }
@@ -4437,7 +4437,7 @@ function Get-ReceiptSheetItem {
         $ty = $y + 14
         $lines = [System.Collections.Generic.List[object]]::new()
         $lines.Add(@($shop.Name, $true))
-        $lines.Add(@((('{0:' + $Locale.ReceiptDate + '}') -f $date), $false))
+        $lines.Add(@($date.ToString($Locale.ReceiptDate, $Culture), $false))
         $lines.Add(@('--------------------------', $false))
         $sum = 0.0
         foreach ($position in $positions) {

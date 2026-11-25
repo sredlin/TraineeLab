@@ -82,7 +82,7 @@ resource vm 'Microsoft.Compute/virtualMachines@2025-04-01' = {
       vmSize: vmSize
     }
     // Textkorpus fuer New-SampleDocuments (gzip-JSON, per IMDS lesbar). Erzeugt von tools/Build-SampleArtifacts.ps1.
-    userData: loadFileAsBase64('../../scripts/SampleCorpus.de.gz')
+    userData: labLanguage == 'en' ? loadFileAsBase64('../../scripts/SampleCorpus.en.gz') : loadFileAsBase64('../../scripts/SampleCorpus.de.gz')
     securityProfile: {
       securityType: 'TrustedLaunch'
       uefiSettings: {

@@ -418,8 +418,8 @@ Describe 'azuredeploy.json' {
         $sampleRun = $fileServerModule.resources | Where-Object { $_.type -eq 'Microsoft.Compute/virtualMachines/runCommands' -and $_.name -match 'New-SampleDocuments' }
         $sampleRun.properties.parameters.name | Should -Contain 'TargetPercent'
         $vm = $fileServerModule.resources | Where-Object type -EQ 'Microsoft.Compute/virtualMachines'
-        $vm.properties.userData | Should -Not -BeNullOrEmpty
-        $vm.properties.userData.Length | Should -BeLessOrEqual 65536
+        # Je Sprache ein Korpus-Paket (Groesse prueft der Block Beispieldokumente), Auswahl ueber labLanguage.
+        $vm.properties.userData | Should -Match "^\[if\(equals\(parameters\('labLanguage'\), 'en'\)"
         $vm.properties.storageProfile.dataDisks[0].diskSizeGB | Should -Not -BeNullOrEmpty
         $fileServerModule.parameters.dataDiskSizeGB.defaultValue | Should -Be 256
         $generator = $fileServerModule.resources | Where-Object { $_.type -eq 'Microsoft.Compute/virtualMachines/runCommands' -and $_.name -match 'New-SampleDocuments' }
@@ -509,8 +509,16 @@ Describe 'Remote Desktop Manager auf dem Client' {
     }
 }
 
-Describe 'Beispieldokumente (Korpus, Artefakte, Generator)' {
+Describe 'Beispieldokumente (Korpus, Artefakte, Generator) (<Language>)' -ForEach $languages {
     BeforeAll {
+        $labUsersPath = Join-Path -Path $repoRoot -ChildPath "scripts/data/$Language/LabUsers.psd1"
+        $labUsers = Import-PowerShellDataFile -Path $labUsersPath
+        $fileServer = Import-PowerShellDataFile -Path (Join-Path -Path $repoRoot -ChildPath "scripts/data/$Language/FileServer.psd1")
+        # Nur fiktive Rufnummern; der Generator nutzt fuer Privatpersonen auch die uebrigen reservierten Bereiche.
+        $corpusPhone = @{
+            de = @{ Find = '\+49 [\d \-]+\d'; Allowed = '^\+49 (30 23125|40 66969|221 4710|89 99998|69 90009|171 39200|176 040690)'; Foreign = '\+44 ' }
+            en = @{ Find = '\+44 [\d ]+\d'; Allowed = '^\+44 (20 7946 0|161 496 0|121 496 0|113 496 0|117 496 0|7700 900)'; Foreign = '\+49 ' }
+        }[$Language]
         function Expand-GzipByte([byte[]] $Bytes) {
             $packed = New-Object -TypeName System.IO.MemoryStream -ArgumentList (, $Bytes)
             $gzip = New-Object -TypeName System.IO.Compression.GZipStream -ArgumentList $packed, ([IO.Compression.CompressionMode]::Decompress)
@@ -519,7 +527,7 @@ Describe 'Beispieldokumente (Korpus, Artefakte, Generator)' {
             $gzip.Dispose()
             , $plain.ToArray()
         }
-        $corpusDir = Join-Path $repoRoot 'scripts/data/de/corpus'
+        $corpusDir = Join-Path $repoRoot "scripts/data/$Language/corpus"
         $corpusFiles = @(Get-ChildItem -Path $corpusDir -Filter '*.psd1' -File | Sort-Object -Property Name)
         $corpusText = ($corpusFiles | ForEach-Object { [IO.File]::ReadAllText($_.FullName) }) -join "`n"
         $company = Import-PowerShellDataFile -Path (Join-Path $corpusDir 'Company.psd1')
@@ -533,8 +541,8 @@ Describe 'Beispieldokumente (Korpus, Artefakte, Generator)' {
         }
     }
 
-    It 'SampleCorpus.gz passt in die userData und entspricht den Quellen' {
-        $bytes = [IO.File]::ReadAllBytes((Join-Path $repoRoot 'scripts/SampleCorpus.de.gz'))
+    It 'SampleCorpus.<Language>.gz passt in die userData und entspricht den Quellen' {
+        $bytes = [IO.File]::ReadAllBytes((Join-Path $repoRoot "scripts/SampleCorpus.$Language.gz"))
         [Convert]::ToBase64String($bytes).Length | Should -BeLessOrEqual 65536
         $json = [Text.Encoding]::UTF8.GetString((Expand-GzipByte $bytes)) | ConvertFrom-Json
         @($json.PSObject.Properties.Name) | Should -Be @($corpusFiles.Name) -Because $rebuild
@@ -574,10 +582,11 @@ Describe 'Beispieldokumente (Korpus, Artefakte, Generator)' {
         foreach ($domain in $domains) { $domain | Should -Match '(^|\.)example\.(com|org|net)$' }
     }
 
-    It 'nutzt nur Rufnummern fuer Medienproduktionen (Bundesnetzagentur)' {
-        $numbers = [regex]::Matches(($corpusText + "`n" + $generatorText), '\+49 [\d \-]+\d') | ForEach-Object Value | Select-Object -Unique
+    It 'nutzt nur Rufnummern fuer Medienproduktionen (Bundesnetzagentur bzw. Ofcom)' {
+        $numbers = [regex]::Matches(($corpusText + "`n" + $generatorText), $corpusPhone.Find) | ForEach-Object Value | Select-Object -Unique
         $numbers | Should -Not -BeNullOrEmpty
-        foreach ($number in $numbers) { $number | Should -Match '^\+49 (30 23125|40 66969|221 4710|89 99998|69 90009|171 39200|176 040690)' }
+        foreach ($number in $numbers) { $number | Should -Match $corpusPhone.Allowed }
+        $corpusText | Should -Not -Match $corpusPhone.Foreign -Because 'Rufnummern des anderen Landes gehoeren nicht in diesen Korpus'
     }
 
     It 'nutzt nur Platzhalter, die der Generator fuellt' {
@@ -650,7 +659,7 @@ Describe 'Beispieldokumente (Korpus, Artefakte, Generator)' {
         $target = Join-Path $TestDrive 'daten'
         $labRoot = Join-Path $TestDrive 'lab'
         $arguments = @('-NoProfile', '-NonInteractive', '-File', $generatorPath, '-TargetPath', $target, '-TargetSizeMB', '6', '-LabRoot', $labRoot,
-            '-CorpusPath', $corpusDir, '-LabUsersPath', (Join-Path $repoRoot 'scripts/data/de/LabUsers.psd1'), '-ReferenceDate', '2026-11-24',
+            '-CorpusPath', $corpusDir, '-LabUsersPath', $labUsersPath, '-ReferenceDate', '2026-11-24',
             '-WorkerCount', '1', '-NoRaster', '-TimeBudgetMinutes', '0')
         & (Get-Process -Id $PID).Path @arguments | Out-Null
         $LASTEXITCODE | Should -Be 0 -Because (Get-Content -Path (Join-Path $labRoot 'Logs/New-SampleDocuments.log') -Raw)
@@ -671,6 +680,10 @@ Describe 'Beispieldokumente (Korpus, Artefakte, Generator)' {
                     $reader.Dispose()
                     { [xml]$xml } | Should -Not -Throw -Because "$($file.Name)/$($entry.FullName)"
                     $xml | Should -Not -Match '\{[A-Z][A-Za-z0-9]+\}' -Because "$($file.Name)/$($entry.FullName) hat einen offenen Platzhalter"
+                    if ($Language -eq 'en') {
+                        # Englische Dokumente ohne deutsche Reste aus Generator oder Korpus.
+                        $xml | Should -Not -Match '[äöüÄÖÜß€]|Mustermann|\+49 |\bSeite \d' -Because "$($file.Name)/$($entry.FullName) enthaelt Deutsches"
+                    }
                 }
             }
             finally { $zip.Dispose() }

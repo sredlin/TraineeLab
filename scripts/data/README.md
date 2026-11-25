@@ -1,6 +1,13 @@
 # Textkorpus der Beispieldokumente
 
-Aus den Dateien in `de/corpus` erzeugt `scripts/New-SampleDocuments.ps1` auf dem Fileserver Word-, Excel-, PowerPoint- und PDF-Dokumente der fiktiven **Mustermann Medien GmbH**, einer Werbeagentur mit Zentrale in Berlin und Niederlassung in Hamburg. Die erzeugten Dokumente liegen nie im Repo, nur diese Quellen.
+Aus den Dateien in `<Sprache>/corpus` erzeugt `scripts/New-SampleDocuments.ps1` auf dem Fileserver Word-, Excel-, PowerPoint- und PDF-Dokumente einer fiktiven Werbeagentur. Die erzeugten Dokumente liegen nie im Repo, nur diese Quellen. Welche Sprache auf die VM kommt, bestimmt der Deployment-Parameter `labLanguage`.
+
+| Sprache | Firma | Standorte | Rufnummern (nur fiktiv) |
+| --- | --- | --- | --- |
+| `de` | Mustermann Medien GmbH | Berlin (Zentrale), Hamburg | Bundesnetzagentur, Medienproduktionen: `+49 30 23125-…`, `+49 40 66969-…`, Mobil `+49 171 39200…` |
+| `en` | Contoso Ltd | London (head office), Manchester | Ofcom-Drama-Nummern: `+44 20 7946 0…`, `+44 161 496 0…`, für Privatpersonen auch `+44 121/113/117 496 0…`, Mobil `+44 7700 900…` |
+
+Neben dem Korpus liegen je Sprache `LabUsers.psd1` (AD und Exchange) und `FileServer.psd1` (Freigaben, Gruppen, Altlasten). Beide Sprachen erzählen dieselbe Geschichte mit denselben Schlüsseln, Arten, IDs und Mengen; die englische Fassung ist sinngemäß auf Großbritannien übertragen (UK-Arbeitsrecht, UK GDPR, HMRC, £, VAT 20 %), keine Wort-für-Wort-Übersetzung. Die 16 Microsoft-Demo-Personas sind in beiden Sprachen gleich.
 
 | Datei | Inhalt |
 | --- | --- |
@@ -182,5 +189,6 @@ Firmenereignisse (`Event`): `Founding`, `Hamburg`, `Move`, `Rebranding`, `Scanne
   - Domains nur `*.example.com`, `*.example.org` oder `*.example.net`.
   - Telefon nur `+49 30 23125-…` (Berlin) oder `+49 40 66969-…` (Hamburg). Für Privatpersonen nutzt der Generator zusätzlich die Mobilnummern aus `Locale.Mobiles` (Bundesnetzagentur, Medienproduktionen).
   - Keine echten Firmen, Marken oder Personen.
-- Keine Emojis: Die PDF-Ausgabe kennt nur WinAnsi. Erlaubt sind Umlaute, ß, €, –, „“ und •.
+- Keine Emojis: Die PDF-Ausgabe kennt nur WinAnsi. Erlaubt sind Umlaute, ß, €, £, –, „“, “” und •.
+- Englisch: britische Schreibweise, Platzhalter-Token bleiben deutsch (`{Firma}`, `{Kunde}` …), Apostrophe (`don''t`) immer verdoppeln. Jede Datei höchstens so groß wie die deutsche, sonst passt das Paket nicht in die `userData`.
 - **Keine typografischen Apostrophe ‚ ‘ ’.** PowerShell wertet sie wie `'` und beendet damit den String. Stattdessen ein gerades `'` verdoppeln: `''`.
