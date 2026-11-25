@@ -1,5 +1,5 @@
-// Windows-11-Client (Grundsystem): Arbeitsplatz fuer Outlook-Tests mit eigener Public IP fuer RDP.
-// Vorbereitung per Run Command (Sprachpaket, Microsoft 365 Apps) laeuft parallel zum Aufbau des DC.
+// Windows-11-Client (Grundsystem): Einstieg ins Lab und Arbeitsplatz fuer Outlook-Tests mit eigener Public IP fuer RDP.
+// Vorbereitung per Run Command (Sprachpaket, Microsoft 365 Apps, Remote Desktop Manager) laeuft parallel zum Aufbau des DC.
 // Windows 11 auf Azure braucht Multitenant Hosting Rights, daher licenseType Windows_Client.
 
 @description('Azure-Region.')
@@ -39,6 +39,9 @@ param imageSku string
 
 @description('Produkt-ID der Microsoft 365 Apps fuer das Office Deployment Tool.')
 param officeProductId string
+
+@description('Devolutions Remote Desktop Manager mit .NET Desktop Runtime, PowerShell 7 und RDM-Modul installieren.')
+param installRemoteDesktopManager bool
 
 resource nic 'Microsoft.Network/networkInterfaces@2025-05-01' = {
   name: 'nic-${vmName}'
@@ -148,6 +151,10 @@ resource prepareClient 'Microsoft.Compute/virtualMachines/runCommands@2025-04-01
       {
         name: 'OfficeProductId'
         value: officeProductId
+      }
+      {
+        name: 'RemoteDesktopManager'
+        value: installRemoteDesktopManager ? 'Install' : 'Skip'
       }
     ]
     asyncExecution: false

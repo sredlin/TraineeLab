@@ -32,7 +32,7 @@ az vm deallocate -g rg-exlab-<k> -n vm-<k>-ex01
 az vm deallocate -g rg-exlab-<k> -n vm-<k>-dc02
 ```
 
-Der Fileserver hat keine Public IP. RDP geht vom Exchange-Server aus auf `<K>-FS01`.
+Der Fileserver hat keine Public IP. RDP geht vom Client aus auf `<K>-FS01` (Remote Desktop Manager, siehe unten).
 
 Nach dem Start braucht Exchange einige Minuten, bis alle Dienste laufen. OWA meldet bis dahin Fehler 500 oder 503.
 
@@ -47,6 +47,22 @@ az network nsg rule update -g rg-exlab-<k> --nsg-name nsg-exlab-<k> -n Allow-RDP
 ```
 
 Die Regeln `Allow-Exchange-Web` und `Allow-Exchange-SMTP` nutzen standardmäßig dieselbe Quelle und müssen ggf. ebenfalls angepasst werden. Ein erneutes Deployment setzt alle Regeln auf die Parameterwerte zurück.
+
+## Server vom Client aus erreichen (Remote Desktop Manager)
+
+Auf `<K>-CL01` ist Devolutions Remote Desktop Manager Free installiert (Parameter `clientRemoteDesktopManager`, Standard `true`). Desktop oder Startmenü → *Remote Desktop Manager*. Im Arbeitsbereich **Lab-Server** stehen `<K>-DC01`, `<K>-EX01`, `<K>-FS01` und, falls bereitgestellt, `<K>-DC02`. Ein Doppelklick verbindet als `<K>\azadmin`, ohne Passworteingabe.
+
+So ist es aufgebaut:
+
+- Die Verbindungen liegen in einer gemeinsamen Datei `C:\ProgramData\TraineeLab\RemoteDesktopManager\Lab-Server.xml`. Sie entsteht in der Phase *Complete* des Deployments neu.
+- Bei der ersten Anmeldung jedes Benutzers bindet Active Setup (`TraineeLab-RemoteDesktopManager`) die Datei als Standard-Arbeitsbereich ein. Log: `%LOCALAPPDATA%\TraineeLab\Register-LabWorkspace.log`.
+- Alle Benutzer dürfen die Datei ändern, weil RDM sie beim Laden neu schreibt. Änderungen an Verbindungen sehen deshalb alle Benutzer des Clients.
+
+> **Sicherheitshinweis:** RDM verschlüsselt gespeicherte Passwörter mit einem Schlüssel, der in jeder Installation gleich ist. Jeder Benutzer des Clients kann deshalb das Passwort von `azadmin` auslesen. Am Client gilt die Trennung von `labUserPassword` und `adminPassword` also nicht. Das ist eine bewusste Entscheidung für den Lab-Komfort. Wer das nicht will, deployt mit `clientRemoteDesktopManager = false`.
+
+**Admin-Passwort geändert:** In RDM die Verbindungen markieren → *Bearbeiten* → *Anmeldeinformationen* und das neue Passwort eintragen. Da die Datei gemeinsam genutzt wird, gilt das für alle Benutzer.
+
+**RDM-Version aktualisieren (Repository):** In `scripts/Initialize-LabClient.ps1` stehen die Pins `$RdmInstaller` (URL und SHA256 aus [productinfo.json](https://devolutions.net/productinfo.json), Abschnitt `RDMWindows.Current`, x64-MSI), `$RdmModule` (Version aus der PowerShell Gallery) und `$DotNetDesktopRuntime`. Die Updatesuche in RDM ist per Richtlinie aus, weil Lab-Benutzer keine Adminrechte haben. Auf einem laufenden Client installiert ein Administrator ein neues MSI von Hand.
 
 ## Status prüfen
 
