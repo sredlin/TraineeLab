@@ -267,6 +267,23 @@ Describe 'azuredeploy.json' {
         $templateText | Should -Match '"licenseType": "Windows_Client"'
     }
 
+    It 'stellt standardmaessig den Remote Desktop Manager auf dem Client bereit' {
+        $template.parameters.clientRemoteDesktopManager.defaultValue | Should -BeTrue
+        $clientModule = ($template.resources | Where-Object name -EQ 'client').properties.template
+        $prepare = $clientModule.resources | Where-Object { $_.type -eq 'Microsoft.Compute/virtualMachines/runCommands' -and $_.name -match 'Initialize-LabClient' }
+        $prepare.properties.parameters.name | Should -Contain 'RemoteDesktopManager'
+    }
+
+    It 'uebergibt das Admin-Passwort fuer die RDM-Verbindungen nur geschuetzt an Complete-LabClient' {
+        $join = $template.resources | Where-Object name -EQ 'client-join'
+        $join.properties.parameters.PSObject.Properties.Name | Should -Contain 'dcComputerName'
+        $join.properties.parameters.PSObject.Properties.Name | Should -Contain 'exchangeComputerName'
+        $join.properties.parameters.PSObject.Properties.Name | Should -Contain 'secondDcComputerName'
+        $complete = $join.properties.template.resources | Where-Object { $_.type -eq 'Microsoft.Compute/virtualMachines/runCommands' -and $_.name -match 'Complete-LabClient' }
+        $complete.properties.protectedParameters.name | Should -Contain 'AdminPasswordB64'
+        ($complete.properties.parameters | ConvertTo-Json -Depth 20) | Should -Not -Match 'adminPassword'
+    }
+
     It 'erlaubt nur Office-Produkte mit Benutzeraktivierung' {
         $template.parameters.officeProductId.allowedValues | Should -Be @('O365ProPlusRetail', 'O365BusinessRetail')
     }
@@ -334,6 +351,33 @@ Describe 'azuredeploy.json' {
         $afterJoin[0].name | Should -Match 'Wait-DomainJoinReboot'
         $afterJoin[0].properties.treatFailureAsDeploymentFailure | Should -BeFalse
         @($runCommands | Where-Object { ($_.dependsOn -join ' ') -match "'Wait-DomainJoinReboot'" }).Count | Should -Be 1
+    }
+}
+
+Describe 'Remote Desktop Manager auf dem Client' {
+    BeforeAll {
+        $clientScript = Get-Content -Path (Join-Path $repoRoot 'scripts/Initialize-LabClient.ps1') -Raw
+        $exchangeScript = Get-Content -Path (Join-Path $repoRoot 'scripts/Initialize-ExchangeServer.ps1') -Raw
+    }
+
+    It 'nutzt denselben PowerShell-7-Pin wie der Exchange-Server' {
+        $pattern = "Url\s*=\s*'https://github\.com/PowerShell/PowerShell/releases/download/[^']+'\s+Sha256\s*=\s*'[0-9a-f]{64}'"
+        $clientPin = [regex]::Match($clientScript, $pattern)
+        $exchangePin = [regex]::Match($exchangeScript, $pattern)
+        $clientPin.Success | Should -BeTrue
+        ($clientPin.Value -replace '\s+', ' ') | Should -Be ($exchangePin.Value -replace '\s+', ' ')
+    }
+
+    It 'laedt RDM mit fester Version und SHA256 aus dem Devolutions-CDN' {
+        $clientScript | Should -Match "Url\s*=\s*'https://cdn\.devolutions\.net/download/Setup\.RemoteDesktopManager\.win-x64\.\d+\.\d+\.\d+\.\d+\.msi'\s+Sha256\s*=\s*'[0-9A-F]{64}'"
+    }
+
+    It 'prueft die .NET Desktop Runtime mit dem von Microsoft veroeffentlichten SHA512' {
+        $clientScript | Should -Match "Url\s*=\s*'https://builds\.dotnet\.microsoft\.com/dotnet/WindowsDesktop/10\.[^']+-win-x64\.exe'\s+Sha512\s*=\s*'[0-9a-f]{128}'"
+    }
+
+    It 'installiert das RDM-Modul in fester Version' {
+        $clientScript | Should -Match "Name\s*=\s*'Devolutions\.PowerShell'\s+Version\s*=\s*'\d+\.\d+\.\d+'"
     }
 }
 

@@ -22,7 +22,7 @@ param adminUsername string = 'azadmin'
 @secure()
 param adminPassword string
 
-@description('Passwort der 12 Lab-Benutzer. Bewusst getrennt vom Administrator-Passwort, damit Testkonten nicht das Domain-Admin-Passwort verraten.')
+@description('Passwort der 12 Lab-Benutzer. Bewusst getrennt vom Administrator-Passwort, damit Testkonten nicht das Domain-Admin-Passwort verraten. Ausnahme: Mit clientRemoteDesktopManager kann jeder Benutzer am Client das Admin-Passwort auslesen.')
 @secure()
 param labUserPassword string
 
@@ -87,6 +87,9 @@ param clientImageSku string = 'win11-25h2-ent'
   'O365BusinessRetail'
 ])
 param officeProductId string = 'O365ProPlusRetail'
+
+@description('Devolutions Remote Desktop Manager Free auf dem Client mit fertigen RDP-Verbindungen zu allen Lab-Servern (Domain-Admin, fuer jeden Benutzer am Client). Das Admin-Passwort ist dort fuer alle Benutzer auslesbar; RDM Free ist laut Devolutions fuer eine Einzelperson lizenziert.')
+param clientRemoteDesktopManager bool = true
 
 @description('Fileserver <K>-FS01 bereitstellen: Freigaben mit AGDLP-Berechtigungen, Basisordner, FSRM und absichtliche Altlasten fuer Uebungen. Keine Public IP.')
 param deployFileServer bool = true
@@ -361,6 +364,7 @@ module client 'modules/client.bicep' = if (deployClient) {
     adminPassword: adminPassword
     imageSku: clientImageSku
     officeProductId: officeProductId
+    installRemoteDesktopManager: clientRemoteDesktopManager
   }
 }
 
@@ -377,6 +381,9 @@ module clientJoin 'modules/client-join.bicep' = if (deployClient) {
     publicDomainName: publicDomainName
     dcIp: dcPrivateIp
     exchangeIp: exchangePrivateIp
+    dcComputerName: names.dcComputer
+    secondDcComputerName: deploySecondDc ? names.dc2Computer : ''
+    exchangeComputerName: names.exchangeComputer
     fileServerComputerName: deployFileServer ? names.fsComputer : ''
   }
   dependsOn: [

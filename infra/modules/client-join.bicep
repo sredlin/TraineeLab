@@ -1,5 +1,6 @@
 // Windows-11-Client (Domaenenbeitritt): Warten auf den DC, Beitritt, Nacharbeiten (RDP fuer Lab-Benutzer,
-// Lab-Info). Eigenes Modul, damit es erst nach DC-Aufbau und DNS-Umstellung des VNets startet.
+// Lab-Info, Verbindungen im Remote Desktop Manager). Eigenes Modul, damit es erst nach DC-Aufbau und
+// DNS-Umstellung des VNets startet.
 // Die Exchange-Installation verschiebt den Computer anschliessend in die Client-OU der Lab-Struktur.
 
 @description('Azure-Region.')
@@ -33,7 +34,16 @@ param dcIp string
 @description('Private IP des Exchange-Servers.')
 param exchangeIp string
 
-@description('Computername des optionalen Fileservers, nur fuer Lab-Info.txt. Leer = kein Fileserver.')
+@description('Computername des ersten Domain Controllers (Verbindung im Remote Desktop Manager).')
+param dcComputerName string
+
+@description('Computername des zweiten Domain Controllers. Leer = kein DC02.')
+param secondDcComputerName string = ''
+
+@description('Computername des Exchange-Servers (Verbindung im Remote Desktop Manager).')
+param exchangeComputerName string
+
+@description('Computername des optionalen Fileservers fuer Lab-Info.txt und Remote Desktop Manager. Leer = kein Fileserver.')
 param fileServerComputerName string = ''
 
 resource vm 'Microsoft.Compute/virtualMachines@2025-04-01' existing = {
@@ -160,12 +170,36 @@ resource completeClient 'Microsoft.Compute/virtualMachines/runCommands@2025-04-0
         name: 'PublicDomainName'
         value: publicDomainName
       }
+      {
+        name: 'AdminUser'
+        value: adminUsername
+      }
+      {
+        name: 'DcComputerName'
+        value: dcComputerName
+      }
+      {
+        name: 'ExchangeComputerName'
+        value: exchangeComputerName
+      }
+    ], empty(secondDcComputerName) ? [] : [
+      {
+        name: 'SecondDcComputerName'
+        value: secondDcComputerName
+      }
     ], empty(fileServerComputerName) ? [] : [
       {
         name: 'FileServerComputerName'
         value: fileServerComputerName
       }
     ])
+    // Fuer die Verbindungen im Remote Desktop Manager (Domain-Admin, fuer alle Benutzer am Client).
+    protectedParameters: [
+      {
+        name: 'AdminPasswordB64'
+        value: base64(adminPassword)
+      }
+    ]
     asyncExecution: false
     timeoutInSeconds: 3600
     treatFailureAsDeploymentFailure: true

@@ -11,15 +11,23 @@
       - Sprachpaket de-DE als Anzeigesprache, Zeitzone, Gebietsschema, Tastatur
       - Microsoft 365 Apps (de-de, 64 Bit, Monthly Enterprise Channel) per Office Deployment Tool,
         ohne Access, Publisher, Teams, Skype/Lync, Groove und Bing
+      - Devolutions Remote Desktop Manager Free mit .NET Desktop Runtime 10, Richtlinien (kein Onboarding,
+        keine Update-/Konto-Hinweise), PowerShell 7 und dem Modul Devolutions.PowerShell
 
     Phase 'Complete' (Run Command nach dem Domaenenbeitritt):
       - wartet, bis Domaenenbeitritt und Secure Channel stehen
       - Domaenen-Benutzer in die lokale Gruppe Remotedesktopbenutzer (per SID, unabhaengig von der Sprache)
+      - gemeinsame RDM-Datenquelle (XML) mit RDP-Verbindungen zu allen Lab-Servern und den Domain-Admin-
+        Zugangsdaten; Active Setup bindet sie bei der ersten Anmeldung jedes Benutzers als Arbeitsbereich ein.
+        RDM verschluesselt Passwoerter mit einem eingebauten Schluessel: Jeder Benutzer des Clients kann das
+        Admin-Passwort auslesen (bewusste Entscheidung fuer den Lab-Komfort).
       - Lab-Info.txt und OWA-Verknuepfung auf dem oeffentlichen Desktop
 
-    Fehler bei Sprachpaket und Office sind nicht fatal: Das Lab bleibt nutzbar, das Log nennt die Ursache.
+    Fehler bei Sprachpaket, Office und Remote Desktop Manager sind nicht fatal: Das Lab bleibt nutzbar, das Log
+    nennt die Ursache.
     Das Skript ist idempotent und enthaelt bewusst nur ASCII-Zeichen (Windows PowerShell 5.1).
 #>
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', 'AdminPasswordB64', Justification = 'Run Command uebergibt Parameter nur als String; Wert ist Base64 und kommt aus protectedParameters.')]
 [CmdletBinding()]
 param(
     [ValidateSet('Prepare', 'Complete')]
@@ -29,10 +37,18 @@ param(
     [ValidateSet('O365ProPlusRetail', 'O365BusinessRetail')]
     [string] $OfficeProductId = 'O365ProPlusRetail',
 
+    [ValidateSet('Install', 'Skip')]
+    [string] $RemoteDesktopManager = 'Install',
+
     # Nur Phase 'Complete':
     [string] $DomainName,
     [string] $NetbiosName,
     [string] $PublicDomainName,
+    [string] $AdminUser,
+    [string] $AdminPasswordB64,
+    [string] $DcComputerName,
+    [string] $ExchangeComputerName,
+    [string] $SecondDcComputerName = '',
     [string] $FileServerComputerName = ''
 )
 
@@ -53,6 +69,90 @@ $OfficeDeploymentTool = @{
     Url     = 'https://download.microsoft.com/download/6c1eeb25-cf8b-41d9-8d0d-cc1dbc032140/officedeploymenttool_20430-20146.exe'
     Sha256  = 'af1594121ab610cd8abc3dd6ff0a504e0cbc6ce54372e5c3813926352d1179c6'
 }
+
+# Remote Desktop Manager und seine Voraussetzungen. Beim Aktualisieren jeweils URL und Hash gemeinsam aendern.
+# .NET Desktop Runtime 10, Quelle: Microsoft (URL und SHA512 aus
+# https://builds.dotnet.microsoft.com/dotnet/release-metadata/10.0/releases.json, Microsoft veroeffentlicht nur SHA512).
+$DotNetDesktopRuntime = @{
+    Version = '10.0.15'
+    Url     = 'https://builds.dotnet.microsoft.com/dotnet/WindowsDesktop/10.0.15/windowsdesktop-runtime-10.0.15-win-x64.exe'
+    Sha512  = 'f838960962172f1a769c49fa600e6f60f56f8d08a28e3cb878890ffc2e3a7a2e1b65697588e23efa767b8b8e8523ec01f55e875120507dde16d9a0869102dab3'
+}
+
+# Devolutions Remote Desktop Manager (Free nutzt dasselbe MSI wie die Bezahlversion), Quelle: Devolutions-CDN
+# (URL und SHA256 aus https://devolutions.net/productinfo.json, RDMWindows.Current, x64-MSI).
+$RdmInstaller = @{
+    Version = '2026.3.19.0'
+    Url     = 'https://cdn.devolutions.net/download/Setup.RemoteDesktopManager.win-x64.2026.3.19.0.msi'
+    Sha256  = 'F84774C4C66086620BC5611B9BEB82D1A1C44A43F02608D731AA0A5198F01FA0'
+}
+
+# PowerShell 7 LTS fuer das RDM-Modul (Devolutions.PowerShell laeuft nur unter PowerShell 7.6), gleicher Pin wie in
+# Initialize-ExchangeServer.ps1. Quelle: GitHub-Release PowerShell/PowerShell (SHA256 aus den Release-Assets).
+$PowerShell7 = @{
+    Url       = 'https://github.com/PowerShell/PowerShell/releases/download/v7.6.9/PowerShell-7.6.9-win-x64.msi'
+    Sha256    = '50d33c7494aaf82b987cfd4de3f232d04f91fdd4c0deeca8a669cced3e7cf8f9'
+    Arguments = '/quiet /norestart ADD_PATH=1 DISABLE_TELEMETRY=1 USE_MU=0 ENABLE_MU=0'
+}
+
+# RDM-PowerShell-Modul aus der PowerShell Gallery: legt Datenquelle und Verbindungen ohne Oberflaeche an.
+$RdmModule = @{
+    Name    = 'Devolutions.PowerShell'
+    Version = '2026.3.4'
+}
+
+$RdmExe = Join-Path $env:ProgramFiles 'Devolutions\Remote Desktop Manager\RemoteDesktopManager.exe'
+$PwshExe = Join-Path $env:ProgramFiles 'PowerShell\7\pwsh.exe'
+$RdmPolicyKey = 'HKLM:\SOFTWARE\Policies\Devolutions\RemoteDesktopManager'
+$RdmDataDir = Join-Path $env:ProgramData 'TraineeLab\RemoteDesktopManager'
+$RdmWorkspaceFile = Join-Path $RdmDataDir 'Lab-Server.xml'
+$RdmActiveSetupKey = 'HKLM:\SOFTWARE\Microsoft\Active Setup\Installed Components\TraineeLab-RemoteDesktopManager'
+
+# Laeuft unter PowerShell 7 als SYSTEM: legt die XML-Datenquelle mit den Verbindungen neu an.
+# Server und Passwort kommen per Umgebungsvariable (nicht in der Kommandozeile, Windows PowerShell 5.1
+# wuerde die Anfuehrungszeichen im JSON beim Aufruf von pwsh verlieren).
+$RdmCreateWorkspaceScript = @'
+$ErrorActionPreference = 'Stop'
+$ProgressPreference = 'SilentlyContinue'
+Import-Module -Name Devolutions.PowerShell
+$path = $env:TRAINEELAB_RDM_FILE
+if (Test-Path -Path $path) { Remove-Item -Path $path -Force }
+$workspace = New-RDMDataSource -XML -Name 'Lab-Server' -Filename $path -Set
+Set-RDMCurrentDataSource -ID $workspace.ID
+$password = ConvertTo-SecureString -String $env:TRAINEELAB_RDM_PASSWORD -AsPlainText -Force
+foreach ($server in ($env:TRAINEELAB_RDM_SERVERS | ConvertFrom-Json)) {
+    $entry = New-RDMEntry -Name $server.Name -Host $server.Host -Type RDPConfigured
+    $entry = $entry | Set-RDMEntryUsername -UserName $server.UserName -PassThru
+    $entry = $entry | Set-RDMEntryDomain -Domain $server.Domain -PassThru
+    $entry = $entry | Set-RDMEntryPassword -Password $password -PassThru
+    Set-RDMEntry -InputObject $entry
+}
+'ENTRIES|' + ((Get-RDMEntry | ForEach-Object { $_.Name }) -join ',')
+'@
+
+# Laeuft per Active Setup einmal pro Benutzer bei der Anmeldung (PowerShell 7, Benutzerkontext): bindet die
+# gemeinsame Datenquelle als Standard-Arbeitsbereich ein. Manuell erneut ausfuehrbar.
+$RdmRegisterWorkspaceScript = @'
+$ErrorActionPreference = 'Stop'
+$ProgressPreference = 'SilentlyContinue'
+$logDir = Join-Path $env:LOCALAPPDATA 'TraineeLab'
+New-Item -Path $logDir -ItemType Directory -Force | Out-Null
+$log = Join-Path $logDir 'Register-LabWorkspace.log'
+try {
+    Import-Module -Name Devolutions.PowerShell
+    $workspace = Get-RDMDataSource | Where-Object { $_.Name -eq 'Lab-Server' }
+    if (-not $workspace) {
+        $workspace = New-RDMDataSource -XML -Name 'Lab-Server' -Filename (Join-Path $PSScriptRoot 'Lab-Server.xml') -Set
+    }
+    Set-RDMCurrentDataSource -ID $workspace.ID
+    $count = @(Get-RDMEntry).Count
+    Add-Content -Path $log -Value ('{0:yyyy-MM-dd HH:mm:ss} Arbeitsbereich Lab-Server eingebunden, {1} Verbindungen.' -f (Get-Date), $count)
+}
+catch {
+    Add-Content -Path $log -Value ('{0:yyyy-MM-dd HH:mm:ss} FEHLER: {1}' -f (Get-Date), $_.Exception.Message)
+    exit 1
+}
+'@
 
 New-Item -Path $LogDir, $InstallDir -ItemType Directory -Force | Out-Null
 $LogFile = Join-Path $LogDir "Initialize-LabClient-$Phase.log"
@@ -196,10 +296,128 @@ function Install-OfficeApp {
     }
 }
 
+function Save-VerifiedDownload {
+    # Laedt eine Datei und prueft den Hash. Bei Abweichung wird die Datei geloescht und abgebrochen.
+    param(
+        [Parameter(Mandatory)][string] $Url,
+        [Parameter(Mandatory)][string] $Hash,
+        [ValidateSet('SHA256', 'SHA512')][string] $Algorithm = 'SHA256'
+    )
+    $target = Join-Path $InstallDir (Split-Path -Path $Url -Leaf)
+    if ((Test-Path -Path $target) -and (Get-FileHash -Path $target -Algorithm $Algorithm).Hash -eq $Hash) {
+        return $target
+    }
+    Invoke-WithRetry -Activity "Download $(Split-Path -Path $Url -Leaf)" -ScriptBlock {
+        Invoke-WebRequest -Uri $Url -OutFile $target -UseBasicParsing
+    }
+    $actual = (Get-FileHash -Path $target -Algorithm $Algorithm).Hash
+    if ($actual -ne $Hash) {
+        Remove-Item -Path $target -Force -ErrorAction SilentlyContinue
+        throw "$Algorithm von $(Split-Path -Path $Url -Leaf) passt nicht (erwartet $Hash, erhalten $actual)."
+    }
+    return $target
+}
+
+function Install-Msi {
+    param([Parameter(Mandatory)][string] $Path, [string] $Arguments = '/qn /norestart', [Parameter(Mandatory)][string] $Name)
+    $msiLog = Join-Path $LogDir ('{0}-msi.log' -f $Name)
+    $process = Start-Process -FilePath 'msiexec.exe' -ArgumentList "/i `"$Path`" $Arguments /l*v `"$msiLog`"" -Wait -PassThru
+    if ($process.ExitCode -notin 0, 1638, 3010) {
+        throw "Installation von $Name mit Exit-Code $($process.ExitCode) beendet, Details: $msiLog"
+    }
+    Write-LabLog "$Name installiert (Exit-Code $($process.ExitCode))."
+}
+
+function Install-DotNetDesktopRuntime {
+    $runtimeDir = Join-Path $env:ProgramFiles ('dotnet\shared\Microsoft.WindowsDesktop.App\{0}' -f $DotNetDesktopRuntime.Version)
+    if (Test-Path -Path $runtimeDir) {
+        Write-LabLog ".NET Desktop Runtime $($DotNetDesktopRuntime.Version) bereits installiert."
+        return
+    }
+    $installer = Save-VerifiedDownload -Url $DotNetDesktopRuntime.Url -Hash $DotNetDesktopRuntime.Sha512 -Algorithm SHA512
+    $runtimeLog = Join-Path $LogDir 'dotnet-desktop-runtime.log'
+    $process = Start-Process -FilePath $installer -ArgumentList '/install', '/quiet', '/norestart', '/log', "`"$runtimeLog`"" -Wait -PassThru
+    if ($process.ExitCode -notin 0, 1638, 3010) {
+        throw ".NET Desktop Runtime mit Exit-Code $($process.ExitCode) beendet, Details: $runtimeLog"
+    }
+    Write-LabLog ".NET Desktop Runtime $($DotNetDesktopRuntime.Version) installiert (Exit-Code $($process.ExitCode))."
+}
+
+function Initialize-RdmPolicy {
+    # Kein Onboarding-Assistent, keine Update-, Feedback- und Konto-Hinweise: Lab-Benutzer haben keine Adminrechte,
+    # die RDM-Version pflegt das Repository ($RdmInstaller).
+    New-Item -Path $RdmPolicyKey -Force | Out-Null
+    foreach ($name in 'DisableOnboarding', 'HideWhatsNewPage', 'DisableQuickStart', 'DisableFeedbackPrompts', 'DisableAnalytics', 'DisableOnlineAccount', 'DisableUpdate') {
+        Set-ItemProperty -Path $RdmPolicyKey -Name $name -Value 1 -Type DWord
+    }
+    # 4 = Updates nur manuell suchen
+    Set-ItemProperty -Path $RdmPolicyKey -Name 'EnforceAutoUpdateFrequency' -Value 4 -Type DWord
+    Write-LabLog "RDM-Richtlinien unter $RdmPolicyKey gesetzt."
+}
+
+function Install-PowerShell7 {
+    if (Test-Path -Path $PwshExe) {
+        Write-LabLog "PowerShell 7 bereits vorhanden: $PwshExe"
+        return
+    }
+    $msi = Save-VerifiedDownload -Url $PowerShell7.Url -Hash $PowerShell7.Sha256
+    Install-Msi -Path $msi -Arguments $PowerShell7.Arguments -Name 'PowerShell7'
+    if (-not (Test-Path -Path $PwshExe)) {
+        throw "PowerShell 7 nach der Installation nicht gefunden ($PwshExe)."
+    }
+}
+
+function Install-RdmModule {
+    $command = "`$ProgressPreference = 'SilentlyContinue'; " +
+    "if (-not (Get-Module -ListAvailable -Name '$($RdmModule.Name)' | Where-Object { `$_.Version -eq [version]'$($RdmModule.Version)' })) { " +
+    "Install-PSResource -Name '$($RdmModule.Name)' -Version '$($RdmModule.Version)' -Scope AllUsers -TrustRepository -ErrorAction Stop }"
+    Invoke-WithRetry -Activity "Install-PSResource $($RdmModule.Name)" -ScriptBlock {
+        $output = & $PwshExe -NoProfile -NonInteractive -Command $command 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            throw "pwsh endete mit Exit-Code ${LASTEXITCODE}: $($output -join ' ')"
+        }
+    }
+    Write-LabLog "Modul $($RdmModule.Name) $($RdmModule.Version) fuer alle Benutzer installiert."
+}
+
+function Install-RemoteDesktopManager {
+    if ($RemoteDesktopManager -eq 'Skip') {
+        Write-LabLog 'Remote Desktop Manager per Parameter abgewaehlt.'
+        return
+    }
+    $marker = Join-Path $LabRoot 'rdm-failed.txt'
+    try {
+        Install-DotNetDesktopRuntime
+        $installed = (Test-Path -Path $RdmExe) -and (Get-Item -Path $RdmExe).VersionInfo.ProductVersion -like "$($RdmInstaller.Version)*"
+        if ($installed) {
+            Write-LabLog "Remote Desktop Manager $($RdmInstaller.Version) bereits installiert."
+        }
+        else {
+            Write-LabLog "Installiere Remote Desktop Manager $($RdmInstaller.Version)."
+            $msi = Save-VerifiedDownload -Url $RdmInstaller.Url -Hash $RdmInstaller.Sha256
+            Install-Msi -Path $msi -Arguments '/qn /norestart INSTALLMODE=Complete' -Name 'RemoteDesktopManager'
+        }
+        # Das MSI legt nur eine Verknuepfung im Startmenue an.
+        $startMenuLink = Get-ChildItem -Path (Join-Path $env:ProgramData 'Microsoft\Windows\Start Menu\Programs') -Recurse -Filter 'Remote Desktop Manager*.lnk' | Select-Object -First 1
+        if ($startMenuLink) {
+            Copy-Item -Path $startMenuLink.FullName -Destination (Join-Path $env:PUBLIC 'Desktop\Remote Desktop Manager.lnk') -Force
+        }
+        Initialize-RdmPolicy
+        Install-PowerShell7
+        Install-RdmModule
+        Remove-Item -Path $marker -Force -ErrorAction SilentlyContinue
+    }
+    catch {
+        Write-LabLog "WARNUNG: Remote Desktop Manager nicht vollstaendig installiert: $($_.Exception.Message)"
+        Set-Content -Path $marker -Value $_.Exception.Message -Encoding ASCII
+    }
+}
+
 function Invoke-PreparePhase {
     Initialize-ClientPolicy
     Initialize-ClientLanguage
     Install-OfficeApp
+    Install-RemoteDesktopManager
 }
 
 #endregion
@@ -244,7 +462,90 @@ function Add-DomainUsersToRemoteDesktop {
     Write-LabLog "Domaenen-Benutzer ($domainUsersSid) zu $($group.Name) hinzugefuegt."
 }
 
+function ConvertFrom-Base64String {
+    param([Parameter(Mandatory)][string] $Value)
+    [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($Value)).TrimStart([char]0xFEFF)
+}
+
+function Get-LabServerList {
+    # Reihenfolge wie in der Lab-Info: DCs, Exchange, Fileserver.
+    @($DcComputerName, $SecondDcComputerName, $ExchangeComputerName, $FileServerComputerName) | Where-Object { $_ }
+}
+
+function Initialize-RdmDataAcl {
+    # Ordner: Benutzer lesen nur (das Registrierungsskript liegt hier). Die XML-Datei braucht Aendern: RDM schreibt
+    # sie beim Laden jedes Benutzers neu (ChangeMasterKey), auch wenn sich der Inhalt nicht aendert.
+    $inherit = [Security.AccessControl.InheritanceFlags]'ContainerInherit, ObjectInherit'
+    $acl = New-Object -TypeName System.Security.AccessControl.DirectorySecurity
+    $acl.SetAccessRuleProtection($true, $false)
+    foreach ($entry in @(@('S-1-5-18', 'FullControl'), @('S-1-5-32-544', 'FullControl'), @('S-1-5-32-545', 'ReadAndExecute'))) {
+        $sid = New-Object -TypeName System.Security.Principal.SecurityIdentifier -ArgumentList $entry[0]
+        $acl.AddAccessRule((New-Object -TypeName System.Security.AccessControl.FileSystemAccessRule -ArgumentList $sid, $entry[1], $inherit, 'None', 'Allow'))
+    }
+    Set-Acl -Path $RdmDataDir -AclObject $acl
+
+    $fileAcl = Get-Acl -Path $RdmWorkspaceFile
+    $fileAcl.SetAccessRuleProtection($false, $false)
+    $users = New-Object -TypeName System.Security.Principal.SecurityIdentifier -ArgumentList 'S-1-5-32-545'
+    $fileAcl.AddAccessRule((New-Object -TypeName System.Security.AccessControl.FileSystemAccessRule -ArgumentList $users, 'Modify', 'Allow'))
+    Set-Acl -Path $RdmWorkspaceFile -AclObject $fileAcl
+}
+
+function Publish-RemoteConnection {
+    # Ergebnis: Liste der Server im RDM, leer = nicht eingerichtet. Fehler sind nicht fatal (Komfortfunktion).
+    $moduleDir = Join-Path $env:ProgramFiles ('PowerShell\Modules\{0}\{1}' -f $RdmModule.Name, $RdmModule.Version)
+    if (-not ((Test-Path -Path $RdmExe) -and (Test-Path -Path $PwshExe) -and (Test-Path -Path $moduleDir))) {
+        Write-LabLog 'Remote Desktop Manager nicht installiert (abgewaehlt oder Fehler in Phase Prepare), keine Verbindungen.'
+        return @()
+    }
+    try {
+        New-Item -Path $RdmDataDir -ItemType Directory -Force | Out-Null
+        # SYSTEM ist kein echter RDM-Benutzer: eigene Konfiguration bei jedem Lauf neu, keine doppelten Arbeitsbereiche.
+        $systemConfig = Join-Path $env:SystemRoot 'System32\config\systemprofile\AppData\Local\Devolutions\RemoteDesktopManager'
+        Remove-Item -Path $systemConfig -Recurse -Force -ErrorAction SilentlyContinue
+
+        $servers = @(Get-LabServerList | ForEach-Object {
+                [pscustomobject]@{ Name = $_; Host = '{0}.{1}' -f $_, $DomainName; UserName = $AdminUser; Domain = $NetbiosName }
+            })
+        $helper = Join-Path $InstallDir 'New-LabRdmWorkspace.ps1'
+        Set-Content -Path $helper -Value $RdmCreateWorkspaceScript -Encoding ASCII
+        $env:TRAINEELAB_RDM_FILE = $RdmWorkspaceFile
+        $env:TRAINEELAB_RDM_SERVERS = ConvertTo-Json -InputObject $servers -Compress
+        $env:TRAINEELAB_RDM_PASSWORD = ConvertFrom-Base64String $AdminPasswordB64
+        try {
+            $output = & $PwshExe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $helper 2>&1
+            $exitCode = $LASTEXITCODE
+        }
+        finally {
+            Remove-Item -Path Env:TRAINEELAB_RDM_PASSWORD, Env:TRAINEELAB_RDM_SERVERS, Env:TRAINEELAB_RDM_FILE -ErrorAction SilentlyContinue
+        }
+        $created = @($output | ForEach-Object { "$_" } | Where-Object { $_ -like 'ENTRIES|*' })
+        if ($exitCode -ne 0 -or -not $created) {
+            throw "Anlegen der Verbindungen fehlgeschlagen (Exit-Code $exitCode): $($output -join ' ')"
+        }
+        Write-LabLog "RDM-Datenquelle $RdmWorkspaceFile angelegt: $($created[0].Substring(8))"
+
+        $registerScript = Join-Path $RdmDataDir 'Register-LabWorkspace.ps1'
+        Set-Content -Path $registerScript -Value $RdmRegisterWorkspaceScript -Encoding ASCII
+        Initialize-RdmDataAcl
+
+        # Active Setup: Explorer startet StubPath bei der naechsten Anmeldung jedes Benutzers einmal.
+        New-Item -Path $RdmActiveSetupKey -Force | Out-Null
+        Set-ItemProperty -Path $RdmActiveSetupKey -Name '(default)' -Value 'TraineeLab Remote Desktop Manager'
+        Set-ItemProperty -Path $RdmActiveSetupKey -Name 'StubPath' -Value ('"{0}" -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "{1}"' -f $PwshExe, $registerScript)
+        Set-ItemProperty -Path $RdmActiveSetupKey -Name 'Version' -Value '1,0,0,0'
+        Set-ItemProperty -Path $RdmActiveSetupKey -Name 'IsInstalled' -Value 1 -Type DWord
+        Write-LabLog 'Active Setup bindet den Arbeitsbereich Lab-Server bei der ersten Anmeldung jedes Benutzers ein.'
+        return $servers.Name
+    }
+    catch {
+        Write-LabLog "WARNUNG: Verbindungen im Remote Desktop Manager nicht eingerichtet: $($_.Exception.Message)"
+        return @()
+    }
+}
+
 function Publish-ClientDesktop {
+    param([string[]] $RdmServers = @())
     $desktop = Join-Path $env:PUBLIC 'Desktop'
     $owaUrl = "https://mail.$PublicDomainName/owa"
     $officeStatus = if (Test-Path -Path $OutlookExe) { 'installiert' } else { 'FEHLT, siehe C:\ExchangeLab\office-failed.txt' }
@@ -268,6 +569,22 @@ function Publish-ClientDesktop {
         '  Autodiscover testen: Strg + Rechtsklick auf das Outlook-Symbol im Infobereich,'
         '  "E-Mail-AutoKonfiguration testen".'
         ''
+        'REMOTE DESKTOP MANAGER'
+    )
+    if ($RdmServers) {
+        $lines += @(
+            '  Desktop oder Startmenue: Remote Desktop Manager, Arbeitsbereich "Lab-Server".'
+            "  Verbindungen: $($RdmServers -join ', ')"
+            "  Anmeldung automatisch als $NetbiosName\$AdminUser (Domain-Admin)."
+            '  ACHTUNG: Jeder Benutzer dieses Clients kann das hinterlegte Admin-Passwort auslesen (Lab-Komfort).'
+            '  RDM Free ist laut Devolutions fuer eine Einzelperson lizenziert.'
+        )
+    }
+    else {
+        $lines += '  nicht eingerichtet (Parameter clientRemoteDesktopManager oder Fehler, siehe Logs)'
+    }
+    $lines += @(
+        ''
         'LOGS: C:\ExchangeLab\Logs'
     )
     Write-Utf8File -Path (Join-Path $desktop 'Lab-Info.txt') -Content ($lines -join "`r`n")
@@ -276,14 +593,15 @@ function Publish-ClientDesktop {
 }
 
 function Invoke-CompletePhase {
-    foreach ($name in 'DomainName', 'NetbiosName', 'PublicDomainName') {
+    foreach ($name in 'DomainName', 'NetbiosName', 'PublicDomainName', 'AdminUser', 'AdminPasswordB64', 'DcComputerName', 'ExchangeComputerName') {
         if (-not (Get-Variable -Name $name -ValueOnly)) {
             throw "Parameter $name fehlt (Phase Complete)."
         }
     }
     Wait-DomainJoin
     Add-DomainUsersToRemoteDesktop
-    Publish-ClientDesktop
+    $rdmServers = @(Publish-RemoteConnection)
+    Publish-ClientDesktop -RdmServers $rdmServers
 }
 
 #endregion
