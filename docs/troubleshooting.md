@@ -104,7 +104,9 @@ Get-Message -Queue "<K>-EX01\<Queue-Identität>" | Format-List FromAddress, Reci
 
 ## Client-Oberfläche ist Englisch
 
-Das Sprachpaket wird beim Aufbau installiert und greift nach dem Neustart. Steht in `Initialize-LabClient-Prepare.log` eine Warnung zum Sprachpaket, als Administrator nachholen:
+Mit `labLanguage = en` ist das gewollt: Oberfläche Englisch aus dem Image, Formate en-GB, Tastatur Deutsch.
+
+Mit `labLanguage = de` wird das Sprachpaket beim Aufbau installiert und greift nach dem Neustart. Steht in `Initialize-LabClient-Prepare.log` eine Warnung zum Sprachpaket, als Administrator nachholen:
 
 ```powershell
 Install-Language de-DE -CopyToSettings
@@ -136,7 +138,8 @@ Get-ScheduledTask -TaskName TraineeLab-SampleDocuments | Get-ScheduledTaskInfo
 
 - **`State` = `wird im Hintergrund fortgesetzt`, Log steht still:** Die VM wurde zur Abschaltzeit heruntergefahren. Der Task startet beim nächsten Start von selbst, sofort geht es mit `Start-ScheduledTask -TaskName TraineeLab-SampleDocuments`. Der Generator überspringt vorhandene Dateien und räumt halbfertige auf.
 - **`WARNUNG`-Zeilen im Log:** Einzelne Dateien oder Einheiten sind fehlgeschlagen. Das stört die übrigen Daten nicht. Bei vielen gleichen Warnungen das Log an den Ausbilder geben.
-- **Kein Statusfile:** Der Run Command `New-SampleDocuments` ist nicht gelaufen (`fileServerDataSizeGB = 0` oder Fehler im Deployment).
+- **Kein Statusfile:** Der Run Command `New-SampleDocuments` ist nicht gelaufen (`fileServerDataPercent = 0` oder Fehler im Deployment).
+- **`Volume fast voll` im Log:** Der Generator hört auf, wenn weniger als 8 % der Datendisk frei sind. Das Ziel (90 %) ist dann praktisch erreicht, Cluster-Verschnitt und Dateisystem belegen den Rest.
 
 ## Fileserver bleibt groß
 
@@ -154,14 +157,14 @@ az vm resize -g rg-exlab-<k> -n vm-<k>-fs01 --size Standard_B2s_v2
 az vm start -g rg-exlab-<k> -n vm-<k>-fs01
 ```
 
-## Zugriff verweigert auf `Home\JFrick\Privat`
+## Zugriff verweigert auf `Home\JFrick\Privat` (englisch `Home\WHughes\Private`)
 
-Das ist gewollt: Der Ordner ist eine der absichtlichen Altlasten des Fileservers. Nur Johann Frick und SYSTEM haben Rechte, Domain-Admins nicht.
+Das ist gewollt: Der Ordner ist eine der absichtlichen Altlasten des Fileservers. Nur Johann Frick (englisch William Hughes) und SYSTEM haben Rechte, Domain-Admins nicht.
 
 ## Kennwort eines Lab-Benutzers vergessen
 
 Auf dem Exchange-Server als `<K>\azadmin` in *Active Directory-Benutzer und -Computer* das Kennwort zurücksetzen, oder:
 
 ```powershell
-Set-ADAccountPassword -Identity mmustermann -Reset -NewPassword (Read-Host -AsSecureString 'Neues Kennwort')
+Set-ADAccountPassword -Identity mmustermann -Reset -NewPassword (Read-Host -AsSecureString 'Neues Kennwort')   # englisch z. B. fbloggs
 ```
