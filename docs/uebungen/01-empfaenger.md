@@ -96,14 +96,14 @@ Beantworte: Was sieht der Empfänger bei *Senden als* und was bei *Senden im Auf
 
 ## 1.7 Räume und Ausstattung ★★
 
-**Aufgabe:** `raum-kiel` soll Buchungen höchstens 90 Tage im Voraus und höchstens 4 Stunden lang annehmen, Überschneidungen ablehnen. Lege zusätzlich ein Ausstattungspostfach „Beamer Kiel“ an.
+**Aufgabe:** `raum-berlin` soll Buchungen höchstens 90 Tage im Voraus und höchstens 4 Stunden lang annehmen, Überschneidungen ablehnen. Lege zusätzlich ein Ausstattungspostfach „Beamer Berlin“ an.
 
 ```powershell
-Set-CalendarProcessing raum-kiel -AutomateProcessing AutoAccept -BookingWindowInDays 90 -MaximumDurationInMinutes 240 -AllowConflicts $false
-New-Mailbox -Equipment -Name 'Beamer Kiel' -Alias beamer-kiel -OrganizationalUnit 'OU=Resources,OU=Administration,OU=LEARN-<k>,DC=<k>,DC=intern'
+Set-CalendarProcessing raum-berlin -AutomateProcessing AutoAccept -BookingWindowInDays 90 -MaximumDurationInMinutes 240 -AllowConflicts $false
+New-Mailbox -Equipment -Name 'Beamer Berlin' -Alias beamer-berlin -OrganizationalUnit 'OU=Resources,OU=Administration,OU=LEARN-<k>,DC=<k>,DC=intern'
 ```
 
-**Prüfen:** `Get-CalendarProcessing raum-kiel | Format-List AutomateProcessing, BookingWindowInDays, MaximumDurationInMinutes, AllowConflicts`. Teste die Buchung in Übung 2.5 ([Kapitel 2](02-client-outlook.md)).
+**Prüfen:** `Get-CalendarProcessing raum-berlin | Format-List AutomateProcessing, BookingWindowInDays, MaximumDurationInMinutes, AllowConflicts`. Teste die Buchung in Übung 2.5 ([Kapitel 2](02-client-outlook.md)).
 
 ## 1.8 Postfach trennen und wieder verbinden ★★
 

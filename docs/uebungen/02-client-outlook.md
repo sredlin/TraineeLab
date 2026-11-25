@@ -41,7 +41,7 @@ Wiederhole das als Celina mit *Senden im Auftrag* (Übung 1.6) und vergleiche, w
 
 ## 2.5 Raum buchen ★
 
-**Aufgabe:** Lade als Max zu einer Besprechung ein und füge `raum-kiel` als Raum hinzu. Buche danach als Erika denselben Zeitraum.
+**Aufgabe:** Lade als Max zu einer Besprechung ein und füge `raum-berlin` als Raum hinzu. Buche danach als Erika denselben Zeitraum.
 
 **Prüfen:** Max bekommt eine Zusage vom Raum, Erika eine Absage (Konflikt). Eine Buchung über 4 Stunden wird abgelehnt, wenn du Übung 1.7 ([Kapitel 1](01-empfaenger.md)) gemacht hast.
 

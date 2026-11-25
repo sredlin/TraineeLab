@@ -4,7 +4,7 @@
 
 **Ziel:** Den Weg einer Mail durch Exchange nachvollziehen.
 
-**Aufgabe:** Schicke in OWA als Max eine Mail an den Verteiler `marketing-kiel`. Verfolge sie in der EMS.
+**Aufgabe:** Schicke in OWA als Max eine Mail an den Verteiler `marketing-berlin`. Verfolge sie in der EMS.
 
 ```powershell
 Get-MessageTrackingLog -Sender mmustermann@<k>.<zone> -Start (Get-Date).AddMinutes(-15) |

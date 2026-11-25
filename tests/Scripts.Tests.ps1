@@ -58,6 +58,16 @@ Describe 'LabUsers.psd1' {
         }
     }
 
+    It 'nutzt nur fiktive Rufnummern der Bundesnetzagentur (Medienproduktionen, Mitteilung 148/2021)' {
+        # Echte Anschluesse duerfen weder im Adressbuch noch auf Beispieldokumenten auftauchen.
+        $numbers = @($labUsers.Users.OfficePhone) + @($labUsers.Users.MobilePhone)
+        ($numbers | Select-Object -Unique).Count | Should -Be $numbers.Count
+        foreach ($user in $labUsers.Users) {
+            $user.OfficePhone | Should -Match '^\+49 (30 23125|40 66969)-\d{3}$' -Because "$($user.SamAccountName) braucht eine Festnetznummer aus Berlin 030 23125 oder Hamburg 040 66969"
+            $user.MobilePhone | Should -Match '^\+49 171 39200\d{2}$' -Because "$($user.SamAccountName) braucht eine Mobilnummer aus 0171 39200-00..99"
+        }
+    }
+
     It 'legt jede Benutzer-OU in der OU-Liste an' {
         foreach ($user in $labUsers.Users) {
             $labUsers.OrganizationalUnits | Should -Contain $user.OrganizationalUnit

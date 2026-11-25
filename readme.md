@@ -36,11 +36,11 @@ flowchart LR
 | Domain Controller | `Standard_B2ms`, Windows Server 2025, Forest `<k>.intern` (Functional Level 2016), NTDS/SYSVOL auf eigener Datendisk (Host-Cache None), keine Public IP |
 | Zweiter DC (optional) | `deploySecondDc = true`: `<K>-DC02` mit gleicher Ausstattung, wird parallel zum ersten DC aufgebaut und heraufgestuft, DNS des VNets zeigt dann auf beide DCs |
 | Exchange-Server | `Standard_E4s_v5` (32 GB RAM), Windows Server 2025, Exchange Server SE (Mailbox), OS- und Datendisk **Premium SSD**, DB und Logs auf ReFS-Datendisk |
-| Windows-11-Client | `deployClient = true` (Standard): `<K>-CL01`, `Standard_B2ms`, Windows 11 Enterprise mit deutscher Oberfläche, Microsoft 365 Apps (de-de, ohne Access/Publisher/Teams), Domänenmitglied in `OU=Computers,OU=Kiel`, eigene Public IP für RDP, aktualisiert sich selbst (Neustarts nur außerhalb 06–23 Uhr) |
+| Windows-11-Client | `deployClient = true` (Standard): `<K>-CL01`, `Standard_B2ms`, Windows 11 Enterprise mit deutscher Oberfläche, Microsoft 365 Apps (de-de, ohne Access/Publisher/Teams), Domänenmitglied in `OU=Computers,OU=Berlin`, eigene Public IP für RDP, aktualisiert sich selbst (Neustarts nur außerhalb 06–23 Uhr) |
 | Netzwerk | ein VNet, ein Subnet, eine NSG (kein Allow-All, SMTP getrennt von HTTP/HTTPS), Standard-Public-IPs für Exchange und Client |
 | DNS | öffentliche Zone `<k>.<zone>` (mail, autodiscover, MX, SPF, DMARC `p=none`) mit Delegation in `<zone>`; intern Split DNS und Reverse-Zone `1.0.10.in-addr.arpa` auf dem DC |
-| AD | OU-Baum `LEARN-<k>` (Branch Kiel/Hamburg, Administration), 12 Lab-Benutzer mit Postfach, Adresse `@<k>.<zone>` und Vorgesetzten, AD-Papierkorb aktiv |
-| Beispielempfänger | Verteiler `geschaeftsleitung`, `marketing-kiel`, `marketing-hamburg`, `alle`; freigegebene Postfächer `info`, `buchhaltung` (Vollzugriff mit Automapping, Senden als); Räume `raum-kiel`, `raum-hamburg`; zwei externe Kontakte. Definiert in `scripts/LabUsers.psd1` |
+| AD | OU-Baum `LEARN-<k>` (Branch Berlin/Hamburg, Administration), 12 Lab-Benutzer mit Postfach, Adresse `@<k>.<zone>`, Vorgesetzten und fiktiven Rufnummern der Bundesnetzagentur (030 23125, 040 66969, 0171 39200), AD-Papierkorb aktiv |
+| Beispielempfänger | Verteiler `geschaeftsleitung`, `marketing-berlin`, `marketing-hamburg`, `alle`; freigegebene Postfächer `info`, `buchhaltung` (Vollzugriff mit Automapping, Senden als); Räume `raum-berlin`, `raum-hamburg`; zwei externe Kontakte. Definiert in `scripts/LabUsers.psd1` |
 | Verwaltung | DNS-Konsole und GPMC zusätzlich auf dem Exchange-Server (Jump-Host); GPO `LAB - Outlook klassisch` an `LEARN-<k>` blendet das neue Outlook aus (unterstützt kein Exchange on Premises) |
 
 ## Voraussetzungen
