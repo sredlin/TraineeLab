@@ -81,9 +81,7 @@ $ArchiveYears = 6
 $MaxYears = 12
 $SelfText = $MyInvocation.MyCommand.ScriptBlock.ToString()
 
-$De = [Globalization.CultureInfo]::GetCultureInfo('de-DE')
 $Inv = [Globalization.CultureInfo]::InvariantCulture
-$Euro = [string][char]0x20AC
 $MidDot = [string][char]0x00B7
 $Bullet = [string][char]0x2022
 
@@ -151,18 +149,19 @@ function Get-RandomSubset {
 }
 
 function Format-Money {
+    # Betrag nach Locale.Money ({0} = Betrag im Format N2 der Culture).
     param([double] $Value)
-    '{0} {1}' -f $Value.ToString('N2', $De), $Euro
+    $Locale.Money -f $Value.ToString('N2', $Culture)
 }
 
 function Format-Number {
     param([double] $Value, [int] $Decimals = 0)
-    $Value.ToString("N$Decimals", $De)
+    $Value.ToString("N$Decimals", $Culture)
 }
 
-function Format-DateDe {
+function Format-LocalDate {
     param([datetime] $Date)
-    $Date.ToString('dd.MM.yyyy', $De)
+    $Date.ToString($Locale.Date, $Culture)
 }
 
 function Format-PdfNumber {
@@ -205,7 +204,7 @@ function Get-AreaPath {
     # Abgeschlossene Jahre (aelter als ArchiveYears) liegen im Archiv, alles andere in der Abteilung.
     param([datetime] $Date, [string] $Current, [string] $ArchiveSub)
     if (($script:Reference.Year - $Date.Year) -gt $ArchiveYears) {
-        return 'Archiv\{0}\{1}' -f $Date.Year, $ArchiveSub
+        return '{0}\{1}\{2}' -f $Paths.Archive, $Date.Year, $ArchiveSub
     }
     $Current
 }
@@ -346,12 +345,12 @@ function Get-OoxmlAppXml {
 }
 
 function Get-OoxmlCustomXml {
-    # docProps/custom.xml mit der Eigenschaft "Klassifizierung" (altes, manuelles Schema); $null wenn keine.
+    # docProps/custom.xml mit der Eigenschaft Labels.Classification (altes, manuelles Schema); $null wenn keine.
     param([Parameter(Mandatory)] $Model)
     if (-not $Model.Classification) { return $null }
     '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
     '<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/custom-properties" xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">' +
-    ('<property fmtid="{{D5CDD505-2E9C-101B-9397-08002B2CF9AE}}" pid="2" name="Klassifizierung"><vt:lpwstr>{0}</vt:lpwstr></property></Properties>' -f (ConvertTo-XmlText $Model.Classification))
+    ('<property fmtid="{{D5CDD505-2E9C-101B-9397-08002B2CF9AE}}" pid="2" name="{1}"><vt:lpwstr>{0}</vt:lpwstr></property></Properties>' -f (ConvertTo-XmlText $Model.Classification), (ConvertTo-XmlText $L.Classification))
 }
 
 function Get-OoxmlPackageRelationship {
@@ -507,10 +506,11 @@ function Get-DocxDrawingXml {
     $id = $Context.NextDocPr
     $Context.NextDocPr = $id + 1
     $descr = if ($Description) { ' descr="' + (ConvertTo-XmlText $Description) + '"' } else { '' }
-    ('<w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="{0}" cy="{1}"/><wp:effectExtent l="0" t="0" r="0" b="0"/><wp:docPr id="{2}" name="Grafik {2}"{3}/>' -f $Cx, $Cy, $id, $descr) +
+    $picture = ConvertTo-XmlText $Office.Picture
+    ('<w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="{0}" cy="{1}"/><wp:effectExtent l="0" t="0" r="0" b="0"/><wp:docPr id="{2}" name="{4} {2}"{3}/>' -f $Cx, $Cy, $id, $descr, $picture) +
     '<wp:cNvGraphicFramePr><a:graphicFrameLocks xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" noChangeAspect="1"/></wp:cNvGraphicFramePr>' +
     '<a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">' +
-    ('<pic:nvPicPr><pic:cNvPr id="{0}" name="Grafik {0}"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="{1}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>' -f $id, $RelId) +
+    ('<pic:nvPicPr><pic:cNvPr id="{0}" name="{2} {0}"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="{1}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>' -f $id, $RelId, $picture) +
     ('<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="{0}" cy="{1}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r>' -f $Cx, $Cy)
 }
 
@@ -799,10 +799,13 @@ function Get-DocxFooterXml {
     foreach ($line in @($Context.Ci.FooterLines)) {
         if ($line) { $paragraphs.Add(@((Get-DocxRunXml -Text ([string]$line) -RunProperty $small))) }
     }
-    $page = (Get-DocxRunXml -Text 'Seite ' -RunProperty $small) +
+    # Seitenzahl nach Labels.Page ("Seite {0} von {1}"): Text vor, zwischen und nach den Feldern.
+    $pageText = $L.Page -split '\{[01]\}'
+    $page = (Get-DocxRunXml -Text $pageText[0] -RunProperty $small) +
         ('<w:fldSimple w:instr=" PAGE "><w:r><w:rPr>{0}</w:rPr><w:t>1</w:t></w:r></w:fldSimple>' -f $small) +
-        (Get-DocxRunXml -Text ' von ' -RunProperty $small) +
-        ('<w:fldSimple w:instr=" NUMPAGES "><w:r><w:rPr>{0}</w:rPr><w:t>1</w:t></w:r></w:fldSimple>' -f $small)
+        (Get-DocxRunXml -Text $pageText[1] -RunProperty $small) +
+        ('<w:fldSimple w:instr=" NUMPAGES "><w:r><w:rPr>{0}</w:rPr><w:t>1</w:t></w:r></w:fldSimple>' -f $small) +
+        (Get-DocxRunXml -Text $pageText[2] -RunProperty $small)
     $paragraphs.Add(@($page))
     $sb = [System.Text.StringBuilder]::new(2048)
     [void]$sb.Append('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>')
@@ -816,7 +819,7 @@ function Get-DocxFooterXml {
 }
 
 function Get-DocxStyleXml {
-    # word/styles.xml: Standard (Ci.Font, 10,5 pt, de-DE), Title, Heading1, Listenabsatz, Beschriftung,
+    # word/styles.xml: Standard (Ci.Font, 10,5 pt, Locale.Culture), Title, Heading1, Listenabsatz, Beschriftung,
     # Kopf-/Fusszeile, Kommentar und Tabellenstile (TableNormal ohne Rahmen, TableGrid mit Rahmen).
     param([Parameter(Mandatory)] $Context)
     $font = ConvertTo-XmlText $Context.Font
@@ -827,10 +830,10 @@ function Get-DocxStyleXml {
     [void]$sb.Append('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>')
     [void]$sb.Append('<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">')
     [void]$sb.Append('<w:docDefaults><w:rPrDefault><w:rPr>').Append($bodyFonts)
-    [void]$sb.Append('<w:sz w:val="21"/><w:szCs w:val="21"/><w:lang w:val="de-DE" w:eastAsia="en-US" w:bidi="ar-SA"/></w:rPr></w:rPrDefault>')
+    [void]$sb.Append(('<w:sz w:val="21"/><w:szCs w:val="21"/><w:lang w:val="{0}" w:eastAsia="en-US" w:bidi="ar-SA"/></w:rPr></w:rPrDefault>' -f $Locale.Culture))
     [void]$sb.Append('<w:pPrDefault><w:pPr><w:spacing w:after="120" w:line="264" w:lineRule="auto"/></w:pPr></w:pPrDefault></w:docDefaults>')
     [void]$sb.Append('<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:qFormat/><w:rPr>').Append($bodyFonts)
-    [void]$sb.Append(('<w:color w:val="{0}"/><w:sz w:val="21"/><w:szCs w:val="21"/><w:lang w:val="de-DE"/></w:rPr></w:style>' -f $Context.Dark))
+    [void]$sb.Append(('<w:color w:val="{0}"/><w:sz w:val="21"/><w:szCs w:val="21"/><w:lang w:val="{1}"/></w:rPr></w:style>' -f $Context.Dark, $Locale.Culture))
     [void]$sb.Append('<w:style w:type="character" w:default="1" w:styleId="DefaultParagraphFont"><w:name w:val="Default Paragraph Font"/><w:uiPriority w:val="1"/><w:semiHidden/><w:unhideWhenUsed/></w:style>')
     [void]$sb.Append('<w:style w:type="table" w:default="1" w:styleId="TableNormal"><w:name w:val="Normal Table"/><w:uiPriority w:val="99"/><w:semiHidden/><w:unhideWhenUsed/>')
     [void]$sb.Append('<w:tblPr><w:tblInd w:w="0" w:type="dxa"/><w:tblCellMar><w:top w:w="0" w:type="dxa"/><w:left w:w="108" w:type="dxa"/><w:bottom w:w="0" w:type="dxa"/><w:right w:w="108" w:type="dxa"/></w:tblCellMar></w:tblPr></w:style>')
@@ -872,12 +875,12 @@ function Get-DocxNumberingXml {
 }
 
 function Get-DocxSettingXml {
-    # word/settings.xml: Word-2013-Kompatibilitaet, deutsche Dezimal- und Listentrennzeichen.
+    # word/settings.xml: Word-2013-Kompatibilitaet, Sprache, Dezimal- und Listentrennzeichen aus Locale.
     '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
     '<w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:zoom w:percent="100"/><w:defaultTabStop w:val="708"/><w:hyphenationZone w:val="425"/><w:characterSpacingControl w:val="doNotCompress"/>' +
     '<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/><w:compatSetting w:name="overrideTableStyleFontSizeAndJustification" w:uri="http://schemas.microsoft.com/office/word" w:val="1"/>' +
     '<w:compatSetting w:name="enableOpenTypeFeatures" w:uri="http://schemas.microsoft.com/office/word" w:val="1"/><w:compatSetting w:name="doNotFlipMirrorIndents" w:uri="http://schemas.microsoft.com/office/word" w:val="1"/></w:compat>' +
-    '<w:themeFontLang w:val="de-DE"/><w:decimalSymbol w:val=","/><w:listSeparator w:val=";"/></w:settings>'
+    ('<w:themeFontLang w:val="{0}"/><w:decimalSymbol w:val="{1}"/><w:listSeparator w:val="{2}"/></w:settings>' -f $Locale.Culture, $Culture.NumberFormat.NumberDecimalSeparator, $Locale.ListSeparator)
 }
 
 function Get-DocxFontTableXml {
@@ -1061,7 +1064,7 @@ function Get-XlsxSheetName {
     if ($Name) { $n = ($Name -replace '[\[\]:\*\?/\\]', '-') -replace '[\x00-\x1F]', '' }
     $n = $n.Trim().Trim([char]39).Trim()
     if ($n.Length -gt 31) { $n = $n.Substring(0, 31).TrimEnd().TrimEnd([char]39) }
-    if (-not $n) { $n = 'Tabelle' + $Index }
+    if (-not $n) { $n = $Office.Sheet + $Index }
     if ($n -eq 'History') { $n = 'History-1' }
     $base = $n
     $k = 2
@@ -1164,14 +1167,13 @@ function Get-XlsxFilterRange {
 function Get-XlsxStyleXml {
     # styles.xml mit festem Raster aus 4 Zeilenstilen x 7 Zahlenformaten x fett/normal (56 cellXfs).
     param([Parameter(Mandatory)] $Ci)
-    $euro = [string][char]0x20AC
     $font = ConvertTo-XmlText $Ci.Font
     $titleFont = ConvertTo-XmlText $Ci.TitleFont
     $sb = New-Object System.Text.StringBuilder 8192
     [void]$sb.Append('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>')
     [void]$sb.Append('<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">')
-    [void]$sb.Append('<numFmts count="2"><numFmt numFmtId="164" formatCode="dd\.mm\.yyyy"/>')
-    [void]$sb.Append('<numFmt numFmtId="165" formatCode="#,##0.00 [$').Append($euro).Append('-407]"/></numFmts>')
+    [void]$sb.Append('<numFmts count="2"><numFmt numFmtId="164" formatCode="').Append((ConvertTo-XmlText $Locale.XlsxDate)).Append('"/>')
+    [void]$sb.Append('<numFmt numFmtId="165" formatCode="').Append((ConvertTo-XmlText $Locale.XlsxMoney)).Append('"/></numFmts>')
     [void]$sb.Append('<fonts count="4">')
     [void]$sb.Append('<font><sz val="10"/><color rgb="FF').Append($Ci.Dark).Append('"/><name val="').Append($font).Append('"/><family val="2"/></font>')
     [void]$sb.Append('<font><b/><sz val="10"/><color rgb="FF').Append($Ci.Dark).Append('"/><name val="').Append($font).Append('"/><family val="2"/></font>')
@@ -1232,7 +1234,8 @@ function Get-XlsxHeaderFooterXml {
     if ($company -or $mark) {
         [void]$sb.Append('<oddHeader>').Append((ConvertTo-XmlText ('&L' + $company + '&R' + $mark))).Append('</oddHeader>')
     }
-    [void]$sb.Append('<oddFooter>').Append((ConvertTo-XmlText ('&L' + $mark + '&CSeite &P von &N&R&A'))).Append('</oddFooter>')
+    $pageText = $L.Page -split '\{[01]\}'
+    [void]$sb.Append('<oddFooter>').Append((ConvertTo-XmlText ('&L' + $mark + '&C' + $pageText[0] + '&P' + $pageText[1] + '&N' + $pageText[2] + '&R&A'))).Append('</oddFooter>')
     [void]$sb.Append('</headerFooter>')
     $sb.ToString()
 }
@@ -1298,7 +1301,7 @@ function Get-XlsxSheetDataXml {
             if ($kind -eq 4) {
                 $serial = $null
                 if ($fi -ne 1) { $serial = ConvertTo-XlsxDateSerial -Date $v }
-                if ($null -eq $serial) { $kind = 1; $text = $v.ToString('dd.MM.yyyy', $inv) }
+                if ($null -eq $serial) { $kind = 1; $text = $v.ToString($Locale.Date, $inv) }
                 else { $kind = 2; $text = ([double]$serial).ToString('R', $inv) }
             }
             # Format Text erzwingt String (z. B. Personalnummer 000123), ausser bei Formeln
@@ -1526,7 +1529,7 @@ function Write-XlsxFile {
     if ($null -ne $Model.Sheets) {
         foreach ($s in @($Model.Sheets)) { if ($null -ne $s) { [void]$sheets.Add($s) } }
     }
-    if ($sheets.Count -eq 0) { [void]$sheets.Add(@{ Name = 'Tabelle1'; Rows = @() }) }
+    if ($sheets.Count -eq 0) { [void]$sheets.Add(@{ Name = ($Office.Sheet + '1'); Rows = @() }) }
     $logo = $null
     $logoW = 0
     $logoH = 0
@@ -1756,7 +1759,7 @@ function Get-PptxImageFit {
 function Get-PptxRunXml {
     # Textlauf; Size in 1/100 pt (0 = geerbt), Color als RRGGBB (leer = geerbt).
     param([string] $Text, [int] $Size = 0, [bool] $Bold = $false, [string] $Color = '')
-    $attr = 'lang="de-DE"'
+    $attr = 'lang="' + $Locale.Culture + '"'
     if ($Size -gt 0) { $attr = $attr + ' sz="' + $Size + '"' }
     if ($Bold) { $attr = $attr + ' b="1"' }
     $rpr = '<a:rPr ' + $attr + ' dirty="0"/>'
@@ -1774,14 +1777,15 @@ function Get-PptxParagraphXml {
     if ($Align) { $attr = $attr + ' algn="' + $Align + '"' }
     $ppr = ''
     if ($NoBullet) { $ppr = '<a:pPr' + $attr + '><a:buNone/></a:pPr>' } elseif ($attr) { $ppr = '<a:pPr' + $attr + '/>' }
-    $end = '<a:endParaRPr lang="de-DE" dirty="0"/>'
-    if ($Size -gt 0) { $end = '<a:endParaRPr lang="de-DE" sz="' + $Size + '" dirty="0"/>' }
+    $lang = 'lang="' + $Locale.Culture + '"'
+    $end = '<a:endParaRPr ' + $lang + ' dirty="0"/>'
+    if ($Size -gt 0) { $end = '<a:endParaRPr ' + $lang + ' sz="' + $Size + '" dirty="0"/>' }
     if (-not $Text) { return '<a:p>' + $ppr + $end + '</a:p>' }
     $sb = [Text.StringBuilder]::new()
     [void]$sb.Append('<a:p>').Append($ppr)
     $first = $true
     foreach ($line in ($Text -split "`r?`n")) {
-        if (-not $first) { [void]$sb.Append('<a:br><a:rPr lang="de-DE" dirty="0"/></a:br>') }
+        if (-not $first) { [void]$sb.Append('<a:br><a:rPr ' + $lang + ' dirty="0"/></a:br>') }
         $first = $false
         if ($line) { [void]$sb.Append((Get-PptxRunXml -Text $line -Size $Size -Bold $Bold -Color $Color)) }
     }
@@ -1822,7 +1826,7 @@ function Get-PptxPlaceholderXml {
     if ($PhIdx -ge 0) { $ph = $ph + ' idx="' + $PhIdx + '"' }
     $spPrXml = '<p:spPr/>'
     if ($SpPr) { $spPrXml = '<p:spPr>' + $SpPr + '</p:spPr>' }
-    if (-not $Paragraphs) { $Paragraphs = '<a:p><a:endParaRPr lang="de-DE" dirty="0"/></a:p>' }
+    if (-not $Paragraphs) { $Paragraphs = '<a:p><a:endParaRPr lang="' + $Locale.Culture + '" dirty="0"/></a:p>' }
     ('<p:sp><p:nvSpPr><p:cNvPr id="{0}" name="{1}"/><p:cNvSpPr><a:spLocks noGrp="1"/></p:cNvSpPr><p:nvPr>{2}/></p:nvPr></p:nvSpPr>' -f $Id, (ConvertTo-XmlText $Name), $ph) +
     $spPrXml + '<p:txBody>' + $BodyPr + $LstStyle + $Paragraphs + '</p:txBody></p:sp>'
 }
@@ -1890,7 +1894,7 @@ function Get-PptxTextStyleXml {
     for ($i = 0; $i -lt 5; $i++) {
         [void]$sb.Append((Get-PptxLevelXml -Tag ('lvl{0}pPr' -f ($i + 1)) -MarL (228600 + 457200 * $i) -Indent -228600 -Size $sizes[$i] -Bullet $dot -BulletColor $Color.Accent -SpaceBefore 900))
     }
-    [void]$sb.Append('</p:bodyStyle><p:otherStyle><a:defPPr><a:defRPr lang="de-DE"/></a:defPPr>')
+    [void]$sb.Append('</p:bodyStyle><p:otherStyle><a:defPPr><a:defRPr lang="' + $Locale.Culture + '"/></a:defPPr>')
     [void]$sb.Append((Get-PptxLevelXml -Tag 'lvl1pPr' -Size 1800))
     [void]$sb.Append('</p:otherStyle></p:txStyles>')
     $sb.ToString()
@@ -1936,27 +1940,27 @@ function Get-PptxMasterXml {
     [void]$sb.Append('<?xml version="1.0" encoding="UTF-8" standalone="yes"?><p:sldMaster ' + (Get-PptxNamespace) + '><p:cSld><p:bg><p:bgPr><a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill><a:effectLst/></p:bgPr></p:bg>')
     [void]$sb.Append((Get-PptxTreeStartXml))
     $xfrm = Get-PptxXfrmXml -X $g.M -Y $g.TitleY -Cx $g.TitleCx -Cy $g.TitleCy
-    [void]$sb.Append((Get-PptxPlaceholderXml -Id 2 -Name 'Titelplatzhalter 1' -PhType 'title' -SpPr ($xfrm + $geom) `
+    [void]$sb.Append((Get-PptxPlaceholderXml -Id 2 -Name ($Office.TitlePlaceholder + ' 1') -PhType 'title' -SpPr ($xfrm + $geom) `
                 -BodyPr '<a:bodyPr vert="horz" lIns="0" tIns="45720" rIns="0" bIns="45720" rtlCol="0" anchor="b"><a:normAutofit/></a:bodyPr>' `
-                -Paragraphs (Get-PptxParagraphXml -Text 'Mastertitelformat bearbeiten')))
-    $levels = @('Mastertextformat bearbeiten', 'Zweite Ebene', 'Dritte Ebene', 'Vierte Ebene', ('F' + [char]0x00FC + 'nfte Ebene'))
+                -Paragraphs (Get-PptxParagraphXml -Text $Office.MasterTitle)))
+    $levels = @($Office.MasterText) + @($Office.Levels)
     $paras = [Text.StringBuilder]::new()
     for ($i = 0; $i -lt $levels.Count; $i++) { [void]$paras.Append((Get-PptxParagraphXml -Text $levels[$i] -Level $i)) }
     $xfrm = Get-PptxXfrmXml -X $g.M -Y $g.BodyY -Cx $g.BodyCx -Cy $g.BodyCy
-    [void]$sb.Append((Get-PptxPlaceholderXml -Id 3 -Name 'Textplatzhalter 2' -PhType 'body' -PhIdx 1 -SpPr ($xfrm + $geom) `
+    [void]$sb.Append((Get-PptxPlaceholderXml -Id 3 -Name ($Office.TextPlaceholder + ' 2') -PhType 'body' -PhIdx 1 -SpPr ($xfrm + $geom) `
                 -BodyPr '<a:bodyPr vert="horz" lIns="0" tIns="45720" rIns="0" bIns="45720" rtlCol="0"><a:normAutofit/></a:bodyPr>' `
                 -Paragraphs $paras.ToString()))
-    [void]$sb.Append((Get-PptxRectXml -Id 4 -Name 'Akzentbalken' -X 0 -Y 0 -Cx $g.W -Cy $g.Bar -Color $Color.Primary))
+    [void]$sb.Append((Get-PptxRectXml -Id 4 -Name $Office.AccentBar -X 0 -Y 0 -Cx $g.W -Cy $g.Bar -Color $Color.Primary))
     if ($LogoRelId -and $g.LogoW -gt 0) {
         [void]$sb.Append((Get-PptxPictureXml -Id 5 -Name 'Logo' -RelId $LogoRelId -X $g.LogoX -Y $g.LogoY -Cx $g.LogoW -Cy $g.LogoH -UserDrawn $true -Descr 'Logo'))
     }
     $half = [long][Math]::Floor(($g.W - 2 * $g.M) / 2)
     if ($Company) {
-        [void]$sb.Append((Get-PptxTextBoxXml -Id 6 -Name 'Fusszeile Firma' -X $g.M -Y $g.FootY -Cx $half -Cy $g.FootCy `
+        [void]$sb.Append((Get-PptxTextBoxXml -Id 6 -Name $Office.FooterCompany -X $g.M -Y $g.FootY -Cx $half -Cy $g.FootCy `
                     -Paragraphs (Get-PptxParagraphXml -Text $Company -Size 1000 -Color $Color.Dark)))
     }
     if ($Marking) {
-        [void]$sb.Append((Get-PptxTextBoxXml -Id 7 -Name 'Kennzeichnung' -X ($g.M + $half) -Y $g.FootY -Cx $half -Cy $g.FootCy `
+        [void]$sb.Append((Get-PptxTextBoxXml -Id 7 -Name $Office.Marking -X ($g.M + $half) -Y $g.FootY -Cx $half -Cy $g.FootCy `
                     -Paragraphs (Get-PptxParagraphXml -Text $Marking -Align 'r' -Size 1000 -Bold $true -Color $Color.Primary)))
     }
     [void]$sb.Append('</p:spTree></p:cSld>').Append((Get-PptxClrMapXml)).Append('<p:sldLayoutIdLst>')
@@ -1982,19 +1986,19 @@ function Get-PptxLayoutXml {
         [string] $LogoRelId = '', [string] $Company = '', [string] $Marking = '')
     $g = $Geometry
     $geom = '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom>'
-    $titlePrompt = Get-PptxParagraphXml -Text 'Mastertitelformat bearbeiten'
-    $textPrompt = Get-PptxParagraphXml -Text 'Mastertextformat bearbeiten'
+    $titlePrompt = Get-PptxParagraphXml -Text $Office.MasterTitle
+    $textPrompt = Get-PptxParagraphXml -Text $Office.MasterText
     $inner = $g.W - 2 * $g.M
     $sp = [Text.StringBuilder]::new()
+    $name = $Office.Layouts[$Layout]
     if ($Layout -eq 'Title') {
         $attr = ' type="title" preserve="1" showMasterSp="0"'
-        $name = 'Titelfolie'
-        [void]$sp.Append((Get-PptxRectXml -Id 2 -Name 'Titelflaeche' -X 0 -Y 0 -Cx $g.W -Cy $g.BandCy -Color $Color.Primary))
-        [void]$sp.Append((Get-PptxRectXml -Id 3 -Name 'Akzentlinie' -X 0 -Y $g.BandCy -Cx $g.W -Cy $g.Bar -Color $Color.Accent))
-        [void]$sp.Append((Get-PptxPlaceholderXml -Id 4 -Name 'Titel 1' -PhType 'ctrTitle' -SpPr ((Get-PptxXfrmXml -X $g.M -Y 1260000 -Cx $inner -Cy 1980000) + $geom) `
+        [void]$sp.Append((Get-PptxRectXml -Id 2 -Name $Office.TitleArea -X 0 -Y 0 -Cx $g.W -Cy $g.BandCy -Color $Color.Primary))
+        [void]$sp.Append((Get-PptxRectXml -Id 3 -Name $Office.AccentLine -X 0 -Y $g.BandCy -Cx $g.W -Cy $g.Bar -Color $Color.Accent))
+        [void]$sp.Append((Get-PptxPlaceholderXml -Id 4 -Name ($Office.Title + ' 1') -PhType 'ctrTitle' -SpPr ((Get-PptxXfrmXml -X $g.M -Y 1260000 -Cx $inner -Cy 1980000) + $geom) `
                     -BodyPr '<a:bodyPr lIns="0" rIns="0" anchor="b"><a:normAutofit/></a:bodyPr>' -LstStyle (Get-PptxLstStyleXml -Size 4000 -Color 'FFFFFF') -Paragraphs $titlePrompt))
-        [void]$sp.Append((Get-PptxPlaceholderXml -Id 5 -Name 'Untertitel 2' -PhType 'subTitle' -PhIdx 1 -SpPr ((Get-PptxXfrmXml -X $g.M -Y 3420000 -Cx $inner -Cy 900000) + $geom) `
-                    -BodyPr '<a:bodyPr lIns="0" rIns="0"><a:normAutofit/></a:bodyPr>' -LstStyle (Get-PptxLstStyleXml -Size 2000 -Color 'FFFFFF' -NoBullet $true) -Paragraphs (Get-PptxParagraphXml -Text 'Untertitel')))
+        [void]$sp.Append((Get-PptxPlaceholderXml -Id 5 -Name ($Office.Subtitle + ' 2') -PhType 'subTitle' -PhIdx 1 -SpPr ((Get-PptxXfrmXml -X $g.M -Y 3420000 -Cx $inner -Cy 900000) + $geom) `
+                    -BodyPr '<a:bodyPr lIns="0" rIns="0"><a:normAutofit/></a:bodyPr>' -LstStyle (Get-PptxLstStyleXml -Size 2000 -Color 'FFFFFF' -NoBullet $true) -Paragraphs (Get-PptxParagraphXml -Text $Office.Subtitle)))
         $areaY = $g.BandCy + $g.Bar
         $areaCy = $g.H - $areaY
         if ($LogoRelId -and $g.LogoW -gt 0) {
@@ -2006,52 +2010,47 @@ function Get-PptxLayoutXml {
         if ($Company) { $paras = Get-PptxParagraphXml -Text $Company -Align 'r' -Size 1400 -Color $Color.Dark }
         if ($Marking) { $paras = $paras + (Get-PptxParagraphXml -Text $Marking -Align 'r' -Size 1200 -Bold $true -Color $Color.Primary) }
         if ($paras) {
-            [void]$sp.Append((Get-PptxTextBoxXml -Id 7 -Name 'Absender' -X ([long]($g.W / 2)) -Y $areaY -Cx ([long]($g.W / 2) - $g.M) -Cy $areaCy -Paragraphs $paras))
+            [void]$sp.Append((Get-PptxTextBoxXml -Id 7 -Name $Office.Sender -X ([long]($g.W / 2)) -Y $areaY -Cx ([long]($g.W / 2) - $g.M) -Cy $areaCy -Paragraphs $paras))
         }
     } elseif ($Layout -eq 'ImageFull') {
         $attr = ' preserve="1" userDrawn="1" showMasterSp="0"'
-        $name = 'Bild ganzseitig'
         $barY = $g.H - $g.FullBar
-        [void]$sp.Append((Get-PptxRectXml -Id 2 -Name 'Titelbalken' -X 0 -Y $barY -Cx $g.W -Cy $g.FullBar -Color $Color.Primary -Alpha 72000))
-        [void]$sp.Append((Get-PptxPlaceholderXml -Id 3 -Name 'Titel 1' -PhType 'title' -SpPr ((Get-PptxXfrmXml -X 0 -Y $barY -Cx $g.W -Cy 1188000) + $geom) `
+        [void]$sp.Append((Get-PptxRectXml -Id 2 -Name $Office.TitleBar -X 0 -Y $barY -Cx $g.W -Cy $g.FullBar -Color $Color.Primary -Alpha 72000))
+        [void]$sp.Append((Get-PptxPlaceholderXml -Id 3 -Name ($Office.Title + ' 1') -PhType 'title' -SpPr ((Get-PptxXfrmXml -X 0 -Y $barY -Cx $g.W -Cy 1188000) + $geom) `
                     -BodyPr ('<a:bodyPr lIns="{0}" rIns="{0}" anchor="ctr"><a:normAutofit/></a:bodyPr>' -f $g.M) -LstStyle (Get-PptxLstStyleXml -Size 2800 -Color 'FFFFFF') -Paragraphs $titlePrompt))
         $foot = Get-PptxFooterText -Company $Company -Marking $Marking
         if ($foot) {
-            [void]$sp.Append((Get-PptxTextBoxXml -Id 4 -Name 'Fusszeile' -X 0 -Y ($g.H - 432000) -Cx $g.W -Cy 324000 -Inset $g.M `
+            [void]$sp.Append((Get-PptxTextBoxXml -Id 4 -Name $Office.Footer -X 0 -Y ($g.H - 432000) -Cx $g.W -Cy 324000 -Inset $g.M `
                         -Paragraphs (Get-PptxParagraphXml -Text $foot -Size 1000 -Color 'FFFFFF')))
         }
     } elseif ($Layout -eq 'Section') {
         $attr = ' type="secHead" preserve="1"'
-        $name = 'Abschnitt'
         $x = $g.M + 252000
-        [void]$sp.Append((Get-PptxRectXml -Id 2 -Name 'Band' -X 0 -Y 2160000 -Cx $g.W -Cy 2520000 -Color $Color.Light))
-        [void]$sp.Append((Get-PptxRectXml -Id 3 -Name 'Akzentbalken' -X $g.M -Y 2448000 -Cx 72000 -Cy 1944000 -Color $Color.Accent))
-        [void]$sp.Append((Get-PptxPlaceholderXml -Id 4 -Name 'Titel 1' -PhType 'title' -SpPr ((Get-PptxXfrmXml -X $x -Y 2340000 -Cx ($inner - 252000) -Cy 1188000) + $geom) `
+        [void]$sp.Append((Get-PptxRectXml -Id 2 -Name $Office.Band -X 0 -Y 2160000 -Cx $g.W -Cy 2520000 -Color $Color.Light))
+        [void]$sp.Append((Get-PptxRectXml -Id 3 -Name $Office.AccentBar -X $g.M -Y 2448000 -Cx 72000 -Cy 1944000 -Color $Color.Accent))
+        [void]$sp.Append((Get-PptxPlaceholderXml -Id 4 -Name ($Office.Title + ' 1') -PhType 'title' -SpPr ((Get-PptxXfrmXml -X $x -Y 2340000 -Cx ($inner - 252000) -Cy 1188000) + $geom) `
                     -BodyPr '<a:bodyPr lIns="0" rIns="0" anchor="b"><a:normAutofit/></a:bodyPr>' -LstStyle (Get-PptxLstStyleXml -Size 3600) -Paragraphs $titlePrompt))
-        [void]$sp.Append((Get-PptxPlaceholderXml -Id 5 -Name 'Text 2' -PhType 'body' -PhIdx 1 -SpPr ((Get-PptxXfrmXml -X $x -Y 3600000 -Cx ($inner - 252000) -Cy 900000) + $geom) `
+        [void]$sp.Append((Get-PptxPlaceholderXml -Id 5 -Name ($Office.Text + ' 2') -PhType 'body' -PhIdx 1 -SpPr ((Get-PptxXfrmXml -X $x -Y 3600000 -Cx ($inner - 252000) -Cy 900000) + $geom) `
                     -BodyPr '<a:bodyPr lIns="0" rIns="0"><a:normAutofit/></a:bodyPr>' -LstStyle (Get-PptxLstStyleXml -Size 2000 -NoBullet $true) -Paragraphs $textPrompt))
     } elseif ($Layout -eq 'Closing') {
         $attr = ' preserve="1" userDrawn="1"'
-        $name = 'Abschluss'
-        [void]$sp.Append((Get-PptxPlaceholderXml -Id 2 -Name 'Titel 1' -PhType 'title' -SpPr ((Get-PptxXfrmXml -X $g.M -Y 1800000 -Cx $inner -Cy 1440000) + $geom) `
+        [void]$sp.Append((Get-PptxPlaceholderXml -Id 2 -Name ($Office.Title + ' 1') -PhType 'title' -SpPr ((Get-PptxXfrmXml -X $g.M -Y 1800000 -Cx $inner -Cy 1440000) + $geom) `
                     -BodyPr '<a:bodyPr lIns="0" rIns="0" anchor="b"><a:normAutofit/></a:bodyPr>' -LstStyle (Get-PptxLstStyleXml -Size 4000 -Align 'ctr') -Paragraphs $titlePrompt))
-        [void]$sp.Append((Get-PptxRectXml -Id 3 -Name 'Akzentlinie' -X ([long]($g.W / 2) - 720000) -Y 3420000 -Cx 1440000 -Cy 54000 -Color $Color.Accent))
-        [void]$sp.Append((Get-PptxPlaceholderXml -Id 4 -Name 'Text 2' -PhType 'body' -PhIdx 1 -SpPr ((Get-PptxXfrmXml -X $g.M -Y 3672000 -Cx $inner -Cy 1800000) + $geom) `
+        [void]$sp.Append((Get-PptxRectXml -Id 3 -Name $Office.AccentLine -X ([long]($g.W / 2) - 720000) -Y 3420000 -Cx 1440000 -Cy 54000 -Color $Color.Accent))
+        [void]$sp.Append((Get-PptxPlaceholderXml -Id 4 -Name ($Office.Text + ' 2') -PhType 'body' -PhIdx 1 -SpPr ((Get-PptxXfrmXml -X $g.M -Y 3672000 -Cx $inner -Cy 1800000) + $geom) `
                     -BodyPr '<a:bodyPr lIns="0" rIns="0"><a:normAutofit/></a:bodyPr>' -LstStyle (Get-PptxLstStyleXml -Size 2000 -Align 'ctr' -NoBullet $true) -Paragraphs $textPrompt))
     } else {
         $attr = ' type="obj" preserve="1"'
-        $name = 'Titel und Inhalt'
         $bodySpPr = ''
         if ($Layout -eq 'ImageRight') {
             $attr = ' type="twoObj" preserve="1"'
-            $name = 'Text und Bild'
             $bodySpPr = (Get-PptxXfrmXml -X $g.M -Y $g.BodyY -Cx $g.HalfCx -Cy $g.BodyCy) + $geom
         }
-        [void]$sp.Append((Get-PptxPlaceholderXml -Id 2 -Name 'Titel 1' -PhType 'title' -Paragraphs $titlePrompt))
-        [void]$sp.Append((Get-PptxPlaceholderXml -Id 3 -Name 'Inhalt 2' -PhType 'body' -PhIdx 1 -SpPr $bodySpPr -Paragraphs $textPrompt))
-        [void]$sp.Append((Get-PptxRectXml -Id 4 -Name 'Akzentlinie' -X $g.M -Y $g.LineY -Cx 1080000 -Cy 54000 -Color $Color.Accent))
+        [void]$sp.Append((Get-PptxPlaceholderXml -Id 2 -Name ($Office.Title + ' 1') -PhType 'title' -Paragraphs $titlePrompt))
+        [void]$sp.Append((Get-PptxPlaceholderXml -Id 3 -Name ($Office.Content + ' 2') -PhType 'body' -PhIdx 1 -SpPr $bodySpPr -Paragraphs $textPrompt))
+        [void]$sp.Append((Get-PptxRectXml -Id 4 -Name $Office.AccentLine -X $g.M -Y $g.LineY -Cx 1080000 -Cy 54000 -Color $Color.Accent))
     }
-    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><p:sldLayout ' + (Get-PptxNamespace) + $attr + '><p:cSld name="' + $name + '">' +
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><p:sldLayout ' + (Get-PptxNamespace) + $attr + '><p:cSld name="' + (ConvertTo-XmlText $name) + '">' +
     (Get-PptxTreeStartXml) + $sp.ToString() + '</p:spTree></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sldLayout>'
 }
 
@@ -2075,35 +2074,35 @@ function Get-PptxSlideXml {
     $id = 2
     if ($Layout -eq 'ImageFull' -and $Image) {
         $fit = Get-PptxImageFit -ImgW $Image.W -ImgH $Image.H -X 0 -Y 0 -Cx $g.W -Cy $g.H -Cover $true
-        [void]$sp.Append((Get-PptxPictureXml -Id $id -Name ('Bild ' + $id) -RelId $Image.RelId -X 0 -Y 0 -Cx $g.W -Cy $g.H -SrcRect $fit.SrcRect -Descr $title))
+        [void]$sp.Append((Get-PptxPictureXml -Id $id -Name ($Office.Image + ' ' + $id) -RelId $Image.RelId -X 0 -Y 0 -Cx $g.W -Cy $g.H -SrcRect $fit.SrcRect -Descr $title))
         $id++
-        [void]$sp.Append((Get-PptxRectXml -Id $id -Name 'Titelbalken' -X 0 -Y ($g.H - $g.FullBar) -Cx $g.W -Cy $g.FullBar -Color $Color.Primary -Alpha 72000 -UserDrawn $false))
+        [void]$sp.Append((Get-PptxRectXml -Id $id -Name $Office.TitleBar -X 0 -Y ($g.H - $g.FullBar) -Cx $g.W -Cy $g.FullBar -Color $Color.Primary -Alpha 72000 -UserDrawn $false))
         $id++
     }
     if ($Layout -eq 'Title') {
-        if ($title) { [void]$sp.Append((Get-PptxPlaceholderXml -Id $id -Name ('Titel ' + ($id - 1)) -PhType 'ctrTitle' -Paragraphs (Get-PptxParagraphXml -Text $title))); $id++ }
+        if ($title) { [void]$sp.Append((Get-PptxPlaceholderXml -Id $id -Name ($Office.Title + ' ' + ($id - 1)) -PhType 'ctrTitle' -Paragraphs (Get-PptxParagraphXml -Text $title))); $id++ }
         if (-not $sub) { $sub = $text }
-        if ($sub) { [void]$sp.Append((Get-PptxPlaceholderXml -Id $id -Name ('Untertitel ' + ($id - 1)) -PhType 'subTitle' -PhIdx 1 -Paragraphs (Get-PptxBodyParagraphXml -Text $sub))); $id++ }
+        if ($sub) { [void]$sp.Append((Get-PptxPlaceholderXml -Id $id -Name ($Office.Subtitle + ' ' + ($id - 1)) -PhType 'subTitle' -PhIdx 1 -Paragraphs (Get-PptxBodyParagraphXml -Text $sub))); $id++ }
     } elseif ($Layout -eq 'ImageFull') {
         if ($title) {
             $paras = Get-PptxParagraphXml -Text $title
             if ($sub) { $paras = $paras + (Get-PptxParagraphXml -Text $sub -Size 1600) }
-            [void]$sp.Append((Get-PptxPlaceholderXml -Id $id -Name ('Titel ' + ($id - 1)) -PhType 'title' -Paragraphs $paras)); $id++
+            [void]$sp.Append((Get-PptxPlaceholderXml -Id $id -Name ($Office.Title + ' ' + ($id - 1)) -PhType 'title' -Paragraphs $paras)); $id++
         }
         if ($Image -and $Footer) {
-            [void]$sp.Append((Get-PptxTextBoxXml -Id $id -Name 'Fusszeile' -X 0 -Y ($g.H - 432000) -Cx $g.W -Cy 324000 -Inset $g.M -UserDrawn $false `
+            [void]$sp.Append((Get-PptxTextBoxXml -Id $id -Name $Office.Footer -X 0 -Y ($g.H - 432000) -Cx $g.W -Cy 324000 -Inset $g.M -UserDrawn $false `
                         -Paragraphs (Get-PptxParagraphXml -Text $Footer -Size 1000 -Color 'FFFFFF'))); $id++
         }
     } else {
-        if ($title) { [void]$sp.Append((Get-PptxPlaceholderXml -Id $id -Name ('Titel ' + ($id - 1)) -PhType 'title' -Paragraphs (Get-PptxParagraphXml -Text $title))); $id++ }
+        if ($title) { [void]$sp.Append((Get-PptxPlaceholderXml -Id $id -Name ($Office.Title + ' ' + ($id - 1)) -PhType 'title' -Paragraphs (Get-PptxParagraphXml -Text $title))); $id++ }
         $plain = ($Layout -eq 'Section' -or $Layout -eq 'Closing')
         $bodyText = $text
         if ($sub) { $bodyText = $sub; if ($text) { $bodyText = $sub + "`n" + $text } }
         $body = Get-PptxBodyParagraphXml -Text $bodyText -Bullets $Slide.Bullets -BulletsAsText $plain
-        if ($body) { [void]$sp.Append((Get-PptxPlaceholderXml -Id $id -Name ('Inhalt ' + ($id - 1)) -PhType 'body' -PhIdx 1 -Paragraphs $body)); $id++ }
+        if ($body) { [void]$sp.Append((Get-PptxPlaceholderXml -Id $id -Name ($Office.Content + ' ' + ($id - 1)) -PhType 'body' -PhIdx 1 -Paragraphs $body)); $id++ }
         if ($Layout -eq 'ImageRight' -and $Image) {
             $fit = Get-PptxImageFit -ImgW $Image.W -ImgH $Image.H -X $g.ImgX -Y ($g.BodyY + 114300) -Cx $g.HalfCx -Cy ($g.BodyCy - 114300) -Top $true
-            [void]$sp.Append((Get-PptxPictureXml -Id $id -Name ('Bild ' + ($id - 1)) -RelId $Image.RelId -X $fit.X -Y $fit.Y -Cx $fit.Cx -Cy $fit.Cy -Descr $title)); $id++
+            [void]$sp.Append((Get-PptxPictureXml -Id $id -Name ($Office.Image + ' ' + ($id - 1)) -RelId $Image.RelId -X $fit.X -Y $fit.Y -Cx $fit.Cx -Cy $fit.Cy -Descr $title)); $id++
         }
     }
     '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><p:sld ' + (Get-PptxNamespace) + '><p:cSld>' + (Get-PptxTreeStartXml) + $sp.ToString() +
@@ -2119,10 +2118,10 @@ function Get-PptxNotesMasterXml {
     $geom = '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom>'
     '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><p:notesMaster ' + (Get-PptxNamespace) + '><p:cSld><p:bg><p:bgPr><a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill><a:effectLst/></p:bgPr></p:bg>' +
     (Get-PptxTreeStartXml) +
-    '<p:sp><p:nvSpPr><p:cNvPr id="2" name="Folienbildplatzhalter 1"/><p:cNvSpPr><a:spLocks noGrp="1" noRot="1" noChangeAspect="1"/></p:cNvSpPr><p:nvPr><p:ph type="sldImg" idx="2"/></p:nvPr></p:nvSpPr><p:spPr>' +
+    '<p:sp><p:nvSpPr><p:cNvPr id="2" name="' + (ConvertTo-XmlText $Office.SlideImage) + ' 1"/><p:cNvSpPr><a:spLocks noGrp="1" noRot="1" noChangeAspect="1"/></p:cNvSpPr><p:nvPr><p:ph type="sldImg" idx="2"/></p:nvPr></p:nvSpPr><p:spPr>' +
     (Get-PptxXfrmXml -X ([long]((6858000 - $imgCx) / 2)) -Y 685800 -Cx $imgCx -Cy 3429000) + $geom + '<a:noFill/>' + $line + '</p:spPr></p:sp>' +
-    (Get-PptxPlaceholderXml -Id 3 -Name 'Notizenplatzhalter 2' -PhType 'body' -PhIdx 3 -SpPr ((Get-PptxXfrmXml -X 685800 -Y 4343400 -Cx 5486400 -Cy 4114800) + $geom) `
-            -BodyPr '<a:bodyPr vert="horz" lIns="91440" tIns="45720" rIns="91440" bIns="45720" rtlCol="0"/>' -Paragraphs (Get-PptxParagraphXml -Text 'Mastertextformat bearbeiten')) +
+    (Get-PptxPlaceholderXml -Id 3 -Name ($Office.Notes + ' 2') -PhType 'body' -PhIdx 3 -SpPr ((Get-PptxXfrmXml -X 685800 -Y 4343400 -Cx 5486400 -Cy 4114800) + $geom) `
+            -BodyPr '<a:bodyPr vert="horz" lIns="91440" tIns="45720" rIns="91440" bIns="45720" rtlCol="0"/>' -Paragraphs (Get-PptxParagraphXml -Text $Office.MasterText)) +
     '</p:spTree></p:cSld>' + (Get-PptxClrMapXml) + '<p:notesStyle>' + (Get-PptxLevelXml -Tag 'lvl1pPr' -Size 1200) + '</p:notesStyle></p:notesMaster>'
 }
 
@@ -2132,8 +2131,8 @@ function Get-PptxNotesSlideXml {
     $paras = [Text.StringBuilder]::new()
     foreach ($line in ($Text -split "`r?`n")) { [void]$paras.Append((Get-PptxParagraphXml -Text $line)) }
     '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><p:notes ' + (Get-PptxNamespace) + '><p:cSld>' + (Get-PptxTreeStartXml) +
-    '<p:sp><p:nvSpPr><p:cNvPr id="2" name="Folienbildplatzhalter 1"/><p:cNvSpPr><a:spLocks noGrp="1" noRot="1" noChangeAspect="1"/></p:cNvSpPr><p:nvPr><p:ph type="sldImg"/></p:nvPr></p:nvSpPr><p:spPr/></p:sp>' +
-    (Get-PptxPlaceholderXml -Id 3 -Name 'Notizenplatzhalter 2' -PhType 'body' -PhIdx 1 -Paragraphs $paras.ToString()) +
+    '<p:sp><p:nvSpPr><p:cNvPr id="2" name="' + (ConvertTo-XmlText $Office.SlideImage) + ' 1"/><p:cNvSpPr><a:spLocks noGrp="1" noRot="1" noChangeAspect="1"/></p:cNvSpPr><p:nvPr><p:ph type="sldImg"/></p:nvPr></p:nvSpPr><p:spPr/></p:sp>' +
+    (Get-PptxPlaceholderXml -Id 3 -Name ($Office.Notes + ' 2') -PhType 'body' -PhIdx 1 -Paragraphs $paras.ToString()) +
     '</p:spTree></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:notes>'
 }
 
@@ -2150,7 +2149,7 @@ function Get-PptxPresentationXml {
         [void]$sb.Append('</p:sldIdLst>')
     }
     if ($Wide) { [void]$sb.Append('<p:sldSz cx="12192000" cy="6858000"/>') } else { [void]$sb.Append('<p:sldSz cx="9144000" cy="6858000" type="screen4x3"/>') }
-    [void]$sb.Append('<p:notesSz cx="6858000" cy="9144000"/><p:defaultTextStyle><a:defPPr><a:defRPr lang="de-DE"/></a:defPPr>')
+    [void]$sb.Append('<p:notesSz cx="6858000" cy="9144000"/><p:defaultTextStyle><a:defPPr><a:defRPr lang="' + $Locale.Culture + '"/></a:defPPr>')
     [void]$sb.Append((Get-PptxLevelXml -Tag 'lvl1pPr' -Size 1800)).Append('</p:defaultTextStyle></p:presentation>')
     $sb.ToString()
 }
@@ -2390,7 +2389,7 @@ function Format-PdfColor {
 
 function Format-PdfDate {
     param([datetime] $Date)
-    "D:{0:yyyyMMddHHmmss}+01'00'" -f $Date
+    ('D:{0:yyyyMMddHHmmss}' -f $Date) + $Locale.PdfZone
 }
 
 function Get-SignatureCurve {
@@ -2635,7 +2634,7 @@ function Get-SignetPolygon {
 
 function Get-LogoItem {
     # Logo als Anzeigeliste (Punkt-Koordinaten), fuer PDF, Raster und Vorschau gleich.
-    # Neue CI: Signet + Wortmarke "Mustermann Medien"; alte CI: Serifen-Wortmarke mit Linie.
+    # Neue CI: Signet + Company.Wordmark in zwei Zeilen; alte CI: Company.Short in Versalien mit Linie.
     param([double] $X, [double] $Y, [double] $Height, [Parameter(Mandatory)] $Ci, [switch] $Negative)
     $items = [System.Collections.Generic.List[object]]::new()
     $textColor = if ($Negative) { @(255, 255, 255) } else { $Ci.Dark }
@@ -2643,12 +2642,12 @@ function Get-LogoItem {
         $polys = Get-SignetPolygon $X $Y $Height
         $items.Add(@{ K = 'Poly'; Points = $polys[0]; Color = $(if ($Negative) { @(255, 255, 255) } else { $Ci.Primary }) })
         $items.Add(@{ K = 'Poly'; Points = $polys[1]; Color = $Ci.Accent })
-        $items.Add(@{ K = 'Text'; X = $X + $Height * 1.25; Y = $Y + $Height * 0.02; Size = $Height * 0.52; Bold = $true; Text = 'Mustermann'; Color = $textColor })
-        $items.Add(@{ K = 'Text'; X = $X + $Height * 1.25; Y = $Y + $Height * 0.52; Size = $Height * 0.42; Bold = $false; Text = 'Medien'; Color = $(if ($Negative) { @(255, 255, 255) } else { $Ci.Primary }) })
+        $items.Add(@{ K = 'Text'; X = $X + $Height * 1.25; Y = $Y + $Height * 0.02; Size = $Height * 0.52; Bold = $true; Text = $C.Company.Wordmark[0]; Color = $textColor })
+        $items.Add(@{ K = 'Text'; X = $X + $Height * 1.25; Y = $Y + $Height * 0.52; Size = $Height * 0.42; Bold = $false; Text = $C.Company.Wordmark[1]; Color = $(if ($Negative) { @(255, 255, 255) } else { $Ci.Primary }) })
     }
     else {
         $color = if ($Negative) { @(255, 255, 255) } else { $Ci.Primary }
-        $items.Add(@{ K = 'Text'; X = $X; Y = $Y; Size = $Height * 0.62; Bold = $true; Serif = $true; Text = 'MUSTERMANN MEDIEN'; Color = $color })
+        $items.Add(@{ K = 'Text'; X = $X; Y = $Y; Size = $Height * 0.62; Bold = $true; Serif = $true; Text = $C.Company.Short.ToUpperInvariant(); Color = $color })
         $items.Add(@{ K = 'Line'; X1 = $X; Y1 = $Y + $Height * 0.78; X2 = $X + $Height * 6.6; Y2 = $Y + $Height * 0.78; Width = [Math]::Max(0.5, $Height * 0.04); Color = $color })
     }
     , $items.ToArray()
@@ -2902,11 +2901,11 @@ function Get-LogoSvg {
     $dark = if ($Negative) { 'FFFFFF' } else { Get-HexColor $Ci.Dark }
     $sb = New-Object -TypeName System.Text.StringBuilder
     [void]$sb.AppendFormat('<svg xmlns="http://www.w3.org/2000/svg" width="{0}" height="{1}" viewBox="0 0 {0} {1}">', $Width, $Height)
-    [void]$sb.AppendFormat('<title>Mustermann Medien</title><path d="{0}" fill="#{1}"/><path d="{2}" fill="#{3}"/>', (& $toPath $polys[0]), $primary, (& $toPath $polys[1]), (Get-HexColor $Ci.Accent))
+    [void]$sb.AppendFormat('<title>{4}</title><path d="{0}" fill="#{1}"/><path d="{2}" fill="#{3}"/>', (& $toPath $polys[0]), $primary, (& $toPath $polys[1]), (Get-HexColor $Ci.Accent), (ConvertTo-XmlText $C.Company.Short))
     if (-not $SignetOnly) {
         $x = [int]($Height * 1.3)
-        [void]$sb.AppendFormat('<text x="{0}" y="{1}" font-family="Segoe UI, Arial, sans-serif" font-weight="700" font-size="{2}" fill="#{3}">Mustermann</text>', $x, [int]($Height * 0.5), [int]($Height * 0.46), $dark)
-        [void]$sb.AppendFormat('<text x="{0}" y="{1}" font-family="Segoe UI, Arial, sans-serif" font-size="{2}" fill="#{3}">Medien</text>', $x, [int]($Height * 0.9), [int]($Height * 0.36), $primary)
+        [void]$sb.AppendFormat('<text x="{0}" y="{1}" font-family="Segoe UI, Arial, sans-serif" font-weight="700" font-size="{2}" fill="#{3}">{4}</text>', $x, [int]($Height * 0.5), [int]($Height * 0.46), $dark, (ConvertTo-XmlText $C.Company.Wordmark[0]))
+        [void]$sb.AppendFormat('<text x="{0}" y="{1}" font-family="Segoe UI, Arial, sans-serif" font-size="{2}" fill="#{3}">{4}</text>', $x, [int]($Height * 0.9), [int]($Height * 0.36), $primary, (ConvertTo-XmlText $C.Company.Wordmark[1]))
     }
     [void]$sb.Append('</svg>')
     $sb.ToString()
@@ -3170,9 +3169,10 @@ function Export-FlowPdf {
 # echten Konten oder Karten:
 #   - IBAN: BLZ beginnt mit 9; die Bundesbank vergibt als erste Ziffer nur die Clearinggebiete 1 bis 8.
 #   - Kreditkarten: veroeffentlichte Testnummern der Kartenanbieter.
-#   - Personalausweis Erika Mustermann: Nummer des amtlichen Musterausweises.
+#   - Personalausweis der Person aus Locale.Specimen: Nummer des amtlichen Musterausweises.
 #   - Telefon: Rufnummern der Bundesnetzagentur fuer Medienproduktionen, E-Mail nur *.example.*.
 # Steuer-ID, Ausweis- und Rentenversicherungsnummern anderer Personen sind formal gueltig, aber frei erzeugt.
+# Die Kennungen haengen vom Land ab (Locale.Country, siehe Get-NationalId); Get-De* sind die deutschen Verfahren.
 
 $TestCreditCards = @('4111 1111 1111 1111', '4012 8888 8888 1881', '5555 5555 5555 4444', '5105 1051 0510 5100', '3782 822463 10005')
 $IdCardFirst = 'LMNPRTVWXY'
@@ -3193,7 +3193,7 @@ function Get-IcaoCheckDigit {
     $sum % 10
 }
 
-function Get-IdCardNumber {
+function Get-DeIdCardNumber {
     # Personalausweis (seit 2010): 9 Zeichen plus Pruefziffer; fuer das Muster die amtliche Musternummer.
     param([Parameter(Mandatory)] $Rng, [switch] $Specimen)
     $serial = if ($Specimen) { $SpecimenIdCard } else {
@@ -3202,7 +3202,7 @@ function Get-IdCardNumber {
     '{0}{1}' -f $serial, (Get-IcaoCheckDigit $serial)
 }
 
-function Get-PassportNumber {
+function Get-DePassportNumber {
     param([Parameter(Mandatory)] $Rng)
     $serial = $PassportFirst[$Rng.Next(0, $PassportFirst.Length)] + (-join (1..8 | ForEach-Object { $DocumentChars[$Rng.Next(0, $DocumentChars.Length)] }))
     '{0}{1}' -f $serial, (Get-IcaoCheckDigit $serial)
@@ -3222,7 +3222,7 @@ function Get-TaxIdCheckDigit {
     $check
 }
 
-function Get-TaxId {
+function Get-DeTaxId {
     # Steuer-ID: 11 Ziffern, erste nicht 0, unter den ersten zehn genau eine Ziffer doppelt, Pruefziffer MOD 11,10.
     param([Parameter(Mandatory)] $Rng)
     $pool = @(0..9 | Sort-Object { $Rng.Next() })
@@ -3237,7 +3237,7 @@ function Get-TaxId {
     '{0} {1} {2} {3}' -f $id.Substring(0, 2), $id.Substring(2, 3), $id.Substring(5, 3), $id.Substring(8, 3)
 }
 
-function Get-SocialNumber {
+function Get-DeSocialNumber {
     # Rentenversicherungsnummer: Bereich, Geburtsdatum TTMMJJ, Anfangsbuchstabe des Geburtsnamens,
     # Seriennummer (00-49 maennlich, 50-99 weiblich), Pruefziffer.
     param([Parameter(Mandatory)] $Rng, [Parameter(Mandatory)][datetime] $BirthDate, [Parameter(Mandatory)][string] $Surname, [bool] $Female)
@@ -3255,7 +3255,7 @@ function Get-SocialNumber {
     '{0} {1:ddMMyy} {2} {3:D2}{4}' -f $area, $BirthDate, $letter, $serial, ($sum % 10)
 }
 
-function Get-Iban {
+function Get-DeIban {
     # Deutsche IBAN mit korrekter Pruefziffer (MOD 97) und BLZ 9xxxxxxx (nicht vergebenes Clearinggebiet).
     param([Parameter(Mandatory)] $Rng)
     $blz = '9' + (-join (1..7 | ForEach-Object { $Rng.Next(0, 10) }))
@@ -3267,27 +3267,51 @@ function Get-Iban {
     ($iban -replace '(.{4})', '$1 ').Trim()
 }
 
+function Get-NationalId {
+    # Landesspezifische Kennung nach Locale.Country: TaxId, Social, IdCard oder Iban.
+    # Ein weiteres Land braucht hier einen eigenen Zweig (gleiche Reihenfolge der Zufallszahlen ist nicht noetig).
+    param(
+        [Parameter(Mandatory)][ValidateSet('TaxId', 'Social', 'IdCard', 'Iban')][string] $Kind,
+        [Parameter(Mandatory)] $Rng,
+        [datetime] $BirthDate,
+        [string] $Surname = '',
+        [bool] $Female = $false,
+        [switch] $Specimen
+    )
+    switch ($Locale.Country) {
+        'DE' {
+            switch ($Kind) {
+                'TaxId' { return Get-DeTaxId $Rng }
+                'Social' { return Get-DeSocialNumber $Rng $BirthDate $Surname $Female }
+                'IdCard' { return Get-DeIdCardNumber $Rng -Specimen:$Specimen }
+                'Iban' { return Get-DeIban $Rng }
+            }
+        }
+        default { throw "Locale.Country '$($Locale.Country)' wird nicht unterstuetzt (Get-NationalId)." }
+    }
+}
+
 function Get-CreditCard {
     param([Parameter(Mandatory)] $Rng)
     Get-RandomEntry $Rng $TestCreditCards
 }
 
+function Get-Dial {
+    # Durchwahl-Format (Sites[].Dial) zum Standort oder Ort; sonst die Zentrale.
+    param([string] $Place)
+    if ($Place -and $DialByPlace.ContainsKey($Place)) { return $DialByPlace[$Place] }
+    $HqSite.Dial
+}
+
 function Get-DramaPhone {
-    # Rufnummern fuer Medienproduktionen (Bundesnetzagentur, Mitteilung 148/2021). Private Nummern ab 600,
-    # damit sie nicht mit den Firmennummern kollidieren.
-    param([Parameter(Mandatory)] $Rng, [string] $City = 'Berlin', [switch] $Mobile)
+    # Rufnummern fuer Medienproduktionen (Bundesnetzagentur, Mitteilung 148/2021): Festnetz aus Sites[].Dial,
+    # Mobil aus Locale.Mobiles. Private Nummern ab 600, damit sie nicht mit den Firmennummern kollidieren.
+    param([Parameter(Mandatory)] $Rng, [string] $City = $HqSite.City, [switch] $Mobile)
     if ($Mobile) {
-        if ($Rng.Next(0, 2) -eq 0) { return '+49 171 39200{0:D2}' -f (12 + $Rng.Next(0, 88)) }
-        return '+49 176 040690{0:D2}' -f $Rng.Next(0, 100)
+        $range = $Locale.Mobiles[$Rng.Next(0, $Locale.Mobiles.Count)]
+        return $range.Format -f ($range.Min + $Rng.Next(0, $range.Span))
     }
-    $prefix = switch ($City) {
-        'Hamburg' { '+49 40 66969' }
-        { $_ -like 'K*ln' } { '+49 221 4710' }
-        { $_ -like 'M*nchen' } { '+49 89 99998' }
-        'Frankfurt' { '+49 69 90009' }
-        default { '+49 30 23125' }
-    }
-    '{0}-{1:D3}' -f $prefix, (600 + $Rng.Next(0, 400))
+    (Get-Dial $City) -f (600 + $Rng.Next(0, 400))
 }
 
 function Get-PrivateMail {
@@ -3299,29 +3323,30 @@ function Get-PrivateMail {
 
 function Get-PersonProfile {
     # Stabile Stammdaten einer Person (gleicher Schluessel = gleiche Daten in allen Dokumenten).
-    param([Parameter(Mandatory)][string] $Key, [Parameter(Mandatory)][string] $GivenName, [Parameter(Mandatory)][string] $Surname, [int] $BirthYear = 1985, [string] $City = 'Berlin', [bool] $Female = $false)
+    param([Parameter(Mandatory)][string] $Key, [Parameter(Mandatory)][string] $GivenName, [Parameter(Mandatory)][string] $Surname, [int] $BirthYear = 1985, [string] $City = $HqSite.City, [bool] $Female = $false)
     $hash = 0
     foreach ($ch in $Key.ToCharArray()) { $hash = ($hash * 31 + [int]$ch) % 1000003 }
     $rng = Get-Rng -Index $hash -Salt 71
     $birth = (New-Object -TypeName DateTime -ArgumentList $BirthYear, 1, 1).AddDays($rng.Next(0, 365))
-    $isSpecimen = ($GivenName -eq 'Erika' -and $Surname -eq 'Mustermann')
-    if ($isSpecimen) { $birth = New-Object -TypeName DateTime -ArgumentList 1964, 8, 12 }
+    # Musterperson des Landes (Locale.Specimen): amtliche Musternummer und Geburtsdatum des Musterausweises.
+    $isSpecimen = [bool]$Locale.Specimen -and (('{0} {1}' -f $GivenName, $Surname) -eq $Locale.Specimen.Name)
+    if ($isSpecimen) { $birth = [datetime]::ParseExact($Locale.Specimen.Birth, 'yyyy-MM-dd', $Inv) }
     @{
         Name     = '{0} {1}' -f $GivenName, $Surname
         Birth    = $birth
-        BirthPlace = Get-RandomEntry $rng @('Berlin', 'Hamburg', 'Potsdam', 'Rostock', 'Leipzig', 'Kiel', 'Bremen', 'Musterstadt')
+        BirthPlace = Get-RandomEntry $rng $C.BirthPlaces
         Street   = '{0} {1}' -f (Get-RandomEntry $rng $C.Streets), $rng.Next(1, 140)
         City     = '{0} {1}' -f (Get-PostalCode $rng $City), $City
         Phone    = Get-DramaPhone $rng $City
         Mobile   = Get-DramaPhone $rng -Mobile
         Mail     = Get-PrivateMail $rng $GivenName $Surname
-        TaxId    = Get-TaxId $rng
-        Social   = Get-SocialNumber $rng $birth $Surname $Female
-        IdCard   = Get-IdCardNumber $rng -Specimen:$isSpecimen
-        Iban     = Get-Iban $rng
+        TaxId    = Get-NationalId 'TaxId' $rng
+        Social   = Get-NationalId 'Social' $rng -BirthDate $birth -Surname $Surname -Female $Female
+        IdCard   = Get-NationalId 'IdCard' $rng -Specimen:$isSpecimen
+        Iban     = Get-NationalId 'Iban' $rng
         Bank     = Get-RandomEntry $rng $C.Banks
         Insurer  = Get-RandomEntry $rng $C.Insurers
-        TaxClass = Get-RandomEntry $rng @('I', 'I', 'III', 'IV', 'IV', 'V')
+        TaxClass = Get-RandomEntry $rng $Locale.TaxClasses
         Marital  = Get-RandomEntry $rng @($L.Single, $L.Single, $L.Married)
         Confession = Get-RandomEntry $rng @($L.NoConfession, $L.NoConfession, $L.Catholic, $L.Protestant)
         Children = $rng.Next(0, 3)
@@ -3364,6 +3389,18 @@ function Import-SampleCorpus {
     $script:C = Import-PowerShellDataFile -Path (Join-Path $CorpusPath 'Company.psd1')
     $script:L = $C.Labels
     $script:F = $C.FolderNames
+    # Alles Sprach- und Landesabhaengige kommt aus dem Korpus (siehe scripts/data/README.md).
+    $script:Locale = $C.Locale
+    $script:Culture = [Globalization.CultureInfo]::GetCultureInfo($Locale.Culture)
+    $script:Paths = $C.Paths
+    $script:Roles = $C.Roles
+    $script:Office = $C.Office
+    $script:Patterns = $C.Patterns
+    # Name eines Bereichs im Archiv = letzter Teil seines Pfads (Abteilungen\Buchhaltung -> Buchhaltung).
+    $script:AreaName = @{}
+    foreach ($key in $Paths.Keys) { $AreaName[$key] = ($Paths[$key] -split '\\')[-1] }
+    # Anrede im Kontakt (Locale.Salutations), z. B. "Frau " vor dem Namen.
+    $script:SalutationPattern = '^({0}) ' -f ((@($Locale.Salutations.Keys) | ForEach-Object { [regex]::Escape($_) }) -join '|')
     $script:T = @{}
     foreach ($file in $files | Where-Object Name -Like 'Texts-*') {
         $data = Import-PowerShellDataFile -Path $file.FullName
@@ -3373,7 +3410,7 @@ function Import-SampleCorpus {
 
 function Test-Female {
     param([string] $GivenName)
-    $GivenName -match '(a|e|ine|ia|ja)$'
+    $GivenName -match $Patterns.Female
 }
 
 function Initialize-World {
@@ -3397,7 +3434,13 @@ function Initialize-World {
     foreach ($p in $People) { $PeopleBySam[$p.Sam] = $p }
     $script:SiteOpened = @{}
     foreach ($site in $C.Company.Sites) { $SiteOpened[$site.Name] = $Reference.AddDays( - [int]($site.OpenedYearsAgo * 365)) }
-    $script:Founded = $SiteOpened['Berlin']
+    # Zentrale (Key HQ) und Niederlassung (Key Branch); Durchwahl je Standortname und Ort.
+    $script:HqSite = $C.Company.Sites | Where-Object Key -EQ 'HQ' | Select-Object -First 1
+    $script:BranchSite = $C.Company.Sites | Where-Object Key -EQ 'Branch' | Select-Object -First 1
+    $script:DialByPlace = @{}
+    foreach ($site in $C.Company.Sites) { $DialByPlace[$site.City] = $site.Dial; $DialByPlace[$site.Name] = $site.Dial }
+    $script:TaxAdvisor = $C.Suppliers | Where-Object Role -EQ 'TaxAdvisor' | Select-Object -First 1
+    $script:Founded = $SiteOpened[$HqSite.Name]
     $scanner = $C.Timeline | Where-Object Event -EQ 'Scanner' | Select-Object -First 1
     $script:ScannerDate = if ($scanner) { New-Object -TypeName DateTime -ArgumentList ($Reference.Year - $scanner.YearsAgo), $scanner.Month, 1 } else { $Reference }
 }
@@ -3410,7 +3453,7 @@ function Get-ActivePerson {
 
 function Get-Person {
     # Bevorzugt die genannte Person, sonst jemand Aktives vom Standort.
-    param([string] $Sam, [datetime] $Date, [string] $Site = 'Berlin', $Rng)
+    param([string] $Sam, [datetime] $Date, [string] $Site = $HqSite.Name, $Rng)
     $p = $PeopleBySam[$Sam]
     if ($p -and $p.Entry -le $Date -and (-not $p.Leave -or $p.Leave -gt $Date)) { return $p }
     $active = Get-ActivePerson -Date $Date -Site $Site
@@ -3426,7 +3469,7 @@ function Test-CustomerActive {
 
 function Get-DocumentCi {
     # CI zum Datum: vor dem Rebranding alt, danach neu; mit Logo (PNG), Kopf- und Fusszeilen des Standorts.
-    param([datetime] $Date, [string] $Site = 'Berlin')
+    param([datetime] $Date, [string] $Site = $HqSite.Name)
     $old = ($Reference - $Date).TotalDays -gt ($C.Ci.RebrandYearsAgo * 365)
     $key = '{0}|{1}|{2}' -f $old, $Site, ($Date -lt $Reference.AddDays( - [int]((5 * 365))))
     if (-not $script:CiCache) { $script:CiCache = @{} }
@@ -3434,14 +3477,14 @@ function Get-DocumentCi {
     $base = if ($old) { $C.Ci.Old } else { $C.Ci.New }
     $siteData = $C.Company.Sites | Where-Object Name -EQ $Site | Select-Object -First 1
     if (-not $siteData) { $siteData = $C.Company.Sites[0] }
-    # Vor dem Umzug (Move vor 5 Jahren) die alte Berliner Adresse.
+    # Vor dem Umzug (Move vor 5 Jahren) die alte Adresse der Zentrale (OldStreet).
     $street = if ($siteData.OldStreet -and $Date -lt $Reference.AddDays( - 5 * 365)) { $siteData.OldStreet } else { $siteData.Street }
     $ci = @{
         Primary = $base.Primary; Accent = $base.Accent; Light = $base.Light; Dark = $base.Dark; Font = $base.Font; TitleFont = $base.TitleFont; Mark = $base.Mark
         HeaderLines = @($C.Company.Name, $street, ('{0} {1}' -f $siteData.PostalCode, $siteData.City))
         FooterLines = @(
-            ('{0} {1} {2} {3} {4} {5} Telefon {6} {7} {8}' -f $C.Company.Name, $MidDot, $street, $siteData.PostalCode, $siteData.City, $MidDot, $siteData.Phone, $MidDot, $C.Company.Web)
-            ('{0} {1} {2} {3} IBAN {4} {5} {6}' -f $C.Company.Managers, $MidDot, $C.Company.Register, $MidDot, $script:CompanyIban, $MidDot, $C.Company.VatId)
+            ('{0} {1} {2} {3} {4} {5} {9} {6} {7} {8}' -f $C.Company.Name, $MidDot, $street, $siteData.PostalCode, $siteData.City, $MidDot, $siteData.Phone, $MidDot, $C.Company.Web, $L.Phone)
+            ('{0} {1} {2} {3} {7} {4} {5} {6}' -f $C.Company.Managers, $MidDot, $C.Company.Register, $MidDot, $script:CompanyIban, $MidDot, $C.Company.VatId, $L.Iban)
         )
         LogoPng = $null; LogoWidthPx = 0; LogoHeightPx = 0
     }
@@ -3468,23 +3511,25 @@ function Get-TextRecord {
 
 function Get-SampleText {
     param([Parameter(Mandatory)][string] $Kind, [Parameter(Mandatory)] $Rng, [Parameter(Mandatory)][hashtable] $Context, [hashtable] $Where = @{})
-    $record = Get-TextRecord -Kind $Kind -Rng $Rng -Industry $Context.Branche -Voice $Context.Voice -Where $Where
+    $record = Get-TextRecord -Kind $Kind -Rng $Rng -Industry $Context.Industry -Voice $Context.Voice -Where $Where
     Expand-SampleText $record.Text $Context
 }
 
 function Get-Salutation {
-    # "Frau Dr. Karin Vogt" -> "Sehr geehrte Frau Dr. Vogt"
+    # Kontakt "<Anrede> [Titel] Vorname Nachname" -> Locale.Salutations[<Anrede>] [Titel] Nachname,
+    # z. B. "Frau Dr. Karin Vogt" -> "Sehr geehrte Frau Dr. Vogt". Ohne bekannte Anrede Labels.Salutation.
     param([string] $Contact)
     $parts = $Contact -split ' '
-    $title = ($parts | Where-Object { $_ -match '^(Dr\.|Prof\.)$' }) -join ' '
-    $lead = if ($parts[0] -eq 'Frau') { 'Sehr geehrte Frau' } elseif ($parts[0] -eq 'Herr') { 'Sehr geehrter Herr' } else { return $L.Salutation }
+    $title = ($parts | Where-Object { $_ -match $Patterns.AcademicTitle }) -join ' '
+    $lead = $Locale.Salutations[$parts[0]]
+    if (-not $lead) { return $L.Salutation }
     ('{0} {1} {2}' -f $lead, $title, $parts[-1]) -replace '\s+', ' '
 }
 
 function Get-TextContext {
     # Platzhalterwerte fuer Texte (siehe scripts/data/README.md).
     param([Parameter(Mandatory)] $Rng, [datetime] $Date, $Customer = $null, [string] $Project = '', $Author = $null, $Colleague = $null)
-    if (-not $Author) { $Author = Get-Person 'MMustermann' $Date 'Berlin' $Rng }
+    if (-not $Author) { $Author = Get-Person $Roles.Ceo $Date $HqSite.Name $Rng }
     if (-not $Colleague) {
         $others = @(Get-ActivePerson -Date $Date -Site $Author.Site | Where-Object Sam -NE $Author.Sam)
         $Colleague = if ($others) { Get-RandomEntry $Rng $others } else { $Author }
@@ -3493,22 +3538,25 @@ function Get-TextContext {
     $ctx = @{
         Firma = $C.Company.Name; Standort = $Author.Site; Ich = $Author.Name; IchVorname = $Author.GivenName; Voice = $Author.Sam
         Kollege = $Colleague.Name; KollegeVorname = $Colleague.GivenName; Leitung = $(if ($lead) { $lead.Name } else { $Author.Name })
-        Datum = (Format-DateDe $Date); Termin = (Format-DateDe $Date.AddDays($Rng.Next(7, 21))); Termin2 = (Format-DateDe $Date.AddDays($Rng.Next(25, 60)))
-        Vortermin = (Format-DateDe $Date.AddDays( - $Rng.Next(5, 20))); Monat = $C.Months[$Date.Month - 1]; Jahr = $Date.Year; Quartal = ('Q{0}' -f [Math]::Ceiling($Date.Month / 3))
+        Datum = (Format-LocalDate $Date); Termin = (Format-LocalDate $Date.AddDays($Rng.Next(7, 21))); Termin2 = (Format-LocalDate $Date.AddDays($Rng.Next(25, 60)))
+        Vortermin = (Format-LocalDate $Date.AddDays( - $Rng.Next(5, 20))); Monat = $C.Months[$Date.Month - 1]; Jahr = $Date.Year; Quartal = ('Q{0}' -f [Math]::Ceiling($Date.Month / 3))
         Betrag = (Format-Money ($Rng.Next(12, 160) * 100)); Budget = (Format-Money ($Rng.Next(8, 90) * 500)); Stunden = $Rng.Next(8, 80)
         Auflage = (Format-Number ($Rng.Next(1, 40) * 500)); Prozent = $Rng.Next(5, 40)
         Zielgruppe = (Get-RandomEntry $Rng $C.Audiences); Kanal = (Get-RandomEntry $Rng $C.Channels); Kanal2 = (Get-RandomEntry $Rng $C.Channels)
         Lieferant = (Get-RandomEntry $Rng $C.Suppliers).Name; Projekt = $Project; Stelle = (Get-RandomEntry $Rng $C.Positions)
         Mitarbeiter = $Colleague.Name; Bewerber = ('{0} {1}' -f (Get-RandomEntry $Rng $C.FirstNames), (Get-RandomEntry $Rng $C.LastNames))
-        Eintritt = (Format-DateDe $Colleague.Entry); Austritt = $(if ($Colleague.Leave) { Format-DateDe $Colleague.Leave } else { Format-DateDe $Date })
-        Kunde = ''; KundeKurz = ''; Anrede = $L.Salutation; Ansprechpartner = ''; Branche = ''; Produkt = ''; Stadt = 'Berlin'; Claim = ''; Motiv = ''
+        Eintritt = (Format-LocalDate $Colleague.Entry); Austritt = $(if ($Colleague.Leave) { Format-LocalDate $Colleague.Leave } else { Format-LocalDate $Date })
+        Kunde = ''; KundeKurz = ''; Anrede = $L.Salutation; Ansprechpartner = ''; Branche = ''; Produkt = ''; Stadt = $HqSite.City; Claim = ''; Motiv = ''
+        # Branchen-ID fuer die Textauswahl (Industry in Texts-*.psd1); Branche ist der Anzeigename.
+        Industry = ''
     }
     if ($Customer) {
         $ctx.Kunde = $Customer.Name; $ctx.KundeKurz = $Customer.Short; $ctx.Anrede = Get-Salutation $Customer.Contact
-        $ctx.Ansprechpartner = $Customer.Contact; $ctx.Branche = $Customer.Industry; $ctx.Produkt = $Customer.Product; $ctx.Stadt = $Customer.City
+        $ctx.Ansprechpartner = $Customer.Contact; $ctx.Branche = $C.Industries[$Customer.Industry]; $ctx.Produkt = $Customer.Product; $ctx.Stadt = $Customer.City
+        $ctx.Industry = $Customer.Industry
     }
-    if ($T.Claim) { $ctx.Claim = Expand-SampleText (Get-TextRecord -Kind 'Claim' -Rng $Rng -Industry $ctx.Branche).Text $ctx }
-    if ($T.Motif) { $ctx.Motiv = Expand-SampleText (Get-TextRecord -Kind 'Motif' -Rng $Rng -Industry $ctx.Branche).Text $ctx }
+    if ($T.Claim) { $ctx.Claim = Expand-SampleText (Get-TextRecord -Kind 'Claim' -Rng $Rng -Industry $ctx.Industry).Text $ctx }
+    if ($T.Motif) { $ctx.Motiv = Expand-SampleText (Get-TextRecord -Kind 'Motif' -Rng $Rng -Industry $ctx.Industry).Text $ctx }
     $ctx
 }
 
@@ -3520,14 +3568,13 @@ function ConvertFrom-HexColor {
 #endregion
 
 function Get-PostalCode {
-    # Plausible Postleitzahl je Ort; fuer fiktive Orte die bekannte Musterpostleitzahl.
+    # Plausible Postleitzahl je Ort (Locale.PostalCodes: Format, Minimum, Anzahl); sonst Locale.PostalCode.
     param([Parameter(Mandatory)] $Rng, [string] $City)
-    switch ($City) {
-        'Berlin' { return [string](10115 + $Rng.Next(0, 2400)) }
-        'Hamburg' { return [string](20095 + $Rng.Next(0, 2600)) }
-        'Potsdam' { return [string](14467 + $Rng.Next(0, 10)) }
-        default { return '12345' }
+    if ($City -and $Locale.PostalCodes.ContainsKey($City)) {
+        $range = $Locale.PostalCodes[$City]
+        return $range[0] -f ($range[1] + $Rng.Next(0, $range[2]))
     }
+    $Locale.PostalCode
 }
 
 function Get-ScanProfile {
@@ -3536,7 +3583,7 @@ function Get-ScanProfile {
     param([Parameter(Mandatory)] $Rng, [datetime] $Date)
     $sign = if ($Rng.Next(0, 2) -eq 0) { -1 } else { 1 }
     if ($Date -lt $ScannerDate) {
-        return @{ Device = 'Kopierer Scan-to-Mail'; Dpi = 200; Quality = 72; Gray = ($Rng.Next(0, 10) -lt 7); Paper = @(246, 244, 236)
+        return @{ Device = $L.Copier; Dpi = 200; Quality = 72; Gray = ($Rng.Next(0, 10) -lt 7); Paper = @(246, 244, 236)
             Rotate = $sign * (0.2 + $Rng.NextDouble() * 0.7); Holes = ($Rng.Next(0, 10) -lt 4); Noise = 2 }
     }
     @{ Device = 'MFP Scan-to-Folder'; Dpi = 150; Quality = 80; Gray = ($Rng.Next(0, 10) -lt 3); Paper = @(252, 252, 250)
@@ -3555,24 +3602,25 @@ function Get-DistinctSampleText {
 }
 #region Gestaltung: Entwuerfe, Druckdaten, Moodboard, Folien (Anzeigelisten in Punkt)
 
+# Masse der Werbemittel je Motifs[].Format (Punkt) und Aufloesung fuer Entwurf und Druckdaten.
 $ShapeSizes = @{
-    Flyer       = @{ W = 420; H = 595; DraftDpi = 90; PrintDpi = 300 }
-    Plakat      = @{ W = 1684; H = 2384; DraftDpi = 30; PrintDpi = 150 }
-    Broschuere  = @{ W = 595; H = 842; DraftDpi = 72; PrintDpi = 300 }
-    Anzeige     = @{ W = 595; H = 842; DraftDpi = 80; PrintDpi = 300 }
-    'Social-Post' = @{ W = 540; H = 540; DraftDpi = 96; PrintDpi = 144; Online = $true }
-    Banner      = @{ W = 900; H = 300; DraftDpi = 96; PrintDpi = 160; Online = $true }
+    Flyer         = @{ W = 420; H = 595; DraftDpi = 90; PrintDpi = 300 }
+    Poster        = @{ W = 1684; H = 2384; DraftDpi = 30; PrintDpi = 150 }
+    Brochure      = @{ W = 595; H = 842; DraftDpi = 72; PrintDpi = 300 }
+    Ad            = @{ W = 595; H = 842; DraftDpi = 80; PrintDpi = 300 }
+    SocialPost    = @{ W = 540; H = 540; DraftDpi = 96; PrintDpi = 144; Online = $true }
+    Banner        = @{ W = 900; H = 300; DraftDpi = 96; PrintDpi = 160; Online = $true }
     # Grossformate 1:1 mit niedriger Aufloesung, wie im Digitaldruck ueblich.
-    Messewand   = @{ W = 8504; H = 7087; DraftDpi = 6; PrintDpi = 50 }
-    Bauschild   = @{ W = 8504; H = 5669; DraftDpi = 6; PrintDpi = 50 }
-    Fahrzeug    = @{ W = 12756; H = 5102; DraftDpi = 5; PrintDpi = 40 }
-    Stanzbogen  = @{ W = 1684; H = 1191; DraftDpi = 40; PrintDpi = 300 }
-    Plakatserie = @{ W = 1684; H = 2384; DraftDpi = 30; PrintDpi = 150 }
-    Anzeigenserie = @{ W = 595; H = 842; DraftDpi = 80; PrintDpi = 300 }
-    'Social-Serie' = @{ W = 540; H = 540; DraftDpi = 72; PrintDpi = 144; Online = $true }
-    Screendesign = @{ W = 1440; H = 3200; DraftDpi = 36; PrintDpi = 72; Online = $true }
+    TradeShowWall = @{ W = 8504; H = 7087; DraftDpi = 6; PrintDpi = 50 }
+    SiteSign      = @{ W = 8504; H = 5669; DraftDpi = 6; PrintDpi = 50 }
+    Vehicle       = @{ W = 12756; H = 5102; DraftDpi = 5; PrintDpi = 40 }
+    DieCut        = @{ W = 1684; H = 1191; DraftDpi = 40; PrintDpi = 300 }
+    PosterSeries  = @{ W = 1684; H = 2384; DraftDpi = 30; PrintDpi = 150 }
+    AdSeries      = @{ W = 595; H = 842; DraftDpi = 80; PrintDpi = 300 }
+    SocialSeries  = @{ W = 540; H = 540; DraftDpi = 72; PrintDpi = 144; Online = $true }
+    WebDesign     = @{ W = 1440; H = 3200; DraftDpi = 36; PrintDpi = 72; Online = $true }
 }
-$IndustryTexture = @{ Gastronomie = 'Wood'; Handwerk = 'Wood'; Hotellerie = 'Clouds'; Energie = 'Clouds'; Immobilien = 'Stone'; Gesundheit = 'Paper'; IT = 'Stone'; Kultur = 'Clouds'; Freizeit = 'Clouds'; Verein = 'Clouds'; Bildung = 'Paper'; Handel = 'Paper' }
+$IndustryTexture = @{ Hospitality = 'Wood'; Crafts = 'Wood'; Hotel = 'Clouds'; Energy = 'Clouds'; RealEstate = 'Stone'; Health = 'Paper'; IT = 'Stone'; Culture = 'Clouds'; Leisure = 'Clouds'; Club = 'Clouds'; Education = 'Paper'; Retail = 'Paper' }
 
 function Get-MixedColor {
     param([int[]] $A, [int[]] $B, [double] $T)
@@ -3641,7 +3689,7 @@ function Get-DesignItem {
     $items.Add(@{ K = 'Text'; X = $W - $d - $u * 0.05 + $d * 0.2; Y = $H - $d - $u * 0.05 + $d * 0.28; Size = $d * 0.4; Bold = $true; Text = $initials; Color = @(255, 255, 255) })
     $items.Add(@{ K = 'Text'; X = $u * 0.06; Y = $H - $u * 0.07; Size = $u * 0.022; Text = ('www.{0}' -f $Customer.Domain); Color = @(90, 90, 90) })
     if ($Stage -eq 'Draft') {
-        $items.Add(@{ K = 'Text'; X = $u * 0.02; Y = $u * 0.015; Size = $u * 0.018; Text = ('{0} {1} {2} {3} {4}' -f $L.Draft.ToUpperInvariant(), $Variant, $MidDot, $L.Version, (Format-DateDe $Date)); Color = @(120, 120, 120) })
+        $items.Add(@{ K = 'Text'; X = $u * 0.02; Y = $u * 0.015; Size = $u * 0.018; Text = ('{0} {1} {2} {3} {4}' -f $L.Draft.ToUpperInvariant(), $Variant, $MidDot, $L.Version, (Format-LocalDate $Date)); Color = @(120, 120, 120) })
     }
     else {
         foreach ($corner in @(@(0, 0, 1, 1), @($W, 0, -1, 1), @(0, $H, 1, -1), @($W, $H, -1, -1))) {
@@ -3658,7 +3706,7 @@ function Get-BrochurePageItem {
     # Seite einer mehrseitigen Drucksache (A4). Seite 1 = Titel wie das Werbemittel, letzte Seite = Rueckseite
     # mit Kontakt, dazwischen Innenseiten mit Bildflaeche, Ueberschrift und zwei Spalten. Entwurf: Blindtext und Platzhalter.
     param([Parameter(Mandatory)] $Ctx, [Parameter(Mandatory)] $Customer, [double] $W, [double] $H, [int] $Page, [int] $PageCount, [string] $Variant = 'A', [string] $Stage = 'Draft', [int] $Seed = 1, [datetime] $Date)
-    if ($Page -eq 1) { return Get-DesignItem $Ctx $Customer $W $H $Variant $Stage $Seed 'Broschuere' $Date }
+    if ($Page -eq 1) { return Get-DesignItem $Ctx $Customer $W $H $Variant $Stage $Seed 'Brochure' $Date }
     $rng = Get-Rng -Index ($Seed * 31 + $Page) -Salt 29
     $colors = $Customer.Colors -split ' '
     $c1 = ConvertFrom-HexColor $colors[0]
@@ -3672,7 +3720,7 @@ function Get-BrochurePageItem {
     if ($Page -eq $PageCount) {
         $items.Add(@{ K = 'Rect'; X = 0; Y = 0; W = $W; H = $H; Color = $c1 })
         $y = Add-WrappedItem $items $Customer.Name $m ($H * 0.6) ($W - 2 * $m) 22 $true @(255, 255, 255) 2
-        foreach ($line in @($Customer.City, ('www.{0}' -f $Customer.Domain), ('kontakt@{0}' -f $Customer.Domain))) {
+        foreach ($line in @($Customer.City, ('www.{0}' -f $Customer.Domain), ('{0}@{1}' -f $L.MailContact, $Customer.Domain))) {
             if (-not $line) { continue }
             $items.Add(@{ K = 'Text'; X = $m; Y = $y + 10; Size = 11; Text = $line; Color = (Get-MixedColor $c2 @(255, 255, 255) 0.5) })
             $y += 16
@@ -3704,7 +3752,7 @@ function Get-BrochurePageItem {
         $items.Add(@{ K = 'Text'; X = $(if ($Page % 2 -eq 0) { $m + 24 } else { $m }); Y = $H - 28; Size = 7; Text = $Customer.Short; Color = @(120, 120, 120) })
     }
     if ($draft) {
-        $items.Add(@{ K = 'Text'; X = 12; Y = 10; Size = 7; Text = ('{0} {1} {2} {3}/{4} {2} {5}' -f $L.Draft.ToUpperInvariant(), $Variant, $MidDot, $Page, $PageCount, (Format-DateDe $Date)); Color = @(120, 120, 120) })
+        $items.Add(@{ K = 'Text'; X = 12; Y = 10; Size = 7; Text = ('{0} {1} {2} {3}/{4} {2} {5}' -f $L.Draft.ToUpperInvariant(), $Variant, $MidDot, $Page, $PageCount, (Format-LocalDate $Date)); Color = @(120, 120, 120) })
     }
     else {
         foreach ($corner in @(@(0, 0, 1, 1), @($W, 0, -1, 1), @(0, $H, 1, -1), @($W, $H, -1, -1))) {
@@ -3726,7 +3774,7 @@ function Get-WebPageItem {
     if (-not $kind) { $kind = 'Paper' }
     $draft = $Stage -eq 'Draft'
     $ink = if ($draft) { @(90, 90, 90) } else { $c1 }
-    $menu = @('Start', 'Leistungen', 'Team', 'Aktuelles', 'Kontakt', 'Karriere', 'Presse', 'FAQ')
+    $menu = @($C.WebMenu)
     $items = [System.Collections.Generic.List[object]]::new()
     $items.Add(@{ K = 'Rect'; X = 0; Y = 0; W = $W; H = $H; Color = @(255, 255, 255) })
     $items.Add(@{ K = 'Rect'; X = 0; Y = 0; W = $W; H = 90; Color = $(if ($draft) { @(235, 235, 235) } else { @(255, 255, 255) }) })
@@ -3746,9 +3794,9 @@ function Get-WebPageItem {
     while ($y + 560 -lt $H - 260) {
         for ($col = 0; $col -lt 3; $col++) {
             $x = 80 + $col * 440
-            if ($draft) { $items.Add(@{ K = 'Placeholder'; X = $x; Y = $y; W = 400; H = 240; Text = 'Bild' }) }
+            if ($draft) { $items.Add(@{ K = 'Placeholder'; X = $x; Y = $y; W = 400; H = 240; Text = $Office.Image }) }
             else { $items.Add(@{ K = 'Texture'; X = $x; Y = $y; W = 400; H = 240; Kind = $kind; Seed = $Seed + $Page * 10 + $card; Color = (Get-MixedColor $c1 @(255, 255, 255) (0.15 * $col)); Color2 = $c2 }) }
-            if ($draft) { $headline = 'Teaser-Headline'; $text = $LoremIpsum }
+            if ($draft) { $headline = $L.Teaser; $text = $LoremIpsum }
             else {
                 $copy = Get-SampleText 'AdCopy' $rng $Ctx
                 $cut = $copy.IndexOfAny([char[]]'.!?')
@@ -3758,30 +3806,30 @@ function Get-WebPageItem {
             }
             $ty = Add-WrappedItem $items $headline $x ($y + 262) 400 22 $true $ink 2
             $null = Add-WrappedItem $items $text $x ($ty + 8) 400 14 $false @(60, 60, 60) 6
-            $items.Add(@{ K = 'Text'; X = $x; Y = $y + 500; Size = 14; Bold = $true; Text = 'Mehr erfahren >'; Color = $(if ($draft) { @(120, 120, 120) } else { $c2 }) })
+            $items.Add(@{ K = 'Text'; X = $x; Y = $y + 500; Size = 14; Bold = $true; Text = $L.ReadMore; Color = $(if ($draft) { @(120, 120, 120) } else { $c2 }) })
             $card++
         }
         $y += 600
     }
     $items.Add(@{ K = 'Rect'; X = 0; Y = $H - 220; W = $W; H = 220; Color = $(if ($draft) { @(70, 70, 70) } else { (Get-MixedColor $c1 @(0, 0, 0) 0.35) }) })
     $fy = $H - 180
-    foreach ($line in @($Customer.Name, $Customer.City, ('www.{0}' -f $Customer.Domain), ('kontakt@{0}' -f $Customer.Domain), 'Impressum | Datenschutz | Cookie-Einstellungen')) {
+    foreach ($line in @($Customer.Name, $Customer.City, ('www.{0}' -f $Customer.Domain), ('{0}@{1}' -f $L.MailContact, $Customer.Domain), $L.WebFooter)) {
         if (-not $line) { continue }
         $items.Add(@{ K = 'Text'; X = 80; Y = $fy; Size = 14; Text = $line; Color = @(235, 235, 235) })
         $fy += 26
     }
     if ($draft) {
-        $items.Add(@{ K = 'Text'; X = 20; Y = 4; Size = 11; Text = ('WIREFRAME {0} {1}/{2} {0} {3}' -f $MidDot, $Page, $PageCount, (Format-DateDe $Date)); Color = @(150, 150, 150) })
+        $items.Add(@{ K = 'Text'; X = 20; Y = 4; Size = 11; Text = ('WIREFRAME {0} {1}/{2} {0} {3}' -f $MidDot, $Page, $PageCount, (Format-LocalDate $Date)); Color = @(150, 150, 150) })
     }
     , $items.ToArray()
 }
 
 function Get-ProofItem {
-    # Proof-Vermerk der Druckerei am Seitenrand (Auftrag, Seite, Datum, nicht farbverbindlich).
+    # Proof-Vermerk der Druckerei am Seitenrand (Auftrag, Seite, Datum, Labels.ProofNote).
     param([double] $W, [double] $H, [string] $Job, [int] $Page, [int] $PageCount, [datetime] $Date)
     $u = [Math]::Min($W, $H)
     $size = [Math]::Max(6, $u * 0.014)
-    $text = 'PROOF {0} {1} {2} {1} {3:dd.MM.yyyy} {1} nicht farbverbindlich' -f $Job, $MidDot, ($L.Page -f $Page, $PageCount), $Date
+    $text = 'PROOF {0} {1} {2} {1} {3} {1} {4}' -f $Job, $MidDot, ($L.Page -f $Page, $PageCount), (Format-LocalDate $Date), $L.ProofNote
     @(
         @{ K = 'Rect'; X = 0; Y = $H - $size * 2.6; W = $W; H = $size * 2.6; Color = @(255, 255, 255) }
         @{ K = 'Text'; X = $size; Y = $H - $size * 1.9; Size = $size; Bold = $true; Text = $text; Color = @(200, 30, 60) }
@@ -3888,7 +3936,7 @@ function Get-LetterModel {
     $subject = Expand-SampleText $Record.Subject $Context
     $letter = Get-DocModel -Title $subject -Author $Author -Created $Date -Modified $Date -Ci $Ci
     Add-Block $letter 'Address' @{ Lines = $Address }
-    Add-Block $letter 'Info' @{ Rows = [ordered]@{ $L.Date = (Format-DateDe $Date) } }
+    Add-Block $letter 'Info' @{ Rows = [ordered]@{ $L.Date = (Format-LocalDate $Date) } }
     Add-Block $letter 'Title' @{ Text = $subject }
     Add-Block $letter 'Para' @{ Text = ('{0},' -f $Context.Anrede) }
     Add-Block $letter 'Para' @{ Text = (Expand-SampleText $Record.Text $Context) }
@@ -3929,7 +3977,8 @@ function Get-WorkDate {
 function Get-ServiceLine {
     param([Parameter(Mandatory)] $Rng)
     $service = Get-RandomEntry $Rng $C.Services
-    $quantity = switch ($service.Unit) { 'Std.' { $Rng.Next(2, 41) } 'Tag' { $Rng.Next(1, 4) } 'Monat' { $Rng.Next(1, 4) } default { 1 } }
+    # Menge nach Einheit (Labels.Hour, Day, Month): Stunden 2 bis 40, Tage und Monate 1 bis 3, sonst 1.
+    $quantity = if ($service.Unit -eq $L.Hour) { $Rng.Next(2, 41) } elseif ($service.Unit -eq $L.Day -or $service.Unit -eq $L.Month) { $Rng.Next(1, 4) } else { 1 }
     @{ Text = $service.Text; Qty = $quantity; Unit = $service.Unit; Price = [Math]::Round(($service.Min + $Rng.NextDouble() * ($service.Max - $service.Min)) / 5) * 5 }
 }
 
@@ -3984,10 +4033,19 @@ function Build-ProjectUnit {
     $customer = $Unit.Customer
     $name = $Unit.Project
     $year = $Reference.Year - $Unit.YearsAgo
-    $month = switch -Regex ($name) { 'Weihnacht' { 9 + $rng.Next(0, 2) } 'Fr.hjahr|Saisonstart' { 1 + $rng.Next(0, 2) } 'Sommer|Hoffest|Bierfest' { 4 + $rng.Next(0, 2) } 'Neujahr' { 11 } 'Spielzeit|Programmheft' { 5 + $rng.Next(0, 2) } default { 1 + $rng.Next(0, 11) } }
+    # Startmonat nach Patterns.Seasons (erster Treffer auf den Projektnamen, plus Zufall unter Spread), sonst zufaellig.
+    $month = 0
+    foreach ($season in $Patterns.Seasons) {
+        if ($name -match $season.Match) {
+            $month = if ($season.Spread) { $season.Month + $rng.Next(0, $season.Spread) } else { $season.Month }
+            break
+        }
+    }
+    if (-not $month) { $month = 1 + $rng.Next(0, 11) }
     $start = (New-Object -TypeName DateTime -ArgumentList $year, $month, (1 + $rng.Next(0, 27))).AddHours(8 + $rng.Next(0, 9)).AddMinutes($rng.Next(0, 60))
     if ($start -ge $Reference.AddDays(-2) -or $start -lt $Founded) { return , $specs.ToArray() }
-    $site = if ($customer.City -eq 'Hamburg' -and $start -ge $SiteOpened['Hamburg']) { 'Hamburg' } else { 'Berlin' }
+    # Kunden am Ort der Niederlassung betreut die Niederlassung, sobald es sie gibt.
+    $site = if ($customer.City -eq $BranchSite.City -and $start -ge $SiteOpened[$BranchSite.Name]) { $BranchSite.Name } else { $HqSite.Name }
     $owner = Get-Person $customer.Owner $start $site $rng
     $team = @(Get-ActivePerson -Date $start -Site $owner.Site | Where-Object { $_.Sam -ne $owner.Sam -and $_.Department -eq 'Marketing' })
     $colleague = if ($team) { Get-RandomEntry $rng $team } else { $owner }
@@ -3995,12 +4053,16 @@ function Build-ProjectUnit {
     $ctx = Get-TextContext -Rng $rng -Date $start -Customer $customer -Project $name -Author $owner -Colleague $colleague
     $num = '{0}-{1:D4}' -f $year, ($Unit.Seed % 10000)
     $folder = ConvertTo-SafeName ('{0}_{1}_{2}' -f $year, $customer.Short, $name)
-    $base = Get-AreaPath $start "Projekte\$folder" "Projekte\$folder"
+    $base = Get-AreaPath $start ('{0}\{1}' -f $Paths.Projects, $folder) ('{0}\{1}' -f $AreaName.Projects, $folder)
     $step = $F.ProjectSteps
     $short = ConvertTo-SafeName $customer.Short
     $lines = @(1..(3 + $rng.Next(0, 4)) | ForEach-Object { Get-ServiceLine $rng })
     $address = @($customer.Name, $customer.Contact, ('{0} {1}' -f (Get-RandomEntry (Get-Rng -Index $customer.Name.Length -Salt 29) $C.Streets), (3 + $customer.Name.Length)), ('{0} {1}' -f (Get-PostalCode (Get-Rng -Index $customer.Domain.Length -Salt 31) $customer.City), $customer.City))
-    $customerNo = 'K-{0}' -f (10001 + $C.Customers.IndexOf($customer))
+    $customerNo = '{0}{1}' -f $L.CustomerId, (10001 + $C.Customers.IndexOf($customer))
+    # Nummern von Angebot, Auftragsbestaetigung und Rechnung, z. B. AN-2024-0001.
+    $offerNo = $L.OfferId + $num
+    $orderNo = $L.OrderId + $num
+    $invoiceNo = $L.InvoiceId + $num
 
     # Anfrage und Kalkulation
     $note = Get-DocModel -Title "$($L.Request) $($customer.Name)" -Author $owner -Created $start -Modified $start -Ci $ci -SenderKind 'None'
@@ -4011,20 +4073,20 @@ function Build-ProjectUnit {
     Add-Spec $specs ('{0}\{1}\{2}_{3}.xlsx' -f $base, $step[0], $L.Calculation, (ConvertTo-SafeName $name)) 'xlsx' $dOffer.AddHours(-2) $rng @{ Model = (Get-CalculationModel $lines ('{0} {1} {2}' -f $L.Calculation, $customer.Short, $name) $owner $ci) }
 
     # Angebot (Word und PDF; PDF zusaetzlich in der Vertriebsablage)
-    $offer = Get-DocModel -Title "$($L.Offer) AN-$num" -Author $owner -Created $dOffer -Modified $dOffer -Ci $ci
+    $offer = Get-DocModel -Title "$($L.Offer) $offerNo" -Author $owner -Created $dOffer -Modified $dOffer -Ci $ci
     Add-Block $offer 'Address' @{ Lines = $address }
-    Add-Block $offer 'Info' @{ Rows = [ordered]@{ $L.Number = "AN-$num"; $L.Date = (Format-DateDe $dOffer); $L.CustomerNo = $customerNo; $L.Project = $name } }
-    Add-Block $offer 'Title' @{ Text = "$($L.Offer) AN-$num $MidDot $name" }
+    Add-Block $offer 'Info' @{ Rows = [ordered]@{ $L.Number = $offerNo; $L.Date = (Format-LocalDate $dOffer); $L.CustomerNo = $customerNo; $L.Project = $name } }
+    Add-Block $offer 'Title' @{ Text = "$($L.Offer) $offerNo $MidDot $name" }
     Add-Block $offer 'Para' @{ Text = ('{0},' -f $ctx.Anrede) }
     Add-Block $offer 'Para' @{ Text = (Get-SampleText 'OfferIntro' $rng $ctx) }
     $total = Add-PositionTable $offer $lines
     Add-Block $offer 'Para' @{ Text = (Get-SampleText 'OfferClose' $rng $ctx) }
     Add-Block $offer 'Para' @{ Text = $L.Regards }
     Add-Block $offer 'Sign' @{ Name = $owner.Name; Role = $owner.Role; Seed = $Unit.Seed }
-    $offerName = '{0}_AN-{1}_{2}' -f $L.Offer, $num, $short
+    $offerName = '{0}_{1}_{2}' -f $L.Offer, $offerNo, $short
     Add-Spec $specs ('{0}\{1}\{2}.docx' -f $base, $step[0], $offerName) 'docx' $dOffer $rng @{ Model = $offer }
     Add-Spec $specs ('{0}\{1}\{2}.pdf' -f $base, $step[0], $offerName) 'pdf' $dOffer.AddMinutes(30) $rng @{ Model = $offer }
-    $salesPath = Get-AreaPath $dOffer ('Abteilungen\Vertrieb\{0}\{1}' -f $F.Offers, $year) ('Vertrieb\{0}' -f $F.Offers)
+    $salesPath = Get-AreaPath $dOffer ('{0}\{1}\{2}' -f $Paths.Sales, $F.Offers, $year) ('{0}\{1}' -f $AreaName.Sales, $F.Offers)
     Add-Spec $specs ('{0}\{1}.pdf' -f $salesPath, $offerName) 'copy' $dOffer.AddMinutes(32) $rng @{ Source = ('{0}\{1}\{2}.pdf' -f $base, $step[0], $offerName) }
 
     if ($rng.Next(0, 100) -lt 8) {
@@ -4037,15 +4099,15 @@ function Build-ProjectUnit {
 
     # Auftragsbestaetigung, Briefing
     $dConfirm = Get-WorkDate $dOffer $rng 4 15
-    $confirm = Get-DocModel -Title "$($L.Confirmation) AB-$num" -Author $owner -Created $dConfirm -Modified $dConfirm -Ci $ci
+    $confirm = Get-DocModel -Title "$($L.Confirmation) $orderNo" -Author $owner -Created $dConfirm -Modified $dConfirm -Ci $ci
     Add-Block $confirm 'Address' @{ Lines = $address }
-    Add-Block $confirm 'Info' @{ Rows = [ordered]@{ $L.Number = "AB-$num"; $L.Date = (Format-DateDe $dConfirm); $L.Offer = "AN-$num" } }
-    Add-Block $confirm 'Title' @{ Text = "$($L.Confirmation) AB-$num" }
+    Add-Block $confirm 'Info' @{ Rows = [ordered]@{ $L.Number = $orderNo; $L.Date = (Format-LocalDate $dConfirm); $L.Offer = $offerNo } }
+    Add-Block $confirm 'Title' @{ Text = "$($L.Confirmation) $orderNo" }
     Add-Block $confirm 'Para' @{ Text = ('{0},' -f $ctx.Anrede) }
     $null = Add-PositionTable $confirm $lines
     Add-Block $confirm 'Para' @{ Text = $L.Regards }
     Add-Block $confirm 'Sign' @{ Name = $owner.Name; Role = $owner.Role; Seed = $Unit.Seed + 1 }
-    Add-Spec $specs ('{0}\{1}\AB-{2}_{3}.pdf' -f $base, $step[0], $num, $short) 'pdf' $dConfirm $rng @{ Model = $confirm }
+    Add-Spec $specs ('{0}\{1}\{2}_{3}.pdf' -f $base, $step[0], $orderNo, $short) 'pdf' $dConfirm $rng @{ Model = $confirm }
 
     $dBrief = Get-WorkDate $dConfirm $rng 2 7
     $brief = Get-DocModel -Title "$($L.Briefing) $name" -Author $owner -Created $dBrief -Modified $dBrief -Ci $ci -SenderKind 'None' -Classification $L.Internal
@@ -4060,14 +4122,14 @@ function Build-ProjectUnit {
 
     # Konzept in drei Fassungen, Kommentare, Moodboard
     $dConcept = Get-WorkDate $dBrief $rng 6 12
-    $versions = @('v1', 'v2', (Get-RandomEntry $rng @('final', 'final', 'final_NEU', ('final_NEU_{0}' -f $colleague.Initials))))
+    $versions = @('v1', 'v2', (Get-RandomEntry $rng @('final', 'final', $L.FinalNew, ('{0}_{1}' -f $L.FinalNew, $colleague.Initials))))
     $moodboard = $null
     if ($UseRaster) { $moodboard = Get-RenderedImage -Items (Get-MoodboardItem $ctx $customer $Unit.Seed $ci) -W 842 -H 595 -Dpi 120 -Quality 86 -Noise 1 }
     for ($v = 0; $v -lt 3; $v++) {
         $writer = if ($v -eq 1) { $colleague } else { $owner }
         $concept = Get-DocModel -Title "$($L.Concept) $name" -Author $owner -Created $dConcept -Modified $dConcept -Ci $ci -SenderKind 'None' -LastBy $writer -Classification $L.Internal
         Add-Block $concept 'Title' @{ Text = "$($L.Concept) $name" }
-        Add-Block $concept 'Para' @{ Text = ('{0} {1} {2} {3}' -f $customer.Name, $MidDot, $L.Version, (Format-DateDe $dConcept)) }
+        Add-Block $concept 'Para' @{ Text = ('{0} {1} {2} {3}' -f $customer.Name, $MidDot, $L.Version, (Format-LocalDate $dConcept)) }
         $parts = @(@($L.Situation, 'ConceptSituation'), @($L.Idea, 'ConceptIdea'), @($L.Measures, 'ConceptMeasures'))
         if ($v -ge 1) { $parts += , @($L.Goals, 'ConceptGoals'); $parts += , @($L.Risks, 'ConceptRisks') }
         foreach ($part in $parts) {
@@ -4076,7 +4138,7 @@ function Build-ProjectUnit {
         }
         if ($v -ge 1 -and $moodboard) { Add-Block $concept 'Image' @{ Bytes = $moodboard.Bytes; Format = 'jpeg'; WidthPx = $moodboard.WidthPx; HeightPx = $moodboard.HeightPx; WidthCm = 15; Caption = $L.Moodboard } }
         if ($v -eq 2) {
-            $rows = @(foreach ($phase in 0..3) { , [string[]]@(@('Konzeption', 'Gestaltung', 'Abstimmung', 'Produktion')[$phase], ('{0} {1}' -f $L.Week, (Get-Culture).Calendar.GetWeekOfYear($dConcept.AddDays(7 * $phase), 2, 1))) })
+            $rows = @(foreach ($phase in 0..3) { , [string[]]@($C.Phases[$phase], ('{0} {1}' -f $L.Week, (Get-Culture).Calendar.GetWeekOfYear($dConcept.AddDays(7 * $phase), 2, 1))) })
             Add-Block $concept 'Heading' @{ Text = $L.Schedule }
             Add-Block $concept 'Table' @{ Header = [string[]]@($L.Phase, $L.Due); Rows = $rows; Widths = @(0.6, 0.4); Align = 'LL' }
         }
@@ -4088,7 +4150,7 @@ function Build-ProjectUnit {
         $dConcept = Get-WorkDate $dConcept $rng 3 9
     }
     if ($moodboard) {
-        Add-Spec $specs ('{0}\{1}\{2}_{3}.pdf' -f $base, $step[2], $L.Moodboard, $short) 'pdfpages' $dBrief.AddDays(5) $rng @{ Pages = @(@{ W = 842; H = 595; Image = $moodboard }); Info = @{ Title = $L.Moodboard; Author = $colleague.Name; Creator = 'Layoutprogramm' } }
+        Add-Spec $specs ('{0}\{1}\{2}_{3}.pdf' -f $base, $step[2], $L.Moodboard, $short) 'pdfpages' $dBrief.AddDays(5) $rng @{ Pages = @(@{ W = 842; H = 595; Image = $moodboard }); Info = @{ Title = $L.Moodboard; Author = $colleague.Name; Creator = $L.LayoutApp } }
     }
 
     # Entwuerfe, Korrektur, Freigabe, Druckdaten
@@ -4102,7 +4164,7 @@ function Build-ProjectUnit {
     $printFiles = [System.Collections.Generic.List[string]]::new()
     $dZip = $dDraft
     foreach ($motif in $motifs) {
-        $size = $ShapeSizes[$motif.File]
+        $size = $ShapeSizes[$motif.Format]
         $delivery = if ($size.Online) { 'Final' } else { $L.PrintData }
         $pageCount = if ($motif.Pages) { [int]$motif.Pages + [int][Math]::Ceiling($motif.Pages / 3) * $rng.Next(-1, 2) } else { 1 }
         foreach ($variant in @('A', 'B', 'C') | Select-Object -First (2 + $rng.Next(0, 2))) {
@@ -4122,7 +4184,7 @@ function Build-ProjectUnit {
             Add-Spec $specs ('{0}\{1}\{2}\{3}\Proof_{4}_{5}.pdf' -f $base, $step[3], $L.PrintData, $F.Proofs, $job, $motif.File) 'design' $dPrint.AddDays(2) $rng @{ Ctx = $ctx; Customer = $customer; Motif = $motif; Variant = $finalVariant; Stage = 'Proof'; Dpi = $size.PrintDpi; Seed = $Unit.Seed; DesignDate = $dPrint.AddDays(2); Pages = $pageCount; Printer = $printer; Job = $job; Author = $printer } -EditMinutes 1
         }
         if ($dPrint -gt $dZip) { $dZip = $dPrint }
-        if (-not $finalImage -and $UseRaster) { $finalImage = Get-RenderedImage -Items (Get-DesignItem $ctx $customer $size.W $size.H $finalVariant 'Final' $Unit.Seed $motif.File $dPrint) -W $size.W -H $size.H -Dpi ([Math]::Max(30, [int](1600 / [Math]::Max($size.W, $size.H) * 72))) -Quality 86 -Noise 1 }
+        if (-not $finalImage -and $UseRaster) { $finalImage = Get-RenderedImage -Items (Get-DesignItem $ctx $customer $size.W $size.H $finalVariant 'Final' $Unit.Seed $motif.Format $dPrint) -W $size.W -H $size.H -Dpi ([Math]::Max(30, [int](1600 / [Math]::Max($size.W, $size.H) * 72))) -Quality 86 -Noise 1 }
     }
     # Versand an die Druckerei: Paket der finalen Druckdaten (meist aufgehoben)
     if ($printFiles.Count -gt 0 -and $rng.Next(0, 10) -lt 7) {
@@ -4130,26 +4192,26 @@ function Build-ProjectUnit {
     }
     $dCorrection = Get-WorkDate $dDraft $rng 3 7
     $correction = Get-DocModel -Title "$($L.Correction) $name" -Author $owner -Created $dCorrection -Modified $dCorrection -Ci $ci -SenderKind 'Foreign' -Foreign @{ Name = $customer.Name; Lines = @("www.$($customer.Domain)") }
-    Add-Block $correction 'Stamp' @{ Text = $L.Correction.ToUpperInvariant(); Text2 = (Format-DateDe $dCorrection); Color = 'Red' }
+    Add-Block $correction 'Stamp' @{ Text = $L.Correction.ToUpperInvariant(); Text2 = (Format-LocalDate $dCorrection); Color = 'Red' }
     Add-Block $correction 'Title' @{ Text = ('{0}: {1}' -f $L.Feedback, $name) }
     Add-Block $correction 'Bullets' @{ Items = @(1..(3 + $rng.Next(0, 3)) | ForEach-Object { Get-SampleText 'CustomerFeedback' $rng $ctx }) }
-    Add-Block $correction 'Sign' @{ Name = ($customer.Contact -replace '^(Frau|Herr) ', ''); Role = $customer.Name; Seed = $Unit.Seed + 7 }
+    Add-Block $correction 'Sign' @{ Name = ($customer.Contact -replace $SalutationPattern, ''); Role = $customer.Name; Seed = $Unit.Seed + 7 }
     $correction.Scan = Get-ScanProfile $rng $dCorrection
     Add-Spec $specs ('{0}\{1}\{2}_{3}_{4:yyyy-MM-dd}.pdf' -f $base, $step[3], $L.Correction, $short, $dCorrection) 'pdf' $dCorrection $rng @{ Model = $correction }
     $dRelease = Get-WorkDate $dCorrection $rng 5 12
     $release = Get-DocModel -Title $L.PrintRelease -Author $owner -Created $dRelease -Modified $dRelease -Ci $ci -SenderKind 'Foreign' -Foreign @{ Name = $customer.Name; Lines = @("www.$($customer.Domain)") }
-    Add-Block $release 'Stamp' @{ Text = $L.Released; Text2 = (Format-DateDe $dRelease); Color = 'Blue' }
+    Add-Block $release 'Stamp' @{ Text = $L.Released; Text2 = (Format-LocalDate $dRelease); Color = 'Blue' }
     Add-Block $release 'Title' @{ Text = ('{0} {1}' -f $L.PrintRelease, $name) }
     Add-Block $release 'Para' @{ Text = (Get-SampleText 'PrintRelease' $rng $ctx) }
-    Add-Block $release 'Sign' @{ Name = ($customer.Contact -replace '^(Frau|Herr) ', ''); Role = $customer.Name; Seed = $Unit.Seed + 9 }
+    Add-Block $release 'Sign' @{ Name = ($customer.Contact -replace $SalutationPattern, ''); Role = $customer.Name; Seed = $Unit.Seed + 9 }
     $release.Scan = Get-ScanProfile $rng $dRelease
     Add-Spec $specs ('{0}\{1}\{2}_{3}.pdf' -f $base, $step[3], $L.PrintRelease, $short) 'pdf' $dRelease $rng @{ Model = $release }
 
     # Praesentation (PPTX und PDF-Export)
     $dPres = Get-WorkDate $dDraft $rng 1 5
-    $footer = '{0} {1} {2} {3} {4}' -f $C.Company.Short, $MidDot, $customer.Short, $MidDot, (Format-DateDe $dPres)
+    $footer = '{0} {1} {2} {3} {4}' -f $C.Company.Short, $MidDot, $customer.Short, $MidDot, (Format-LocalDate $dPres)
     $slides = @(
-        @{ Layout = 'Title'; Title = $name; Subtitle = ('{0} {1} {2}' -f $customer.Name, $MidDot, (Format-DateDe $dPres)) }
+        @{ Layout = 'Title'; Title = $name; Subtitle = ('{0} {1} {2}' -f $customer.Name, $MidDot, (Format-LocalDate $dPres)) }
         @{ Layout = 'Content'; Title = $L.Situation; Text = (Get-SampleText 'ConceptSituation' $rng $ctx) }
         @{ Layout = 'Content'; Title = $L.Audience; Text = (Get-SampleText 'BriefingAudience' $rng $ctx) }
         @{ Layout = 'ImageRight'; Title = $L.Idea; Text = (Get-SampleText 'ConceptIdea' $rng $ctx); Image = $moodboard }
@@ -4165,23 +4227,23 @@ function Build-ProjectUnit {
 
     # Rechnung (auch in der Buchhaltung), Bericht, Pressemitteilung, Gewinnspiel
     $dInvoice = Get-WorkDate $dRelease $rng 7 25
-    $invoice = Get-DocModel -Title "$($L.Invoice) RE-$num" -Author $owner -Created $dInvoice -Modified $dInvoice -Ci $ci
+    $invoice = Get-DocModel -Title "$($L.Invoice) $invoiceNo" -Author $owner -Created $dInvoice -Modified $dInvoice -Ci $ci
     Add-Block $invoice 'Address' @{ Lines = $address }
-    Add-Block $invoice 'Info' @{ Rows = [ordered]@{ $L.Number = "RE-$num"; $L.Date = (Format-DateDe $dInvoice); $L.CustomerNo = $customerNo; $L.Project = $name } }
-    Add-Block $invoice 'Title' @{ Text = "$($L.Invoice) RE-$num" }
+    Add-Block $invoice 'Info' @{ Rows = [ordered]@{ $L.Number = $invoiceNo; $L.Date = (Format-LocalDate $dInvoice); $L.CustomerNo = $customerNo; $L.Project = $name } }
+    Add-Block $invoice 'Title' @{ Text = "$($L.Invoice) $invoiceNo" }
     Add-Block $invoice 'Para' @{ Text = ('{0},' -f $ctx.Anrede) }
     $invoiceTotal = Add-PositionTable $invoice $lines
     Add-Block $invoice 'Para' @{ Text = ('{0} {1}' -f $L.Regards, $C.Company.Name) }
-    $invoiceName = 'RE-{0}_{1}.pdf' -f $num, $short
+    $invoiceName = '{0}_{1}.pdf' -f $invoiceNo, $short
     Add-Spec $specs ('{0}\{1}\{2}' -f $base, $step[5], $invoiceName) 'pdf' $dInvoice $rng @{ Model = $invoice }
-    $accounting = Get-AreaPath $dInvoice ('Abteilungen\Buchhaltung\{0}\{1}' -f $F.Outgoing, $year) ('Buchhaltung\{0}' -f $F.Outgoing)
+    $accounting = Get-AreaPath $dInvoice ('{0}\{1}\{2}' -f $Paths.Accounting, $F.Outgoing, $year) ('{0}\{1}' -f $AreaName.Accounting, $F.Outgoing)
     Add-Spec $specs ('{0}\{1}' -f $accounting, $invoiceName) 'copy' $dInvoice.AddMinutes(5) $rng @{ Source = ('{0}\{1}\{2}' -f $base, $step[5], $invoiceName) }
 
     # Korrespondenz: Brief an den Kunden, bei Druckprojekten gelegentlich an die Druckerei
     if ($rng.Next(0, 10) -lt 4 -and $T.LetterCustomer) {
         # Nur projektbezogene Briefe; Rundbriefe wie Preisanpassungen gehoeren nicht in den Projektordner.
         $record = Get-RandomEntry $rng @($T.LetterCustomer | Where-Object { ('{0} {1}' -f $_.Subject, $_.Text) -match '\{Projekt\}' })
-        $dLetter = if ($record.Subject -match 'Danke') { Get-WorkDate $dInvoice $rng 3 10 } else { Get-WorkDate $dBrief $rng 2 12 }
+        $dLetter = if ($record.Subject -match $Patterns.Thanks) { Get-WorkDate $dInvoice $rng 3 10 } else { Get-WorkDate $dBrief $rng 2 12 }
         $letterCtx = Get-TextContext -Rng $rng -Date $dLetter -Customer $customer -Project $name -Author $owner
         $letterCtx.Claim = $ctx.Claim
         Add-Spec $specs ('{0}\{1}\{2:yyyy-MM-dd}_{3}.docx' -f $base, $F.Letters, $dLetter, (ConvertTo-SafeName (Expand-SampleText $record.Subject $letterCtx))) 'docx' $dLetter $rng @{ Model = (Get-LetterModel $record $letterCtx $owner $dLetter $ci $address) }
@@ -4196,25 +4258,25 @@ function Build-ProjectUnit {
     }
     # Zahlungserinnerung und Mahnung, wenn der Kunde nicht zahlt
     if ($rng.Next(0, 10) -lt 2 -and $T.Reminder) {
-        $booker = Get-Person 'DHoffmann' $dInvoice 'Berlin' $rng
-        if ($booker.Department -ne 'Buchhaltung') { $booker = $PeopleBySam['MMustermann'] }
+        $booker = Get-Person $Roles.Accountant $dInvoice $HqSite.Name $rng
+        if ($booker.Department -ne 'Accounting') { $booker = $PeopleBySam[$Roles.Ceo] }
         $level = 1
         $dRemind = Get-WorkDate $dInvoice $rng 21 30
         while ($level -le 2 -and $dRemind -lt $Reference) {
             $record = Get-RandomEntry $rng @($T.Reminder | Where-Object { [int]$_.Level -eq $level })
             $remindCtx = Get-TextContext -Rng $rng -Date $dRemind -Customer $customer -Project $name -Author $booker
-            $remindCtx.Vortermin = Format-DateDe $(if ($level -eq 1) { $dInvoice.AddDays(14) } else { $dPrevious })
+            $remindCtx.Vortermin = Format-LocalDate $(if ($level -eq 1) { $dInvoice.AddDays(14) } else { $dPrevious })
             $title = if ($level -eq 1) { $L.Reminder } else { $L.Dunning }
-            $remind = Get-DocModel -Title "$title RE-$num" -Author $booker -Created $dRemind -Modified $dRemind -Ci $ci
+            $remind = Get-DocModel -Title "$title $invoiceNo" -Author $booker -Created $dRemind -Modified $dRemind -Ci $ci
             Add-Block $remind 'Address' @{ Lines = $address }
-            Add-Block $remind 'Info' @{ Rows = [ordered]@{ $L.Number = "RE-$num"; $L.Date = (Format-DateDe $dRemind); $L.CustomerNo = $customerNo } }
-            Add-Block $remind 'Title' @{ Text = "$title RE-$num" }
+            Add-Block $remind 'Info' @{ Rows = [ordered]@{ $L.Number = $invoiceNo; $L.Date = (Format-LocalDate $dRemind); $L.CustomerNo = $customerNo } }
+            Add-Block $remind 'Title' @{ Text = "$title $invoiceNo" }
             Add-Block $remind 'Para' @{ Text = ('{0},' -f $remindCtx.Anrede) }
             Add-Block $remind 'Para' @{ Text = (Expand-SampleText $record.Text $remindCtx) }
-            Add-Block $remind 'Table' @{ Header = [string[]]@($L.Invoice, $L.Date, $L.Amount); Rows = @(, [string[]]@("RE-$num", (Format-DateDe $dInvoice), (Format-Money $invoiceTotal))); Widths = @(0.4, 0.3, 0.3); Align = 'LLR' }
+            Add-Block $remind 'Table' @{ Header = [string[]]@($L.Invoice, $L.Date, $L.Amount); Rows = @(, [string[]]@($invoiceNo, (Format-LocalDate $dInvoice), (Format-Money $invoiceTotal))); Widths = @(0.4, 0.3, 0.3); Align = 'LLR' }
             Add-Block $remind 'Para' @{ Text = ('{0} {1}' -f $L.Regards, $C.Company.Name) }
-            $remindPath = Get-AreaPath $dRemind ('Abteilungen\Buchhaltung\{0}\{1}' -f $F.Reminders, $dRemind.Year) ('Buchhaltung\{0}' -f $F.Reminders)
-            Add-Spec $specs ('{0}\{1:yyyy-MM-dd}_{2}_RE-{3}.pdf' -f $remindPath, $dRemind, $title, $num) 'pdf' $dRemind $rng @{ Model = $remind }
+            $remindPath = Get-AreaPath $dRemind ('{0}\{1}\{2}' -f $Paths.Accounting, $F.Reminders, $dRemind.Year) ('{0}\{1}' -f $AreaName.Accounting, $F.Reminders)
+            Add-Spec $specs ('{0}\{1:yyyy-MM-dd}_{2}_{3}.pdf' -f $remindPath, $dRemind, $title, $invoiceNo) 'pdf' $dRemind $rng @{ Model = $remind }
             if ($rng.Next(0, 10) -lt 6) { break }
             $dPrevious = $dRemind
             $dRemind = Get-WorkDate $dRemind $rng 14 21
@@ -4222,7 +4284,7 @@ function Build-ProjectUnit {
         }
     }
 
-    if ($name -match 'Kampagne|Aktion|Mailing|Social|Saison|Neujahr') {
+    if ($name -match $Patterns.Report) {
         $dReport = Get-WorkDate $dInvoice $rng 30 60
         $report = Get-DocModel -Title "$($L.Report) $name" -Author $owner -Created $dReport -Modified $dReport -Ci $ci -SenderKind 'None' -Classification $L.Internal
         Add-Block $report 'Title' @{ Text = "$($L.Report) $name $MidDot $($customer.Short)" }
@@ -4235,15 +4297,15 @@ function Build-ProjectUnit {
         }
         Add-Block $report 'Heading' @{ Text = $L.Learnings }
         Add-Block $report 'Para' @{ Text = (Get-SampleText 'ReportLearnings' $rng $ctx) }
-        $reportPath = Get-AreaPath $dReport ('Abteilungen\Marketing\{0}\{1}\{2}' -f $owner.Site, $F.Reports, $year) ('Marketing\{0}' -f $F.Reports)
+        $reportPath = Get-AreaPath $dReport ('{0}\{1}\{2}\{3}' -f $Paths.Marketing, $owner.Site, $F.Reports, $year) ('{0}\{1}' -f $AreaName.Marketing, $F.Reports)
         Add-Spec $specs ('{0}\{1}_{2}_{3}.docx' -f $reportPath, $L.Report, $short, (ConvertTo-SafeName $name)) 'docx' $dReport $rng @{ Model = $report }
         if ($rng.Next(0, 4) -eq 0) {
             $press = Get-DocModel -Title $L.Press -Author $owner -Created $dReport -Modified $dReport -Ci $ci -Classification $L.Public
             Add-Block $press 'Title' @{ Text = (Get-SampleText 'PressHeadline' $rng $ctx) }
             Add-Block $press 'Para' @{ Text = (Get-SampleText 'PressBody' $rng $ctx) }
             Add-Block $press 'Para' @{ Text = (Get-SampleText 'PressQuote' $rng $ctx) }
-            $pressPath = Get-AreaPath $dReport ('Abteilungen\Marketing\{0}\{1}\{2}' -f $owner.Site, $F.Press, $year) ('Marketing\{0}' -f $F.Press)
-            Add-Spec $specs ('{0}\PM_{1}_{2:yyyy-MM-dd}.docx' -f $pressPath, $short, $dReport) 'docx' $dReport $rng @{ Model = $press }
+            $pressPath = Get-AreaPath $dReport ('{0}\{1}\{2}\{3}' -f $Paths.Marketing, $owner.Site, $F.Press, $year) ('{0}\{1}' -f $AreaName.Marketing, $F.Press)
+            Add-Spec $specs ('{0}\{1}_{2}_{3:yyyy-MM-dd}.docx' -f $pressPath, $L.PressFile, $short, $dReport) 'docx' $dReport $rng @{ Model = $press }
         }
         if ($rng.Next(0, 5) -eq 0) {
             Add-Spec $specs ('{0}\{1}\{2}_{3}.xlsx' -f $base, $step[1], $L.Raffle, $L.Participants) 'xlsx' $dReport.AddDays(-20) $rng @{ Model = (Get-RaffleModel $rng $owner $ci $name) }
@@ -4260,7 +4322,7 @@ function Get-RaffleModel {
     foreach ($n in 1..(40 + $Rng.Next(0, 120))) {
         $given = Get-RandomEntry $Rng $C.FirstNames
         $sur = Get-RandomEntry $Rng $C.LastNames
-        $city = Get-RandomEntry $Rng @('Berlin', 'Hamburg', 'Potsdam')
+        $city = Get-RandomEntry $Rng $C.LocalCities
         $rows.Add(@{ Cells = @(@{ V = "$given $sur" }, @{ V = ('{0} {1}, {2} {3}' -f (Get-RandomEntry $Rng $C.Streets), $Rng.Next(1, 120), (Get-PostalCode $Rng $city), $city) }, @{ V = (New-Object -TypeName DateTime -ArgumentList (1950 + $Rng.Next(0, 55)), (1 + $Rng.Next(0, 12)), (1 + $Rng.Next(0, 28))); Fmt = 'Date' }, @{ V = (Get-PrivateMail $Rng $given $sur) }, @{ V = (Get-DramaPhone $Rng -Mobile) }) })
     }
     @{ Title = "$($L.Raffle) $Project"; Author = $Author.Name; Company = $C.Company.Name; Ci = $Ci; Sheets = @(@{ Name = $L.Participants; Columns = @(@{ Width = 24 }, @{ Width = 40 }, @{ Width = 14 }, @{ Width = 32 }, @{ Width = 20 }); Rows = $rows.ToArray(); Freeze = 1; AutoFilter = $true }) }
@@ -4306,7 +4368,7 @@ function Get-ReceiptSheetItem {
         $ty = $y + 14
         $lines = [System.Collections.Generic.List[object]]::new()
         $lines.Add(@($shop.Name, $true))
-        $lines.Add(@(('{0:dd.MM.yyyy  HH:mm}' -f $date), $false))
+        $lines.Add(@((('{0:' + $Locale.ReceiptDate + '}') -f $date), $false))
         $lines.Add(@('--------------------------', $false))
         $sum = 0.0
         foreach ($position in $positions) {
@@ -4315,13 +4377,13 @@ function Get-ReceiptSheetItem {
             $max = [double]::Parse($part[2], $Inv)
             $price = [Math]::Round($min + $Rng.NextDouble() * ($max - $min), 2)
             $sum += $price
-            $lines.Add(@(('{0,-16}{1,9}' -f $(if ($part[0].Length -gt 16) { $part[0].Substring(0, 16) } else { $part[0] }), $price.ToString('N2', $De)), $false))
+            $lines.Add(@(('{0,-16}{1,9}' -f $(if ($part[0].Length -gt 16) { $part[0].Substring(0, 16) } else { $part[0] }), $price.ToString('N2', $Culture)), $false))
         }
         $lines.Add(@('--------------------------', $false))
-        $lines.Add(@(('{0,-16}{1,9}' -f 'SUMME EUR', $sum.ToString('N2', $De)), $true))
-        $lines.Add(@(('{0,-16}{1,9}' -f 'MwSt 19 %', ($sum - $sum / 1.19).ToString('N2', $De)), $false))
+        $lines.Add(@(('{0,-16}{1,9}' -f $L.ReceiptTotal, $sum.ToString('N2', $Culture)), $true))
+        $lines.Add(@(('{0,-16}{1,9}' -f $L.ReceiptVat, ($sum - $sum / (1 + $Locale.Vat)).ToString('N2', $Culture)), $false))
         $lines.Add(@('', $false))
-        $lines.Add(@(('Beleg-Nr. {0}' -f $Rng.Next(1000, 99999)), $false))
+        $lines.Add(@(($L.ReceiptNo -f $Rng.Next(1000, 99999)), $false))
         foreach ($line in $lines) {
             $items.Add(@{ K = 'Text'; X = $x + 10; Y = $ty; Size = 7.5; Bold = [bool]$line[1]; Text = [string]$line[0]; Color = @(55, 55, 55); Family = 'Courier New' })
             $ty += 11
@@ -4336,13 +4398,13 @@ function Get-IncomingInvoiceModel {
     $supplier = $C.Suppliers[$supplierIndex]
     $number = '{0}-{1:D6}' -f $supplier.Name.Substring(0, 2).ToUpperInvariant(), (($Index * 37) % 1000000)
     $stable = Get-Rng -Index $supplierIndex -Salt 31
-    $foreign = @{ Name = $supplier.Name; Lines = @(('{0} {1} {2} {3} {4}' -f (Get-RandomEntry $stable $C.Streets), $stable.Next(1, 90), $MidDot, (Get-PostalCode $stable $supplier.City), $supplier.City), ('www.{0} {1} rechnung@{0}' -f $supplier.Domain, $MidDot)) }
+    $foreign = @{ Name = $supplier.Name; Lines = @(('{0} {1} {2} {3} {4}' -f (Get-RandomEntry $stable $C.Streets), $stable.Next(1, 90), $MidDot, (Get-PostalCode $stable $supplier.City), $supplier.City), ('www.{0} {1} {2}@{0}' -f $supplier.Domain, $MidDot, $L.MailInvoice)) }
     $model = Get-DocModel -Title "$($L.Invoice) $number" -Author @{ Name = $supplier.Name } -Created $Date -Modified $Date -Ci $Ci -SenderKind 'Foreign' -Foreign $foreign
-    $stamp = @{ Text = $L.Received; Text2 = (Format-DateDe $Date.AddDays($Rng.Next(1, 5))); Color = 'Red' }
+    $stamp = @{ Text = $L.Received; Text2 = (Format-LocalDate $Date.AddDays($Rng.Next(1, 5))); Color = 'Red' }
     if ($Rng.Next(0, 3) -gt 0) { $stamp.Text3 = $L.Booked }
     Add-Block $model 'Stamp' $stamp
     Add-Block $model 'Address' @{ Lines = $Ci.HeaderLines }
-    Add-Block $model 'Info' @{ Rows = [ordered]@{ $L.Number = $number; $L.Date = (Format-DateDe $Date); $L.CustomerNo = ('KD-{0}' -f (20000 + $supplierIndex * 17)) } }
+    Add-Block $model 'Info' @{ Rows = [ordered]@{ $L.Number = $number; $L.Date = (Format-LocalDate $Date); $L.CustomerNo = ('{0}{1}' -f $L.SupplierRef, (20000 + $supplierIndex * 17)) } }
     Add-Block $model 'Title' @{ Text = "$($L.Invoice) $number" }
     # Posten aus dem Drehbuch: Text|Preis von|Preis bis|Einheit|Menge bis
     $lines = @(foreach ($item in @(Get-RandomSubset $Rng $supplier.Items (1 + $Rng.Next(0, 3)))) {
@@ -4350,7 +4412,7 @@ function Get-IncomingInvoiceModel {
             $min = if ($part.Count -gt 1) { [double]::Parse($part[1], $Inv) } else { 25 }
             $max = if ($part.Count -gt 2) { [double]::Parse($part[2], $Inv) } else { 400 }
             $qtyMax = if ($part.Count -gt 4) { [int]$part[4] } else { 1 }
-            @{ Text = $part[0]; Qty = 1 + $Rng.Next(0, $qtyMax); Unit = $(if ($part.Count -gt 3) { $part[3] } else { 'Stk.' }); Price = [Math]::Round($min + $Rng.NextDouble() * ($max - $min), 2) }
+            @{ Text = $part[0]; Qty = 1 + $Rng.Next(0, $qtyMax); Unit = $(if ($part.Count -gt 3) { $part[3] } else { $L.Piece }); Price = [Math]::Round($min + $Rng.NextDouble() * ($max - $min), 2) }
         })
     $null = Add-PositionTable $model $lines
     $model.Scan = Get-ScanProfile $Rng $Date
@@ -4365,26 +4427,26 @@ function Build-AccountingUnit {
     $rng = Get-Rng -Index $Unit.Seed -Salt 211
     $month = $Unit.Month
     $year = $month.Year
-    $ci = Get-DocumentCi $month 'Berlin'
+    $ci = Get-DocumentCi $month $HqSite.Name
     $staff = Get-ActivePerson -Date $month
-    $booker = Get-Person 'DHoffmann' $month 'Berlin' $rng
-    if ($booker.Department -ne 'Buchhaltung') { $booker = $PeopleBySam['MMustermann'] }
-    $bh = 'Abteilungen\Buchhaltung'
+    $booker = Get-Person $Roles.Accountant $month $HqSite.Name $rng
+    if ($booker.Department -ne 'Accounting') { $booker = $PeopleBySam[$Roles.Ceo] }
+    $bh = $Paths.Accounting
     $folder = [System.Collections.Generic.List[object]]::new()
     foreach ($n in 1..(2 + [Math]::Ceiling($staff.Count / 3) + $rng.Next(0, 3))) {
         $date = Get-WorkDate $month $rng 0 26
         $invoice = Get-IncomingInvoiceModel $rng $date ($Unit.Seed * 50 + $n) $ci
         $folder.Add($invoice.Model)
-        $path = Get-AreaPath $date ('{0}\{1}\{2}' -f $bh, $F.Incoming, $year) ('Buchhaltung\{0}' -f $F.Incoming)
+        $path = Get-AreaPath $date ('{0}\{1}\{2}' -f $bh, $F.Incoming, $year) ('{0}\{1}' -f $AreaName.Accounting, $F.Incoming)
         Add-Spec $specs ('{0}\{1:yyyy-MM-dd}_{2}_{3}.pdf' -f $path, $date, (Get-ShortName $invoice.Supplier.Name), $invoice.Number) 'pdf' $date $rng @{ Model = $invoice.Model }
         if ($date -gt $Reference.AddMonths(-18) -and $rng.Next(0, 3) -eq 0) {
             $scanDate = $date.AddDays($rng.Next(1, 4))
-            Add-Spec $specs ('Scans\Scan_{0:yyyyMMdd_HHmmss}.pdf' -f $scanDate) 'pdf' $scanDate $rng @{ Model = $invoice.Model }
+            Add-Spec $specs ('{0}\Scan_{1:yyyyMMdd_HHmmss}.pdf' -f $Paths.Scans, $scanDate) 'pdf' $scanDate $rng @{ Model = $invoice.Model }
         }
     }
     $end = $month.AddMonths(1).AddDays(-1).AddHours(18)
     # Kontoauszug
-    $bank = Get-DocModel -Title ('{0} {1:MM}/{1:yyyy}' -f $L.Statement, $month) -Author @{ Name = $C.Company.Bank } -Created $end -Modified $end -Ci $ci -SenderKind 'Foreign' -Foreign @{ Name = $C.Company.Bank; Lines = @(('IBAN {0}' -f $script:CompanyIban)) }
+    $bank = Get-DocModel -Title ('{0} {1:MM}/{1:yyyy}' -f $L.Statement, $month) -Author @{ Name = $C.Company.Bank } -Created $end -Modified $end -Ci $ci -SenderKind 'Foreign' -Foreign @{ Name = $C.Company.Bank; Lines = @(('{0} {1}' -f $L.Iban, $script:CompanyIban)) }
     Add-Block $bank 'Address' @{ Lines = $ci.HeaderLines }
     Add-Block $bank 'Title' @{ Text = ('{0} {1} {2}' -f $L.Statement, $C.Months[$month.Month - 1], $year) }
     $balance = [double]$rng.Next(15000, 90000)
@@ -4392,16 +4454,16 @@ function Build-AccountingUnit {
     $rows = [System.Collections.Generic.List[object]]::new()
     foreach ($n in 1..(10 + $rng.Next(0, 14))) {
         $kind = $rng.Next(0, 10)
-        if ($kind -lt 4) { $text = 'RE-{0}-{1:D4} {2}' -f $year, $rng.Next(1, 9999), (Get-RandomEntry $rng $C.Customers).Name; $amount = [double]$rng.Next(400, 18000) }
+        if ($kind -lt 4) { $text = '{0}{1}-{2:D4} {3}' -f $L.InvoiceId, $year, $rng.Next(1, 9999), (Get-RandomEntry $rng $C.Customers).Name; $amount = [double]$rng.Next(400, 18000) }
         elseif ($kind -lt 7) { $text = (Get-RandomEntry $rng $C.Suppliers).Name; $amount = - [double]$rng.Next(40, 4000) }
         else { $text = Get-RandomEntry $rng $C.Bookings; $amount = - [double]$rng.Next(60, 9000) }
         $balance += $amount
-        $rows.Add([string[]]@((Format-DateDe $month.AddDays([Math]::Min(27, $n * 2))), $text, (Format-Money $amount)))
+        $rows.Add([string[]]@((Format-LocalDate $month.AddDays([Math]::Min(27, $n * 2))), $text, (Format-Money $amount)))
     }
     Add-Block $bank 'Table' @{ Header = [string[]]@($L.Date, $L.Booking, $L.Amount); Rows = $rows.ToArray(); Widths = @(0.18, 0.57, 0.25); Align = 'LLR' }
     Add-Block $bank 'Table' @{ Header = $null; Rows = @([string[]]@($L.OldBalance, (Format-Money $start)), [string[]]@($L.NewBalance, (Format-Money $balance))); Widths = @(0.7, 0.3); Align = 'RR'; BoldLast = $true; Plain = $true }
     $bank.Creator = $C.Company.Bank
-    Add-Spec $specs ('{0}\{1:yyyy-MM}.pdf' -f (Get-AreaPath $end ('{0}\{1}\{2}' -f $bh, $F.Statements, $year) ('Buchhaltung\{0}' -f $F.Statements)), $month) 'pdf' $end $rng @{ Model = $bank }
+    Add-Spec $specs ('{0}\{1:yyyy-MM}.pdf' -f (Get-AreaPath $end ('{0}\{1}\{2}' -f $bh, $F.Statements, $year) ('{0}\{1}' -f $AreaName.Accounting, $F.Statements)), $month) 'pdf' $end $rng @{ Model = $bank }
     # Belegordner des Monats fuer die Steuerkanzlei: komplett gescannt, 300 dpi, gelocht, mit aufgeklebten Kassenbons.
     $folder.Add($bank)
     $sheets = @(1..(1 + $rng.Next(0, 3)) | ForEach-Object { , (Get-ReceiptSheetItem $rng $month) })
@@ -4409,48 +4471,49 @@ function Build-AccountingUnit {
     $folderScan = Get-ScanProfile $rng $folderDate
     $folderScan.Dpi = 300
     $folderScan.Holes = $true
-    $folderPath = Get-AreaPath $folderDate ('{0}\{1}\{2}' -f $bh, $F.Receipts, $year) ('Buchhaltung\{0}' -f $F.Receipts)
+    $folderPath = Get-AreaPath $folderDate ('{0}\{1}\{2}' -f $bh, $F.Receipts, $year) ('{0}\{1}' -f $AreaName.Accounting, $F.Receipts)
     Add-Spec $specs ('{0}\{1}_{2:yyyy-MM}.pdf' -f $folderPath, $F.Receipts, $month) 'scanbundle' $folderDate $rng @{ Models = $folder.ToArray(); Sheets = $sheets; Profile = $folderScan; Device = $folderScan.Device } -EditMinutes 2
     # BWA der Steuerkanzlei
     $bwaDate = Get-WorkDate $end $rng 8 15
-    $bwa = Get-DocModel -Title ('{0} {1:MM}/{1:yyyy}' -f $L.Bwa, $month) -Author @{ Name = 'Steuerkanzlei Hanse' } -Created $bwaDate -Modified $bwaDate -Ci $ci -SenderKind 'Foreign' -Foreign @{ Name = 'Steuerkanzlei Hanse'; Lines = @("www.kanzlei-hanse.example.org $MidDot +49 40 66969-310") } -Classification $L.Confidential
+    $advisorLine = 'www.{0} {1} {2}' -f $TaxAdvisor.Domain, $MidDot, ((Get-Dial $TaxAdvisor.City) -f 310)
+    $bwa = Get-DocModel -Title ('{0} {1:MM}/{1:yyyy}' -f $L.Bwa, $month) -Author @{ Name = $TaxAdvisor.Name } -Created $bwaDate -Modified $bwaDate -Ci $ci -SenderKind 'Foreign' -Foreign @{ Name = $TaxAdvisor.Name; Lines = @($advisorLine) } -Classification $L.Confidential
     Add-Block $bwa 'Title' @{ Text = ('{0} {1} {2}' -f $L.Bwa, $C.Months[$month.Month - 1], $year) }
     $revenue = [double](20000 + $staff.Count * $rng.Next(5000, 9000))
     $values = @($revenue) + @(0.22, 0.4, 0.07, 0.05, 0.03, 0.04 | ForEach-Object { - [Math]::Round($revenue * $_ * (0.8 + $rng.NextDouble() * 0.4)) })
     $values += ($values | Measure-Object -Sum).Sum
     $bwaRows = for ($k = 0; $k -lt $C.BwaRows.Count; $k++) { , [string[]]@($C.BwaRows[$k], (Format-Money $values[$k]), (Format-Money ($values[$k] * $month.Month))) }
     Add-Block $bwa 'Table' @{ Header = [string[]]@($L.Kpi, $L.Month, $L.Cumulative); Rows = @($bwaRows); Widths = @(0.46, 0.27, 0.27); Align = 'LRR'; BoldLast = $true }
-    Add-Spec $specs ('{0}\BWA_{1:yyyy-MM}.pdf' -f (Get-AreaPath $bwaDate ('Abteilungen\Geschaeftsleitung\{0}\{1}' -f $F.Bwa, $year) ('Geschaeftsleitung\{0}' -f $F.Bwa)), $month) 'pdf' $bwaDate $rng @{ Model = $bwa }
+    Add-Spec $specs ('{0}\{1}_{2:yyyy-MM}.pdf' -f (Get-AreaPath $bwaDate ('{0}\{1}\{2}' -f $Paths.Management, $F.Bwa, $year) ('{0}\{1}' -f $AreaName.Management, $F.Bwa)), $L.BwaFile, $month) 'pdf' $bwaDate $rng @{ Model = $bwa }
     # Lohnjournal und Entgeltabrechnungen (personenbezogen, streng vertraulich)
-    $secret = '{0} {1} {2}' -f $L.Secret, ([char]0x2013), 'Personal'
+    $secret = '{0} {1} {2}' -f $L.Secret, ([char]0x2013), $C.Departments.HR
     $payRows = foreach ($p in $staff) {
         $pdata = Get-PersonProfile -Key $p.Sam -GivenName $p.GivenName -Surname $p.Surname -BirthYear $p.Born -City $p.Site -Female $p.Female
         , @($p.Name, $pdata.TaxId, $pdata.Social, $pdata.Iban, [double]$p.Salary)
     }
     $journal = Get-XlsxTable -Title ('{0} {1:MM}/{1:yyyy}' -f $L.Payroll, $month) -Author $booker -Ci $ci -Sheet $L.Payroll -Header @($L.Name, $L.TaxId, $L.SocialNo, $L.Iban, $L.Gross) -Rows @($payRows) -Widths @(24, 18, 22, 30, 14) -Formats @($null, $null, $null, $null, 'Money') -Marking $secret -Classification $L.Secret -SumColumn 5
-    Add-Spec $specs ('{0}\{1}_{2:yyyy-MM}.xlsx' -f (Get-AreaPath $end ('{0}\{1}\{2}' -f $bh, $F.Payroll, $year) ('Buchhaltung\{0}' -f $F.Payroll)), $L.Payroll, $month) 'xlsx' $end.AddDays(-3) $rng @{ Model = $journal }
+    Add-Spec $specs ('{0}\{1}_{2:yyyy-MM}.xlsx' -f (Get-AreaPath $end ('{0}\{1}\{2}' -f $bh, $F.Payroll, $year) ('{0}\{1}' -f $AreaName.Accounting, $F.Payroll)), $L.Payroll, $month) 'xlsx' $end.AddDays(-3) $rng @{ Model = $journal }
     foreach ($p in $staff) {
         $pdata = Get-PersonProfile -Key $p.Sam -GivenName $p.GivenName -Surname $p.Surname -BirthYear $p.Born -City $p.Site -Female $p.Female
-        $slip = Get-DocModel -Title ('{0} {1:MM}/{1:yyyy}' -f $L.Salary, $month) -Author @{ Name = 'Steuerkanzlei Hanse' } -Created $end -Modified $end -Ci $ci -SenderKind 'Foreign' -Foreign @{ Name = 'Steuerkanzlei Hanse'; Lines = @("i. A. $($C.Company.Name)") } -Marking $secret -Classification $L.Secret
+        $slip = Get-DocModel -Title ('{0} {1:MM}/{1:yyyy}' -f $L.Salary, $month) -Author @{ Name = $TaxAdvisor.Name } -Created $end -Modified $end -Ci $ci -SenderKind 'Foreign' -Foreign @{ Name = $TaxAdvisor.Name; Lines = @(($L.OnBehalf -f $C.Company.Name)) } -Marking $secret -Classification $L.Secret
         Add-Block $slip 'Address' @{ Lines = @($p.Name, $pdata.Street, $pdata.City) }
         Add-Block $slip 'Info' @{ Rows = [ordered]@{ $L.Month = ('{0} {1}' -f $C.Months[$month.Month - 1], $year); $L.TaxId = $pdata.TaxId; $L.SocialNo = $pdata.Social; $L.TaxClass = $pdata.TaxClass } }
         Add-Block $slip 'Title' @{ Text = ('{0} {1} {2}' -f $L.Salary, $C.Months[$month.Month - 1], $year) }
         $gross = [double]$p.Salary
-        $tax = [Math]::Round($gross * 0.14, 2)
-        $social = [Math]::Round($gross * 0.205, 2)
+        $tax = [Math]::Round($gross * $Locale.Tax, 2)
+        $social = [Math]::Round($gross * $Locale.Social, 2)
         Add-Block $slip 'Table' @{ Header = $null; Rows = @([string[]]@($L.Gross, (Format-Money $gross)), [string[]]@($L.Tax, (Format-Money (-$tax))), [string[]]@($L.Social, (Format-Money (-$social))), [string[]]@($L.NetSalary, (Format-Money ($gross - $tax - $social)))); Widths = @(0.7, 0.3); Align = 'LR'; BoldLast = $true }
         Add-Block $slip 'Para' @{ Text = ('{0}: {1} ({2})' -f $L.Iban, $pdata.Iban, $pdata.Bank) }
-        $folder = 'Abteilungen\Personal\{0}\{1}, {2}\{3}\{4}' -f $F.Files, $p.Surname, $p.GivenName, $F.Payslips, $year
-        Add-Spec $specs ('{0}\Entgelt_{1:yyyy-MM}.pdf' -f $folder, $month) 'pdf' $end $rng @{ Model = $slip }
+        $folder = '{0}\{1}\{2}, {3}\{4}\{5}' -f $Paths.HR, $F.Files, $p.Surname, $p.GivenName, $F.Payslips, $year
+        Add-Spec $specs ('{0}\{1}_{2:yyyy-MM}.pdf' -f $folder, $L.PayslipFile, $month) 'pdf' $end $rng @{ Model = $slip }
     }
     # Firmenkreditkarte (quartalsweise, Testkartennummer)
     if ($month.Month % 3 -eq 0) {
         $card = Get-DocModel -Title $L.CreditCard -Author @{ Name = $C.Company.Bank } -Created $end -Modified $end -Ci $ci -SenderKind 'Foreign' -Foreign @{ Name = $C.Company.Bank; Lines = @($L.CreditCard) }
-        Add-Block $card 'Info' @{ Rows = [ordered]@{ $L.CardNumber = (Get-CreditCard (Get-Rng -Index 7 -Salt 5)); $L.Holder = $PeopleBySam['MMustermann'].Name; $L.Period = ('{0} {1}' -f $C.Months[$month.Month - 1], $year) } }
+        Add-Block $card 'Info' @{ Rows = [ordered]@{ $L.CardNumber = (Get-CreditCard (Get-Rng -Index 7 -Salt 5)); $L.Holder = $PeopleBySam[$Roles.Ceo].Name; $L.Period = ('{0} {1}' -f $C.Months[$month.Month - 1], $year) } }
         Add-Block $card 'Title' @{ Text = ('{0} {1}/{2}' -f $L.CreditCard, [Math]::Ceiling($month.Month / 3), $year) }
-        $cardRows = @(1..(4 + $rng.Next(0, 8)) | ForEach-Object { , [string[]]@((Format-DateDe $month.AddDays(-$rng.Next(0, 80))), (Get-RandomEntry $rng @('Bildagentur Pixelmeer', 'Hotel am Markt', 'Bahn-Ticket', 'Software-Abo', 'Schriftlizenz', 'Messe-Eintritt')), (Format-Money ($rng.Next(900, 60000) / 100.0))) })
+        $cardRows = @(1..(4 + $rng.Next(0, 8)) | ForEach-Object { , [string[]]@((Format-LocalDate $month.AddDays(-$rng.Next(0, 80))), (Get-RandomEntry $rng $C.CardBookings), (Format-Money ($rng.Next(900, 60000) / 100.0))) })
         Add-Block $card 'Table' @{ Header = [string[]]@($L.Date, $L.Booking, $L.Amount); Rows = $cardRows; Widths = @(0.2, 0.55, 0.25); Align = 'LLR' }
-        Add-Spec $specs ('{0}\{1}_{2:yyyy-MM}.pdf' -f (Get-AreaPath $end ('{0}\{1}\{2}' -f $bh, $F.CreditCard, $year) ('Buchhaltung\{0}' -f $F.CreditCard)), $L.CreditCard, $month) 'pdf' $end $rng @{ Model = $card }
+        Add-Spec $specs ('{0}\{1}_{2:yyyy-MM}.pdf' -f (Get-AreaPath $end ('{0}\{1}\{2}' -f $bh, $F.CreditCard, $year) ('{0}\{1}' -f $AreaName.Accounting, $F.CreditCard)), $L.CreditCard, $month) 'pdf' $end $rng @{ Model = $card }
     }
     # Reisekosten mit Belegscan
     if ($rng.Next(0, 3) -eq 0) {
@@ -4462,14 +4525,14 @@ function Build-AccountingUnit {
         $hotel = [double]$rng.Next(79, 140)
         $travel = Get-DocModel -Title $L.Travel -Author $traveller -Created $date -Modified $date -Ci $ci -SenderKind 'None'
         Add-Block $travel 'Title' @{ Text = $L.Travel }
-        Add-Block $travel 'Info' @{ Rows = [ordered]@{ $L.Employee = $traveller.Name; $L.Period = (Format-DateDe $date); $L.Purpose = ('{0} {1}' -f $customer.Name, $customer.City) } }
-        Add-Block $travel 'Table' @{ Header = [string[]]@($L.Description, $L.Amount); Rows = @([string[]]@(('{0}: {1} km' -f $L.Mileage, $km), (Format-Money ($km * 0.3))), [string[]]@($L.Allowance, (Format-Money 28)), [string[]]@($L.Hotel, (Format-Money $hotel)), [string[]]@($L.Sum, (Format-Money ($km * 0.3 + 28 + $hotel)))); Widths = @(0.7, 0.3); Align = 'LR'; BoldLast = $true }
+        Add-Block $travel 'Info' @{ Rows = [ordered]@{ $L.Employee = $traveller.Name; $L.Period = (Format-LocalDate $date); $L.Purpose = ('{0} {1}' -f $customer.Name, $customer.City) } }
+        Add-Block $travel 'Table' @{ Header = [string[]]@($L.Description, $L.Amount); Rows = @([string[]]@(('{0}: {1} {2}' -f $L.Mileage, $km, $Locale.Distance), (Format-Money ($km * $Locale.Mileage))), [string[]]@($L.Allowance, (Format-Money $Locale.Allowance)), [string[]]@($L.Hotel, (Format-Money $hotel)), [string[]]@($L.Sum, (Format-Money ($km * $Locale.Mileage + $Locale.Allowance + $hotel)))); Widths = @(0.7, 0.3); Align = 'LR'; BoldLast = $true }
         Add-Block $travel 'Sign' @{ Name = $traveller.Name; Role = $L.Signature; Seed = $Unit.Seed }
-        $path = Get-AreaPath $date ('{0}\{1}\{2}' -f $bh, $F.Travel, $year) ('Buchhaltung\{0}' -f $F.Travel)
+        $path = Get-AreaPath $date ('{0}\{1}\{2}' -f $bh, $F.Travel, $year) ('{0}\{1}' -f $AreaName.Accounting, $F.Travel)
         Add-Spec $specs ('{0}\{1}_{2}_{3:yyyy-MM-dd}.docx' -f $path, $L.Travel, $traveller.Surname, $date) 'docx' $date $rng @{ Model = $travel }
         $receipt = Get-DocModel -Title $L.Receipt -Author $traveller -Created $date -Modified $date -Ci $ci -SenderKind 'Foreign' -Foreign @{ Name = (Get-RandomEntry $rng $C.Hotels); Lines = @($customer.City) }
         Add-Block $receipt 'Title' @{ Text = $L.Invoice }
-        $null = Add-PositionTable $receipt @(@{ Text = $L.Hotel; Qty = 1; Unit = 'Nacht'; Price = $hotel })
+        $null = Add-PositionTable $receipt @(@{ Text = $L.Hotel; Qty = 1; Unit = $L.Night; Price = $hotel })
         $receipt.Scan = Get-ScanProfile $rng $date
         Add-Spec $specs ('{0}\{1}_{2}_{3:yyyy-MM-dd}.pdf' -f $path, $L.Receipt, $traveller.Surname, $date) 'pdf' $date.AddDays(1) $rng @{ Model = $receipt }
         $null = $tctx
@@ -4486,12 +4549,12 @@ function Build-PersonUnit {
     $specs = [System.Collections.Generic.List[object]]::new()
     $p = $Unit.Person
     $rng = Get-Rng -Index $Unit.Seed -Salt 307
-    $hr = Get-Person 'NPohl' $p.Entry 'Berlin' $rng
-    if ($hr.Department -ne 'Personal') { $hr = $PeopleBySam['EMustermann'] }
+    $hr = Get-Person $Roles.Office $p.Entry $HqSite.Name $rng
+    if ($hr.Department -ne 'HR') { $hr = $PeopleBySam[$Roles.ManagingDirector] }
     $ci = Get-DocumentCi $p.Entry $p.Site
     $pdata = Get-PersonProfile -Key $p.Sam -GivenName $p.GivenName -Surname $p.Surname -BirthYear $p.Born -City $p.Site -Female $p.Female
-    $folder = 'Abteilungen\Personal\{0}\{1}, {2}' -f $F.Files, $p.Surname, $p.GivenName
-    $secret = '{0} {1} Personal' -f $L.Secret, ([char]0x2013)
+    $folder = '{0}\{1}\{2}, {3}' -f $Paths.HR, $F.Files, $p.Surname, $p.GivenName
+    $secret = '{0} {1} {2}' -f $L.Secret, ([char]0x2013), $C.Departments.HR
     $ctx = Get-TextContext -Rng $rng -Date $p.Entry -Author $hr -Colleague $p
     $ctx.Stelle = $p.Role
     $ctx.Betrag = Format-Money $p.Salary
@@ -4501,13 +4564,13 @@ function Build-PersonUnit {
     $sheet = Get-DocModel -Title "$($L.PersonnelSheet) $($p.Name)" -Author $hr -Created $created -Modified $created -Ci $ci -SenderKind 'None' -Marking $secret -Classification $L.Secret
     Add-Block $sheet 'Title' @{ Text = "$($L.PersonnelSheet) $($p.Name)" }
     $rows = @(
-        @($L.Name, $p.Name), @($L.BirthDate, (Format-DateDe $pdata.Birth)), @($L.BirthPlace, $pdata.BirthPlace), @($L.Address, ('{0}, {1}' -f $pdata.Street, $pdata.City))
-        @($L.Phone, $pdata.Phone), @($L.Mobile, $pdata.Mobile), @($L.Email, $pdata.Mail), @('Personalausweis', $pdata.IdCard)
-        @('Steuer-ID', $pdata.TaxId), @($L.TaxClass, $pdata.TaxClass), @($L.SocialNo, $pdata.Social), @($L.Insurance, $pdata.Insurer)
+        @($L.Name, $p.Name), @($L.BirthDate, (Format-LocalDate $pdata.Birth)), @($L.BirthPlace, $pdata.BirthPlace), @($L.Address, ('{0}, {1}' -f $pdata.Street, $pdata.City))
+        @($L.Phone, $pdata.Phone), @($L.Mobile, $pdata.Mobile), @($L.Email, $pdata.Mail), @($L.IdDocument, $pdata.IdCard)
+        @($L.TaxId, $pdata.TaxId), @($L.TaxClass, $pdata.TaxClass), @($L.SocialNo, $pdata.Social), @($L.Insurance, $pdata.Insurer)
         @($L.Confession, $pdata.Confession), @($L.Marital, $pdata.Marital), @($L.Children, [string]$pdata.Children)
-        @($L.Iban, $pdata.Iban), @($L.Bank, $pdata.Bank), @($L.Position, $p.Role), @($L.Location, $p.Site), @($L.Entry, (Format-DateDe $p.Entry))
+        @($L.Iban, $pdata.Iban), @($L.Bank, $pdata.Bank), @($L.Position, $p.Role), @($L.Location, $p.Site), @($L.Entry, (Format-LocalDate $p.Entry))
     )
-    if ($p.Leave) { $rows += , @($L.Leave, (Format-DateDe $p.Leave)) }
+    if ($p.Leave) { $rows += , @($L.Leave, (Format-LocalDate $p.Leave)) }
     Add-Block $sheet 'Table' @{ Header = $null; Rows = @($rows | ForEach-Object { , [string[]]$_ }); Widths = @(0.35, 0.65); Align = 'LL' }
     Add-Spec $specs ('{0}\{1}.docx' -f $folder, $L.PersonnelSheet) 'docx' $created $rng @{ Model = $sheet }
 
@@ -4519,7 +4582,7 @@ function Build-PersonUnit {
         Add-Block $contract 'Heading' @{ Text = $para.Title }
         Add-Block $contract 'Para' @{ Text = (Expand-SampleText $para.Text $ctx) }
     }
-    Add-Block $contract 'Sign' @{ Name = $PeopleBySam['MMustermann'].Name; Role = $PeopleBySam['MMustermann'].Role; Seed = 11 }
+    Add-Block $contract 'Sign' @{ Name = $PeopleBySam[$Roles.Ceo].Name; Role = $PeopleBySam[$Roles.Ceo].Role; Seed = 11 }
     Add-Block $contract 'Sign' @{ Name = $p.Name; Role = $L.Employee; Seed = $Unit.Seed }
     $contract.Scan = Get-ScanProfile $rng $created
     Add-Spec $specs ('{0}\{1}_{2}.pdf' -f $folder, $L.Contract, $p.Surname) 'pdf' $created.AddDays(3) $rng @{ Model = $contract }
@@ -4529,9 +4592,9 @@ function Build-PersonUnit {
     $years = [Math]::Max(1, [int](($end - $p.Entry).TotalDays / 365))
     foreach ($n in 1..[Math]::Min(12, $rng.Next(0, $years + 2))) {
         $date = Get-WorkDate $p.Entry $rng 30 ([int]($end - $p.Entry).TotalDays - 5)
-        $sick = Get-DocModel -Title $L.SickNote -Author $p -Created $date -Modified $date -Ci $ci -SenderKind 'Foreign' -Foreign @{ Name = ('Praxis Dr. {0}' -f (Get-RandomEntry $rng $C.LastNames)); Lines = @($pdata.City) } -Classification $L.Secret
+        $sick = Get-DocModel -Title $L.SickNote -Author $p -Created $date -Modified $date -Ci $ci -SenderKind 'Foreign' -Foreign @{ Name = ($L.Doctor -f (Get-RandomEntry $rng $C.LastNames)); Lines = @($pdata.City) } -Classification $L.Secret
         Add-Block $sick 'Title' @{ Text = $L.SickNote }
-        Add-Block $sick 'Info' @{ Rows = [ordered]@{ $L.Name = $p.Name; $L.BirthDate = (Format-DateDe $pdata.Birth); $L.Insurance = $pdata.Insurer; $L.From = (Format-DateDe $date); $L.To = (Format-DateDe $date.AddDays($rng.Next(2, 12))) } }
+        Add-Block $sick 'Info' @{ Rows = [ordered]@{ $L.Name = $p.Name; $L.BirthDate = (Format-LocalDate $pdata.Birth); $L.Insurance = $pdata.Insurer; $L.From = (Format-LocalDate $date); $L.To = (Format-LocalDate $date.AddDays($rng.Next(2, 12))) } }
         Add-Block $sick 'Sign' @{ Name = $sick.Foreign.Name; Seed = $n + $Unit.Seed }
         $sick.Scan = Get-ScanProfile $rng $date
         Add-Spec $specs ('{0}\{1}\{2:yyyy-MM-dd}_{3}.pdf' -f $folder, $F.SickNotes, $date, $L.SickNote.Substring(0, 3)) 'pdf' $date.AddDays(2) $rng @{ Model = $sick }
@@ -4540,18 +4603,18 @@ function Build-PersonUnit {
     foreach ($n in 1..[Math]::Min(4, $years)) {
         $date = Get-WorkDate $p.Entry.AddYears($n) $rng 0 40
         if ($date -ge $end) { break }
-        $review = Get-DocModel -Title "Mitarbeitergespraech $($p.Name)" -Author $hr -Created $date -Modified $date -Ci $ci -SenderKind 'None' -Marking $secret -Classification $L.Secret
+        $review = Get-DocModel -Title ('{0} {1}' -f $L.Review, $p.Name) -Author $hr -Created $date -Modified $date -Ci $ci -SenderKind 'None' -Marking $secret -Classification $L.Secret
         Add-Block $review 'Title' @{ Text = ('{0} {1} {2}' -f $L.Note, $MidDot, $p.Name) }
         Add-Block $review 'Para' @{ Text = (Get-SampleText 'ReviewNote' $rng $ctx) }
-        Add-Spec $specs ('{0}\Gespraech_{1:yyyy-MM-dd}.docx' -f $folder, $date) 'docx' $date $rng @{ Model = $review }
+        Add-Spec $specs ('{0}\{1}_{2:yyyy-MM-dd}.docx' -f $folder, $L.ReviewFile, $date) 'docx' $date $rng @{ Model = $review }
     }
     if ($p.Grade -ge 3 -and $T.Warning) {
         $date = Get-WorkDate $p.Entry.AddDays(200) $rng 0 60
-        $warning = Get-DocModel -Title 'Abmahnung' -Author $PeopleBySam['MMustermann'] -Created $date -Modified $date -Ci $ci -Marking $secret -Classification $L.Secret
+        $warning = Get-DocModel -Title $L.Warning -Author $PeopleBySam[$Roles.Ceo] -Created $date -Modified $date -Ci $ci -Marking $secret -Classification $L.Secret
         Add-Block $warning 'Address' @{ Lines = @($p.Name, $pdata.Street, $pdata.City) }
         Add-Block $warning 'Para' @{ Text = (Expand-SampleText $T.Warning[0].Text $ctx) }
-        Add-Block $warning 'Sign' @{ Name = $PeopleBySam['MMustermann'].Name; Role = $PeopleBySam['MMustermann'].Role; Seed = 12 }
-        Add-Spec $specs ('{0}\Abmahnung_{1:yyyy-MM-dd}.docx' -f $folder, $date) 'docx' $date $rng @{ Model = $warning }
+        Add-Block $warning 'Sign' @{ Name = $PeopleBySam[$Roles.Ceo].Name; Role = $PeopleBySam[$Roles.Ceo].Role; Seed = 12 }
+        Add-Spec $specs ('{0}\{1}_{2:yyyy-MM-dd}.docx' -f $folder, $L.Warning, $date) 'docx' $date $rng @{ Model = $warning }
     }
     if ($p.Leave) {
         $ref = @($T.Reference | Where-Object { [int]$_.Grade -eq [int]$p.Grade }) | Select-Object -First 1
@@ -4559,24 +4622,23 @@ function Build-PersonUnit {
             $refModel = Get-DocModel -Title "$($L.Reference) $($p.Name)" -Author $hr -Created $p.Leave -Modified $p.Leave -Ci (Get-DocumentCi $p.Leave $p.Site) -Classification $L.Confidential
             Add-Block $refModel 'Title' @{ Text = $L.Reference }
             Add-Block $refModel 'Para' @{ Text = (Expand-SampleText $ref.Text $ctx) }
-            Add-Block $refModel 'Sign' @{ Name = $PeopleBySam['MMustermann'].Name; Role = $PeopleBySam['MMustermann'].Role; Seed = 13 }
+            Add-Block $refModel 'Sign' @{ Name = $PeopleBySam[$Roles.Ceo].Name; Role = $PeopleBySam[$Roles.Ceo].Role; Seed = 13 }
             Add-Spec $specs ('{0}\{1}_{2}.docx' -f $folder, $L.Reference, $p.Surname) 'docx' $p.Leave $rng @{ Model = $refModel }
-            Add-Spec $specs ('Abteilungen\Personal\{0}\{1}_{2}_{3}.pdf' -f $F.References, $L.Reference, $p.Surname, $p.GivenName) 'pdf' $p.Leave.AddHours(2) $rng @{ Model = $refModel }
+            Add-Spec $specs ('{0}\{1}\{2}_{3}_{4}.pdf' -f $Paths.HR, $F.References, $L.Reference, $p.Surname, $p.GivenName) 'pdf' $p.Leave.AddHours(2) $rng @{ Model = $refModel }
         }
     }
 
     # Basisordner: Arbeitsnotizen in der eigenen Stimme, Privates (Verstoss gegen die IT-Richtlinie)
-    if ($p.Sam -eq 'PPraktikant') { return , $specs.ToArray() }
-    $homeFolder = 'Home\{0}' -f $p.Sam
+    if ($p.Sam -eq $Roles.Intern) { return , $specs.ToArray() }
+    $homeFolder = '{0}\{1}' -f $Paths.Home, $p.Sam
     foreach ($n in 1..(4 + $rng.Next(0, 10))) {
         $date = Get-WorkDate $p.Entry $rng 10 ([int]($end - $p.Entry).TotalDays - 2)
         $nctx = Get-TextContext -Rng $rng -Date $date -Customer (Get-RandomEntry $rng $C.Customers) -Author $p
         $note = Get-DocModel -Title $L.Note -Author $p -Created $date -Modified $date -Ci (Get-DocumentCi $date $p.Site) -SenderKind 'None'
         Add-Block $note 'Para' @{ Text = (Get-SampleText 'HomeNote' $rng $nctx) }
-        $names = @('Notizen', 'ToDo', 'Ideen', 'Wichtig', 'Entwurf', 'Ablage')
-        Add-Spec $specs ('{0}\{1}\{2}_{3:yyyy-MM-dd}.docx' -f $homeFolder, $F.Documents, (Get-RandomEntry $rng $names), $date) 'docx' $date $rng @{ Model = $note }
+        Add-Spec $specs ('{0}\{1}\{2}_{3:yyyy-MM-dd}.docx' -f $homeFolder, $F.Documents, (Get-RandomEntry $rng $C.NoteNames), $date) 'docx' $date $rng @{ Model = $note }
     }
-    $privateCount = if ($p.Sam -eq 'JFrick') { 4 } elseif ($rng.Next(0, 3) -eq 0) { 1 + $rng.Next(0, 3) } else { 0 }
+    $privateCount = if ($p.Sam -eq $Roles.PrivateFiles) { 4 } elseif ($rng.Next(0, 3) -eq 0) { 1 + $rng.Next(0, 3) } else { 0 }
     foreach ($n in 1..$privateCount) {
         if ($privateCount -eq 0) { break }
         $record = Get-TextRecord -Kind 'PrivateNote' -Rng $rng
@@ -4597,8 +4659,8 @@ function Build-ApplicationUnit {
     $specs = [System.Collections.Generic.List[object]]::new()
     $rng = Get-Rng -Index $Unit.Seed -Salt 401
     $year = $Reference.Year - $Unit.YearsAgo
-    $hr = Get-Person 'NPohl' (New-Object -TypeName DateTime -ArgumentList $year, 6, 1) 'Berlin' $rng
-    $folder = 'Abteilungen\Personal\{0}\{1}' -f $F.Applications, $year
+    $hr = Get-Person $Roles.Office (New-Object -TypeName DateTime -ArgumentList $year, 6, 1) $HqSite.Name $rng
+    $folder = '{0}\{1}\{2}' -f $Paths.HR, $F.Applications, $year
     $overview = [System.Collections.Generic.List[object]]::new()
     foreach ($n in 1..(3 + $rng.Next(0, 7))) {
         $date = (New-Object -TypeName DateTime -ArgumentList $year, (1 + $rng.Next(0, 12)), (1 + $rng.Next(0, 27))).AddHours(9)
@@ -4606,12 +4668,12 @@ function Build-ApplicationUnit {
         $given = Get-RandomEntry $rng $C.FirstNames
         $sur = Get-RandomEntry $rng $C.LastNames
         $position = Get-RandomEntry $rng $C.Positions
-        $pdata = Get-PersonProfile -Key "$given$sur$year$n" -GivenName $given -Surname $sur -BirthYear ($year - 22 - $rng.Next(0, 18)) -City 'Berlin' -Female (Test-Female $given)
+        $pdata = Get-PersonProfile -Key "$given$sur$year$n" -GivenName $given -Surname $sur -BirthYear ($year - 22 - $rng.Next(0, 18)) -City $HqSite.City -Female (Test-Female $given)
         $ctx = Get-TextContext -Rng $rng -Date $date -Author $hr
         $ctx.Bewerber = "$given $sur"; $ctx.Stelle = $position
         $cover = $rng.Next(0, [Math]::Max(1, @($T.CoverOpening).Count))
-        $app = Get-DocModel -Title ($L.Application -f $position) -Author @{ Name = "$given $sur" } -Created $date -Modified $date -Ci (Get-DocumentCi $date 'Berlin') -SenderKind 'Foreign' -Foreign @{ Name = "$given $sur"; Lines = @(('{0} {1} {2}' -f $pdata.Street, $MidDot, $pdata.City), ('{0} {1} {2}' -f $pdata.Mobile, $MidDot, $pdata.Mail)) }
-        Add-Block $app 'Address' @{ Lines = (Get-DocumentCi $date 'Berlin').HeaderLines }
+        $app = Get-DocModel -Title ($L.Application -f $position) -Author @{ Name = "$given $sur" } -Created $date -Modified $date -Ci (Get-DocumentCi $date $HqSite.Name) -SenderKind 'Foreign' -Foreign @{ Name = "$given $sur"; Lines = @(('{0} {1} {2}' -f $pdata.Street, $MidDot, $pdata.City), ('{0} {1} {2}' -f $pdata.Mobile, $MidDot, $pdata.Mail)) }
+        Add-Block $app 'Address' @{ Lines = (Get-DocumentCi $date $HqSite.Name).HeaderLines }
         Add-Block $app 'Title' @{ Text = ($L.Application -f $position) }
         foreach ($kind in 'CoverOpening', 'CoverExperience', 'CoverMotivation', 'CoverClosing') {
             $list = @($T[$kind])
@@ -4620,27 +4682,27 @@ function Build-ApplicationUnit {
         Add-Block $app 'Sign' @{ Name = "$given $sur"; Seed = $n + $Unit.Seed }
         Add-Block $app 'Break'
         Add-Block $app 'Title' @{ Text = $L.Cv }
-        Add-Block $app 'Info' @{ Rows = [ordered]@{ $L.Name = "$given $sur"; $L.BirthDate = (Format-DateDe $pdata.Birth); $L.Address = ('{0}, {1}' -f $pdata.Street, $pdata.City) } }
+        Add-Block $app 'Info' @{ Rows = [ordered]@{ $L.Name = "$given $sur"; $L.BirthDate = (Format-LocalDate $pdata.Birth); $L.Address = ('{0}, {1}' -f $pdata.Street, $pdata.City) } }
         Add-Block $app 'Bullets' @{ Items = @(Get-RandomSubset $rng $T.CvStation 4 | ForEach-Object { Expand-SampleText $_.Text $ctx }) }
         $app.Scan = Get-ScanProfile $rng $date
         $file = '{0}_{1}_{2}' -f $sur, $given, (ConvertTo-SafeName (($position -split '[ /(]')[0]))
         Add-Spec $specs ('{0}\{1}.pdf' -f $folder, $file) 'pdf' $date $rng @{ Model = $app }
         $invite = $rng.Next(0, 3) -eq 0
         $reply = Get-TextRecord -Kind 'ApplicationReply' -Rng $rng -Where @{}
-        $replies = @($T.ApplicationReply | Where-Object { ($_.Subject -match 'Einladung') -eq $invite })
+        $replies = @($T.ApplicationReply | Where-Object { ($_.Subject -match $Patterns.Invitation) -eq $invite })
         if ($replies) { $reply = Get-RandomEntry $rng $replies }
         $replyDate = Get-WorkDate $date $rng 5 20
-        $answer = Get-DocModel -Title (Expand-SampleText $reply.Subject $ctx) -Author $hr -Created $replyDate -Modified $replyDate -Ci (Get-DocumentCi $replyDate 'Berlin') -Classification $L.Confidential
+        $answer = Get-DocModel -Title (Expand-SampleText $reply.Subject $ctx) -Author $hr -Created $replyDate -Modified $replyDate -Ci (Get-DocumentCi $replyDate $HqSite.Name) -Classification $L.Confidential
         Add-Block $answer 'Address' @{ Lines = @("$given $sur", $pdata.Street, $pdata.City) }
         Add-Block $answer 'Title' @{ Text = (Expand-SampleText $reply.Subject $ctx) }
         Add-Block $answer 'Para' @{ Text = (Expand-SampleText $reply.Text $ctx) }
         Add-Block $answer 'Para' @{ Text = $L.Regards }
         Add-Block $answer 'Sign' @{ Name = $hr.Name; Role = $hr.Role; Seed = 21 }
-        Add-Spec $specs ('{0}\{1}_Antwort.docx' -f $folder, $file) 'docx' $replyDate $rng @{ Model = $answer }
-        $overview.Add(@("$given $sur", $position, $date, $pdata.Mail, $pdata.Mobile, $(if ($invite) { 'Gespraech' } else { 'Absage' })))
+        Add-Spec $specs ('{0}\{1}_{2}.docx' -f $folder, $file, $L.ReplyFile) 'docx' $replyDate $rng @{ Model = $answer }
+        $overview.Add(@("$given $sur", $position, $date, $pdata.Mail, $pdata.Mobile, $(if ($invite) { $L.Interview } else { $L.Rejection })))
     }
     if ($overview.Count) {
-        $model = Get-XlsxTable -Title ('{0} {1}' -f $L.Applicants, $year) -Author $hr -Ci (Get-DocumentCi (New-Object -TypeName DateTime -ArgumentList $year, 12, 1) 'Berlin') -Sheet $L.Applicants -Header @($L.Name, $L.Position, $L.Date, $L.Email, $L.Mobile, $L.Status) -Rows $overview.ToArray() -Widths @(22, 34, 12, 30, 18, 12) -Formats @($null, $null, 'Date') -Classification $L.Confidential
+        $model = Get-XlsxTable -Title ('{0} {1}' -f $L.Applicants, $year) -Author $hr -Ci (Get-DocumentCi (New-Object -TypeName DateTime -ArgumentList $year, 12, 1) $HqSite.Name) -Sheet $L.Applicants -Header @($L.Name, $L.Position, $L.Date, $L.Email, $L.Mobile, $L.Status) -Rows $overview.ToArray() -Widths @(22, 34, 12, 30, 18, 12) -Formats @($null, $null, 'Date') -Classification $L.Confidential
         $last = ($overview | ForEach-Object { $_[2] } | Sort-Object | Select-Object -Last 1)
         Add-Spec $specs ('{0}\{1}_{2}.xlsx' -f $folder, $L.Applicants, $year) 'xlsx' $last.AddDays(10) $rng @{ Model = $model }
     }
@@ -4652,12 +4714,14 @@ function Build-ApplicationUnit {
 
 function Get-PolicyModel {
     param($Record, $Author, [datetime] $Date, [int] $Version)
-    $marking = if ($Record.Classification -in $L.Confidential, $L.Secret) { $Record.Classification } else { $null }
+    # Record.Classification ist ein Schluessel in Labels (Public, Internal, Confidential, Secret).
+    $classification = $L[$Record.Classification]
+    $marking = if ($Record.Classification -in 'Confidential', 'Secret') { $classification } else { $null }
     $policyCtx = Get-TextContext -Rng (Get-Rng -Index $Version -Salt 3) -Date $Date -Author $Author
     $title = Expand-SampleText $Record.Title $policyCtx
-    $model = Get-DocModel -Title $title -Author $Author -Created $Date -Modified $Date -Ci (Get-DocumentCi $Date 'Berlin') -SenderKind 'None' -Marking $marking -Classification $Record.Classification
+    $model = Get-DocModel -Title $title -Author $Author -Created $Date -Modified $Date -Ci (Get-DocumentCi $Date $HqSite.Name) -SenderKind 'None' -Marking $marking -Classification $classification
     Add-Block $model 'Title' @{ Text = $title }
-    Add-Block $model 'Para' @{ Text = ($L.VersionOf -f $Version, (Format-DateDe $Date)) }
+    Add-Block $model 'Para' @{ Text = ($L.VersionOf -f $Version, (Format-LocalDate $Date)) }
     foreach ($section in $Record.Sections) {
         Add-Block $model 'Heading' @{ Text = (Expand-SampleText $section.Title $policyCtx) }
         Add-Block $model 'Para' @{ Text = (Expand-SampleText $section.Text $policyCtx) }
@@ -4672,15 +4736,15 @@ function Build-YearUnit {
     $year = $Reference.Year - $Unit.YearsAgo
     $jan = (New-Object -TypeName DateTime -ArgumentList $year, 1, 8).AddHours(10)
     if ($jan -lt $Founded) { $jan = $Founded.AddDays(20) }
-    $boss = $PeopleBySam['MMustermann']
-    $ci = Get-DocumentCi $jan 'Berlin'
+    $boss = $PeopleBySam[$Roles.Ceo]
+    $ci = Get-DocumentCi $jan $HqSite.Name
     $staff = Get-ActivePerson -Date $jan.AddMonths(6)
     # Jahresauftakt der Geschaeftsleitung
     $slides = @(@{ Layout = 'Title'; Title = ('{0} {1}' -f $F.Kickoff, $year); Subtitle = $C.Company.Name })
     foreach ($s in @($T.KickoffSlide)) { $slides += @{ Layout = 'Content'; Title = (Expand-SampleText $s.Title @{ Jahr = $year - 1 }); Bullets = @((Expand-SampleText $s.Text (Get-TextContext -Rng $rng -Date $jan -Author $boss)) -split "`n" | Where-Object { $_ }) } }
     $slides += @{ Layout = 'Closing'; Title = $L.Thanks; Subtitle = $boss.Name }
     $kick = @{ Title = ('{0} {1}' -f $F.Kickoff, $year); Author = $boss.Name; Company = $C.Company.Name; Ci = $ci; Wide = $true; Slides = $slides; Classification = $L.Confidential; Marking = $L.Confidential }
-    Add-Spec $specs ('Abteilungen\Geschaeftsleitung\{0}\{0}_{1}.pptx' -f $F.Kickoff, $year) 'pptx' $jan $rng @{ Model = $kick }
+    Add-Spec $specs ('{0}\{1}\{1}_{2}.pptx' -f $Paths.Management, $F.Kickoff, $year) 'pptx' $jan $rng @{ Model = $kick }
     # Einladungen Sommerfest und Weihnachtsfeier
     foreach ($occasion in 'Summer', 'Christmas') {
         $record = Get-TextRecord -Kind 'Announcement' -Rng $rng -Where @{ Event = $occasion }
@@ -4688,25 +4752,25 @@ function Build-YearUnit {
         $date = Get-WorkDate (New-Object -TypeName DateTime -ArgumentList $year, $(if ($occasion -eq 'Summer') { 5 } else { 11 }), 2) $rng 0 14
         $eventCtx = Get-TextContext -Rng $rng -Date $date
         $subject = Expand-SampleText $record.Subject $eventCtx
-        $model = Get-DocModel -Title $subject -Author $(Get-Person 'EMustermann' $date 'Berlin' $rng) -Created $date -Modified $date -Ci (Get-DocumentCi $date 'Berlin') -Classification $L.Internal
+        $model = Get-DocModel -Title $subject -Author $(Get-Person $Roles.ManagingDirector $date $HqSite.Name $rng) -Created $date -Modified $date -Ci (Get-DocumentCi $date $HqSite.Name) -Classification $L.Internal
         Add-Block $model 'Title' @{ Text = $subject }
         Add-Block $model 'Para' @{ Text = (Expand-SampleText $record.Text $eventCtx) }
-        Add-Spec $specs ('Abteilungen\Allgemein\{0}\{1}\{2:yyyy-MM-dd}_{3}.docx' -f $F.Announcements, $year, $date, (ConvertTo-SafeName $subject)) 'docx' $date $rng @{ Model = $model }
+        Add-Spec $specs ('{0}\{1}\{2}\{3:yyyy-MM-dd}_{4}.docx' -f $Paths.General, $F.Announcements, $year, $date, (ConvertTo-SafeName $subject)) 'docx' $date $rng @{ Model = $model }
     }
     # Listen: Telefon, Kunden, Umsatz, Urlaub
-    $phoneRows = foreach ($p in $staff) { $pd = Get-PersonProfile -Key $p.Sam -GivenName $p.GivenName -Surname $p.Surname -BirthYear $p.Born -City $p.Site -Female $p.Female; , @($p.Name, $p.Role, $p.Site, ('{0}-{1}' -f $(if ($p.Site -eq 'Hamburg') { '+49 40 66969' } else { '+49 30 23125' }), (100 + [Math]::Abs($p.Sam.GetHashCode()) % 400)), $pd.Mobile) }
-    Add-Spec $specs ('Abteilungen\Allgemein\{0}_{1}.xlsx' -f $L.PhoneList, $year) 'xlsx' $jan.AddDays(3) $rng @{ Model = (Get-XlsxTable -Title $L.PhoneList -Author $boss -Ci $ci -Sheet $L.PhoneList -Header @($L.Name, $L.Position, $L.Location, $L.Phone, $L.Mobile) -Rows @($phoneRows) -Widths @(24, 30, 12, 20, 20) -Classification $L.Internal) }
+    $phoneRows = foreach ($p in $staff) { $pd = Get-PersonProfile -Key $p.Sam -GivenName $p.GivenName -Surname $p.Surname -BirthYear $p.Born -City $p.Site -Female $p.Female; , @($p.Name, $p.Role, $p.Site, ((Get-Dial $p.Site) -f (100 + [Math]::Abs($p.Sam.GetHashCode()) % 400)), $pd.Mobile) }
+    Add-Spec $specs ('{0}\{1}_{2}.xlsx' -f $Paths.General, $L.PhoneList, $year) 'xlsx' $jan.AddDays(3) $rng @{ Model = (Get-XlsxTable -Title $L.PhoneList -Author $boss -Ci $ci -Sheet $L.PhoneList -Header @($L.Name, $L.Position, $L.Location, $L.Phone, $L.Mobile) -Rows @($phoneRows) -Widths @(24, 30, 12, 20, 20) -Classification $L.Internal) }
     $active = @($C.Customers | Where-Object { Test-CustomerActive $_ $Unit.YearsAgo })
     if ($active) {
-        $customerRows = foreach ($cust in $active) { , @($cust.Name, $cust.Contact, ('kontakt@{0}' -f $cust.Domain), $cust.City, $cust.Industry, $(if ($PeopleBySam[$cust.Owner]) { $PeopleBySam[$cust.Owner].Name } else { '' })) }
-        Add-Spec $specs ('Abteilungen\Vertrieb\{0}\{1}_{2}.xlsx' -f $F.Customers, $L.CustomerList, $year) 'xlsx' $jan.AddDays(5) $rng @{ Model = (Get-XlsxTable -Title $L.CustomerList -Author $boss -Ci $ci -Sheet $L.CustomerList -Header @($L.Customer, $L.Contact, $L.Email, $L.Location, 'Branche', $L.Owner) -Rows @($customerRows) -Widths @(34, 26, 34, 14, 14, 20) -Classification $L.Internal) }
+        $customerRows = foreach ($cust in $active) { , @($cust.Name, $cust.Contact, ('{0}@{1}' -f $L.MailContact, $cust.Domain), $cust.City, $C.Industries[$cust.Industry], $(if ($PeopleBySam[$cust.Owner]) { $PeopleBySam[$cust.Owner].Name } else { '' })) }
+        Add-Spec $specs ('{0}\{1}\{2}_{3}.xlsx' -f $Paths.Sales, $F.Customers, $L.CustomerList, $year) 'xlsx' $jan.AddDays(5) $rng @{ Model = (Get-XlsxTable -Title $L.CustomerList -Author $boss -Ci $ci -Sheet $L.CustomerList -Header @($L.Customer, $L.Contact, $L.Email, $L.Location, $L.Industry, $L.Owner) -Rows @($customerRows) -Widths @(34, 26, 34, 14, 14, 20) -Classification $L.Internal) }
         $revenueRows = foreach ($cust in $active) { , @($cust.Name, [double]($rng.Next(4, 80) * 1000)) }
-        Add-Spec $specs ('Abteilungen\Geschaeftsleitung\{0}_{1}.xlsx' -f $L.Revenue, $year) 'xlsx' (New-Object -TypeName DateTime -ArgumentList $year, 12, 18).AddHours(16) $rng @{ Model = (Get-XlsxTable -Title ('{0} {1}' -f $L.Revenue, $year) -Author $boss -Ci $ci -Sheet $L.Revenue -Header @($L.Customer, $L.Revenue) -Rows @($revenueRows) -Widths @(40, 16) -Formats @($null, 'Money') -Classification $L.Confidential -SumColumn 2) }
+        Add-Spec $specs ('{0}\{1}_{2}.xlsx' -f $Paths.Management, $L.Revenue, $year) 'xlsx' (New-Object -TypeName DateTime -ArgumentList $year, 12, 18).AddHours(16) $rng @{ Model = (Get-XlsxTable -Title ('{0} {1}' -f $L.Revenue, $year) -Author $boss -Ci $ci -Sheet $L.Revenue -Header @($L.Customer, $L.Revenue) -Rows @($revenueRows) -Widths @(40, 16) -Formats @($null, 'Money') -Classification $L.Confidential -SumColumn 2) }
     }
     foreach ($site in $C.Company.Sites) {
         if ($SiteOpened[$site.Name] -gt $jan) { continue }
         $vacRows = foreach ($p in (Get-ActivePerson -Date $jan -Site $site.Name)) { $start = (New-Object -TypeName DateTime -ArgumentList $year, (6 + $rng.Next(0, 3)), (1 + $rng.Next(0, 20))); , @($p.Name, $start, $start.AddDays(7 + 7 * $rng.Next(0, 2)), [double](10 + $rng.Next(0, 10))) }
-        Add-Spec $specs ('Abteilungen\Allgemein\{0}_{1}_{2}.xlsx' -f $L.Vacation, $site.Name, $year) 'xlsx' $jan.AddDays(10) $rng @{ Model = (Get-XlsxTable -Title $L.Vacation -Author $boss -Ci $ci -Sheet $L.Vacation -Header @($L.Name, $L.From, $L.To, 'Tage') -Rows @($vacRows) -Widths @(24, 12, 12, 8) -Formats @($null, 'Date', 'Date', 'Integer')) }
+        Add-Spec $specs ('{0}\{1}_{2}_{3}.xlsx' -f $Paths.General, $L.Vacation, $site.Name, $year) 'xlsx' $jan.AddDays(10) $rng @{ Model = (Get-XlsxTable -Title $L.Vacation -Author $boss -Ci $ci -Sheet $L.Vacation -Header @($L.Name, $L.From, $L.To, $L.Days) -Rows @($vacRows) -Widths @(24, 12, 12, 8) -Formats @($null, 'Date', 'Date', 'Integer')) }
     }
     # Richtlinien: Fassungen verteilt ueber die Jahre
     $index = 0
@@ -4715,26 +4779,28 @@ function Build-YearUnit {
         if (($Unit.YearsAgo + $index) % 3 -ne 0) { continue }
         $date = Get-WorkDate $jan $rng 20 200
         $model = Get-PolicyModel $policy $boss $date (1 + [Math]::Floor((12 - $Unit.YearsAgo) / 3))
-        $path = 'Abteilungen\{0}\{1}\{2}_{3}' -f $policy.Folder, $F.Policies, (ConvertTo-SafeName $policy.Title), $year
+        # Policy.Folder ist ein Schluessel in Paths (General, IT ...).
+        $path = '{0}\{1}\{2}_{3}' -f $Paths[$policy.Folder], $F.Policies, (ConvertTo-SafeName $policy.Title), $year
         Add-Spec $specs "$path.docx" 'docx' $date $rng @{ Model = $model }
         if ($rng.Next(0, 2) -eq 0) { Add-Spec $specs "$path.pdf" 'pdf' $date.AddMinutes(20) $rng @{ Model = $model } }
     }
     # Onboarding fuer neue Mitarbeitende des Jahres
     if (@($People | Where-Object { $_.Entry.Year -eq $year }) -and $T.OnboardingSlide) {
-        $onboardingCtx = Get-TextContext -Rng $rng -Date $jan.AddDays(30) -Author (Get-Person 'NPohl' $jan 'Berlin' $rng)
+        $onboardingCtx = Get-TextContext -Rng $rng -Date $jan.AddDays(30) -Author (Get-Person $Roles.Office $jan $HqSite.Name $rng)
         $slides = @(@{ Layout = 'Title'; Title = $L.Welcome; Subtitle = $C.Company.Name }) + @($T.OnboardingSlide | ForEach-Object { @{ Layout = 'Content'; Title = (Expand-SampleText $_.Title $onboardingCtx); Bullets = @(((Expand-SampleText $_.Text $onboardingCtx) -split "`n") | Where-Object { $_ }) } })
-        Add-Spec $specs ('Abteilungen\Allgemein\{0}\{0}_{1}.pptx' -f $F.Onboarding, $year) 'pptx' $jan.AddDays(30) $rng @{ Model = @{ Title = "$($L.Welcome) $year"; Author = (Get-Person 'NPohl' $jan 'Berlin' $rng).Name; Company = $C.Company.Name; Ci = $ci; Wide = $true; Slides = $slides } }
+        Add-Spec $specs ('{0}\{1}\{1}_{2}.pptx' -f $Paths.General, $F.Onboarding, $year) 'pptx' $jan.AddDays(30) $rng @{ Model = @{ Title = "$($L.Welcome) $year"; Author = (Get-Person $Roles.Office $jan $HqSite.Name $rng).Name; Company = $C.Company.Name; Ci = $ci; Wide = $true; Slides = $slides } }
     }
     # Fehlablagen (Uebung Datenklassifizierung): Gehaltsliste ohne Kennzeichnung im Basisordner und im Marketing
     if ($Unit.YearsAgo -le 1) {
         $payRows = foreach ($p in $staff) { $pd = Get-PersonProfile -Key $p.Sam -GivenName $p.GivenName -Surname $p.Surname -BirthYear $p.Born -City $p.Site -Female $p.Female; , @($p.Name, $pd.Iban, [double]$p.Salary) }
-        $payModel = Get-XlsxTable -Title "Gehaltsliste $year" -Author $PeopleBySam['EMustermann'] -Ci $ci -Sheet $L.Payroll -Header @($L.Name, $L.Iban, $L.Gross) -Rows @($payRows) -Widths @(24, 30, 14) -Formats @($null, $null, 'Money') -SumColumn 3
-        Add-Spec $specs ('Home\EMustermann\{0}\Gehaltsliste_{1}.xlsx' -f $F.Documents, $year) 'xlsx' $jan.AddDays(40) $rng @{ Model = $payModel }
-        Add-Spec $specs ('Abteilungen\Marketing\Berlin\Gehaltsliste_{0}_Kopie.xlsx' -f $year) 'copy' $jan.AddDays(41) $rng @{ Source = ('Home\EMustermann\{0}\Gehaltsliste_{1}.xlsx' -f $F.Documents, $year) }
+        $payModel = Get-XlsxTable -Title ('{0} {1}' -f $L.SalaryList, $year) -Author $PeopleBySam[$Roles.ManagingDirector] -Ci $ci -Sheet $L.Payroll -Header @($L.Name, $L.Iban, $L.Gross) -Rows @($payRows) -Widths @(24, 30, 14) -Formats @($null, $null, 'Money') -SumColumn 3
+        $payPath = '{0}\{1}\{2}\{3}_{4}.xlsx' -f $Paths.Home, $Roles.ManagingDirector, $F.Documents, $L.SalaryList, $year
+        Add-Spec $specs $payPath 'xlsx' $jan.AddDays(40) $rng @{ Model = $payModel }
+        Add-Spec $specs ('{0}\{1}\{2}_{3}_{4}.xlsx' -f $Paths.Marketing, $HqSite.Name, $L.SalaryList, $year, $L.CopyFile) 'copy' $jan.AddDays(41) $rng @{ Source = $payPath }
     }
     if ($Unit.YearsAgo -eq 0) {
         $bdayRows = foreach ($p in $staff) { $pd = Get-PersonProfile -Key $p.Sam -GivenName $p.GivenName -Surname $p.Surname -BirthYear $p.Born -City $p.Site -Female $p.Female; , @($p.Name, $pd.Birth, $pd.Street, $pd.City) }
-        Add-Spec $specs ('Home\EMustermann\{0}\{1}.xlsx' -f $F.Private, $L.Birthdays) 'xlsx' $jan.AddDays(12) $rng @{ Model = (Get-XlsxTable -Title $L.Birthdays -Author $PeopleBySam['EMustermann'] -Ci $ci -Sheet $L.Birthdays -Header @($L.Name, $L.BirthDate, $L.Address, '') -Rows @($bdayRows) -Widths @(24, 12, 28, 20) -Formats @($null, 'Date')) }
+        Add-Spec $specs ('{0}\{1}\{2}\{3}.xlsx' -f $Paths.Home, $Roles.ManagingDirector, $F.Private, $L.Birthdays) 'xlsx' $jan.AddDays(12) $rng @{ Model = (Get-XlsxTable -Title $L.Birthdays -Author $PeopleBySam[$Roles.ManagingDirector] -Ci $ci -Sheet $L.Birthdays -Header @($L.Name, $L.BirthDate, $L.Address, '') -Rows @($bdayRows) -Widths @(24, 12, 28, 20) -Formats @($null, 'Date')) }
     }
     , $specs.ToArray()
 }
@@ -4747,8 +4813,8 @@ function Build-EventUnit {
     $date = (New-Object -TypeName DateTime -ArgumentList ($Reference.Year - $timelineEvent.YearsAgo), $timelineEvent.Month, (3 + $rng.Next(0, 20))).AddHours(9 + $rng.Next(0, 6))
     if ($date -ge $Reference) { return , $specs.ToArray() }
     $customer = if ($timelineEvent.Customer) { $C.Customers | Where-Object Short -EQ $timelineEvent.Customer | Select-Object -First 1 } else { $null }
-    $author = Get-Person $(if ($timelineEvent.Event -in 'Scanner', 'FileServer') { 'NPohl' } else { 'MMustermann' }) $date 'Berlin' $rng
-    $ci = Get-DocumentCi $date 'Berlin'
+    $author = Get-Person $(if ($timelineEvent.Event -in 'Scanner', 'FileServer') { $Roles.Office } else { $Roles.Ceo }) $date $HqSite.Name $rng
+    $ci = Get-DocumentCi $date $HqSite.Name
     $ctx = Get-TextContext -Rng $rng -Date $date -Customer $customer -Author $author
     $record = Get-TextRecord -Kind 'Announcement' -Rng $rng -Where @{ Event = $timelineEvent.Event }
     if ($record.Subject) {
@@ -4756,11 +4822,12 @@ function Build-EventUnit {
         $model = Get-DocModel -Title $subject -Author $author -Created $date -Modified $date -Ci $ci -Classification $L.Internal
         Add-Block $model 'Title' @{ Text = $subject }
         Add-Block $model 'Para' @{ Text = (Expand-SampleText $record.Text $ctx) }
-        $path = 'Abteilungen\Allgemein\{0}\{1}\{2:yyyy-MM-dd}_{3}' -f $F.Announcements, $date.Year, $date, (ConvertTo-SafeName $subject)
+        $path = '{0}\{1}\{2}\{3:yyyy-MM-dd}_{4}' -f $Paths.General, $F.Announcements, $date.Year, $date, (ConvertTo-SafeName $subject)
         Add-Spec $specs "$path.docx" 'docx' $date $rng @{ Model = $model }
         Add-Spec $specs "$path.pdf" 'pdf' $date.AddMinutes(10) $rng @{ Model = $model }
     }
-    $agreementTitle = switch ($timelineEvent.Event) { 'Move' { 'Miet' } 'Scanner' { 'Leasing' } 'FrameworkContract' { 'Rahmen' } default { '' } }
+    # Vertrag zum Ereignis: Patterns.Agreements[Event] passt auf den Titel in Texts-Company.Agreement.
+    $agreementTitle = $Patterns.Agreements[$timelineEvent.Event]
     if ($agreementTitle) {
         $agreement = @($T.Agreement | Where-Object { $_.Title -match $agreementTitle }) | Select-Object -First 1
         if ($agreement) {
@@ -4771,7 +4838,7 @@ function Build-EventUnit {
             Add-Block $model 'Sign' @{ Name = $author.Name; Role = $author.Role; Seed = 31 }
             Add-Block $model 'Sign' @{ Name = (Expand-SampleText $agreement.Party $ctx); Seed = 32 }
             $model.Scan = Get-ScanProfile $rng $date
-            Add-Spec $specs ('Abteilungen\Geschaeftsleitung\{0}\{1}_{2:yyyy}.pdf' -f $F.Agreements, (ConvertTo-SafeName $agreement.Title), $date) 'pdf' $date.AddDays(3) $rng @{ Model = $model }
+            Add-Spec $specs ('{0}\{1}\{2}_{3:yyyy}.pdf' -f $Paths.Management, $F.Agreements, (ConvertTo-SafeName $agreement.Title), $date) 'pdf' $date.AddDays(3) $rng @{ Model = $model }
         }
     }
     if ($timelineEvent.Event -eq 'FileServer') {
@@ -4779,25 +4846,25 @@ function Build-EventUnit {
             $model = Get-DocModel -Title $doc.Title -Author $author -Created $date -Modified $date -Ci $ci -SenderKind 'None' -Classification $L.Internal
             Add-Block $model 'Title' @{ Text = $doc.Title }
             Add-Block $model 'Para' @{ Text = (Expand-SampleText $doc.Text $ctx) }
-            Add-Spec $specs ('Abteilungen\IT\{0}\{1}.docx' -f $F.Docs, (ConvertTo-SafeName $doc.Title)) 'docx' (Get-WorkDate $date $rng 0 30) $rng @{ Model = $model }
+            Add-Spec $specs ('{0}\{1}\{2}.docx' -f $Paths.IT, $F.Docs, (ConvertTo-SafeName $doc.Title)) 'docx' (Get-WorkDate $date $rng 0 30) $rng @{ Model = $model }
         }
     }
     if ($timelineEvent.Event -eq 'Anniversary') {
         $anniversaryCtx = Get-TextContext -Rng $rng -Date $date -Author $author
-        $slides = @(@{ Layout = 'Title'; Title = '10 Jahre'; Subtitle = $C.Company.Name }) + @(@($T.KickoffSlide) | Select-Object -First 3 | ForEach-Object { @{ Layout = 'Content'; Title = (Expand-SampleText $_.Title $anniversaryCtx); Bullets = @(((Expand-SampleText $_.Text $anniversaryCtx) -split "`n") | Where-Object { $_ }) } })
-        Add-Spec $specs ('Abteilungen\Allgemein\{0}\10_Jahre_{1}.pptx' -f $F.Events, $C.Company.Short.Replace(' ', '_')) 'pptx' $date $rng @{ Model = @{ Title = '10 Jahre'; Author = $author.Name; Company = $C.Company.Name; Ci = $ci; Wide = $true; Slides = $slides } }
+        $slides = @(@{ Layout = 'Title'; Title = $L.Anniversary; Subtitle = $C.Company.Name }) + @(@($T.KickoffSlide) | Select-Object -First 3 | ForEach-Object { @{ Layout = 'Content'; Title = (Expand-SampleText $_.Title $anniversaryCtx); Bullets = @(((Expand-SampleText $_.Text $anniversaryCtx) -split "`n") | Where-Object { $_ }) } })
+        Add-Spec $specs ('{0}\{1}\{2}_{3}.pptx' -f $Paths.General, $F.Events, $L.Anniversary.Replace(' ', '_'), $C.Company.Short.Replace(' ', '_')) 'pptx' $date $rng @{ Model = @{ Title = $L.Anniversary; Author = $author.Name; Company = $C.Company.Name; Ci = $ci; Wide = $true; Slides = $slides } }
     }
     if ($timelineEvent.Event -eq 'Rebranding') {
-        $hb = Get-DocModel -Title 'Corporate-Design-Handbuch' -Author $PeopleBySam['EMustermann'] -Created $date -Modified $date -Ci $ci -SenderKind 'None' -Classification $L.Internal
-        Add-Block $hb 'Title' @{ Text = 'Corporate-Design-Handbuch' }
+        $hb = Get-DocModel -Title $L.CiHandbook -Author $PeopleBySam[$Roles.ManagingDirector] -Created $date -Modified $date -Ci $ci -SenderKind 'None' -Classification $L.Internal
+        Add-Block $hb 'Title' @{ Text = $L.CiHandbook }
         if ($UseRaster) { $logo = Get-LogoPng $ci 60 200; Add-Block $hb 'Image' @{ Bytes = $logo.Bytes; Format = 'png'; WidthPx = $logo.WidthPx; HeightPx = $logo.HeightPx; WidthCm = 10 } }
-        $hbCtx = Get-TextContext -Rng $rng -Date $date -Author $PeopleBySam['EMustermann']
+        $hbCtx = Get-TextContext -Rng $rng -Date $date -Author $PeopleBySam[$Roles.ManagingDirector]
         foreach ($chapter in @($T.CiHandbook)) { Add-Block $hb 'Heading' @{ Text = (Expand-SampleText $chapter.Title $hbCtx) }; Add-Block $hb 'Para' @{ Text = (Expand-SampleText $chapter.Text $hbCtx) } }
-        $ciFolder = 'Abteilungen\Allgemein\{0}' -f $F.Ci
-        Add-Spec $specs "$ciFolder\Corporate-Design-Handbuch.docx" 'docx' $date $rng @{ Model = $hb }
-        Add-Spec $specs "$ciFolder\Corporate-Design-Handbuch.pdf" 'pdf' $date.AddHours(1) $rng @{ Model = $hb }
-        $slides = @(@{ Layout = 'Title'; Title = 'Unser neuer Auftritt'; Subtitle = $C.Company.Name }) + @($T.CiHandbook | ForEach-Object { @{ Layout = 'Content'; Title = (Expand-SampleText $_.Title $hbCtx); Text = (Expand-SampleText $_.Text $hbCtx) } })
-        Add-Spec $specs "$ciFolder\Corporate-Design-Handbuch.pptx" 'pptx' $date.AddHours(2) $rng @{ Model = @{ Title = 'Corporate Design'; Author = $PeopleBySam['EMustermann'].Name; Company = $C.Company.Name; Ci = $ci; Wide = $true; Slides = $slides } }
+        $ciFile = '{0}\{1}\{2}' -f $Paths.General, $F.Ci, $L.CiHandbook
+        Add-Spec $specs "$ciFile.docx" 'docx' $date $rng @{ Model = $hb }
+        Add-Spec $specs "$ciFile.pdf" 'pdf' $date.AddHours(1) $rng @{ Model = $hb }
+        $slides = @(@{ Layout = 'Title'; Title = $L.NewLook; Subtitle = $C.Company.Name }) + @($T.CiHandbook | ForEach-Object { @{ Layout = 'Content'; Title = (Expand-SampleText $_.Title $hbCtx); Text = (Expand-SampleText $_.Text $hbCtx) } })
+        Add-Spec $specs "$ciFile.pptx" 'pptx' $date.AddHours(2) $rng @{ Model = @{ Title = $L.CiTitle; Author = $PeopleBySam[$Roles.ManagingDirector].Name; Company = $C.Company.Name; Ci = $ci; Wide = $true; Slides = $slides } }
         Build-TemplateSpec $specs $date $ci $rng
     }
     , $specs.ToArray()
@@ -4806,25 +4873,25 @@ function Build-EventUnit {
 function Build-TemplateSpec {
     # Office-Vorlagen der neuen CI (echte Vorlagenformate).
     param($Specs, [datetime] $Date, $Ci, $Rng)
-    $author = $PeopleBySam['VSpula']
-    $folder = 'Abteilungen\Allgemein\{0}' -f $F.Templates
-    $letter = Get-DocModel -Title 'Briefbogen' -Author $author -Created $Date -Modified $Date -Ci $Ci
+    $author = $PeopleBySam[$Roles.Designer]
+    $folder = '{0}\{1}' -f $Paths.General, $F.Templates
+    $letter = Get-DocModel -Title $L.Letterhead -Author $author -Created $Date -Modified $Date -Ci $Ci
     $letter.Template = $true
-    Add-Block $letter 'Address' @{ Lines = @('Firma', 'Name', ('Stra' + [char]0x00DF + 'e'), 'PLZ Ort') }
-    Add-Block $letter 'Info' @{ Rows = [ordered]@{ $L.Date = 'TT.MM.JJJJ' } }
-    Add-Block $letter 'Title' @{ Text = 'Betreff' }
+    Add-Block $letter 'Address' @{ Lines = @($L.TemplateAddress) }
+    Add-Block $letter 'Info' @{ Rows = [ordered]@{ $L.Date = $L.DateMask } }
+    Add-Block $letter 'Title' @{ Text = $L.Subject }
     Add-Block $letter 'Para' @{ Text = ('{0},' -f $L.Salutation) }
-    Add-Block $letter 'Para' @{ Text = 'Text' }
+    Add-Block $letter 'Para' @{ Text = $Office.Text }
     Add-Block $letter 'Para' @{ Text = $L.Regards }
-    Add-Spec $Specs "$folder\Briefbogen.dotx" 'dotx' $Date $Rng @{ Model = $letter }
-    Add-Spec $Specs "$folder\$($L.Presentation).potx" 'potx' $Date $Rng @{ Model = @{ Title = $L.Presentation; Author = $author.Name; Company = $C.Company.Name; Ci = $Ci; Wide = $true; Template = $true; Slides = @(@{ Layout = 'Title'; Title = 'Titel'; Subtitle = 'Untertitel' }, @{ Layout = 'Content'; Title = 'Titel'; Bullets = @('Punkt') }) } }
-    $calc = Get-CalculationModel @(@{ Text = 'Leistung'; Qty = 1; Unit = 'Std.'; Price = 95 }) $L.Calculation $author $Ci
+    Add-Spec $Specs "$folder\$($L.Letterhead).dotx" 'dotx' $Date $Rng @{ Model = $letter }
+    Add-Spec $Specs "$folder\$($L.Presentation).potx" 'potx' $Date $Rng @{ Model = @{ Title = $L.Presentation; Author = $author.Name; Company = $C.Company.Name; Ci = $Ci; Wide = $true; Template = $true; Slides = @(@{ Layout = 'Title'; Title = $Office.Title; Subtitle = $Office.Subtitle }, @{ Layout = 'Content'; Title = $Office.Title; Bullets = @($L.Point) }) } }
+    $calc = Get-CalculationModel @(@{ Text = $L.Description; Qty = 1; Unit = $L.Hour; Price = 95 }) $L.Calculation $author $Ci
     $calc.Template = $true
     Add-Spec $Specs "$folder\$($L.Calculation).xltx" 'xltx' $Date $Rng @{ Model = $calc }
 }
 
 function Build-MeetingUnit {
-    # Teambesprechungen eines Standorts in einem Jahr (alle zwei Wochen), Leitungsrunde monatlich in Berlin.
+    # Teambesprechungen eines Standorts in einem Jahr (alle zwei Wochen).
     param([Parameter(Mandatory)] $Unit)
     $specs = [System.Collections.Generic.List[object]]::new()
     $rng = Get-Rng -Index $Unit.Seed -Salt 701
@@ -4837,13 +4904,13 @@ function Build-MeetingUnit {
                 $keeper = Get-RandomEntry $rng $team
                 $ctx = Get-TextContext -Rng $rng -Date $date -Customer (Get-RandomEntry $rng $C.Customers) -Author $keeper
                 $model = Get-DocModel -Title "$($L.Minutes) $($Unit.Site)" -Author $keeper -Created $date -Modified $date -Ci (Get-DocumentCi $date $Unit.Site) -SenderKind 'None' -Classification $L.Internal
-                Add-Block $model 'Title' @{ Text = ('{0} {1} {2}' -f $L.Minutes, $MidDot, (Format-DateDe $date)) }
+                Add-Block $model 'Title' @{ Text = ('{0} {1} {2}' -f $L.Minutes, $MidDot, (Format-LocalDate $date)) }
                 Add-Block $model 'Info' @{ Rows = [ordered]@{ $L.Attendees = (($team | Select-Object -First 7 | ForEach-Object { $_.Name }) -join ', '); $L.Owner = $keeper.Name } }
                 foreach ($topic in (Get-RandomSubset $rng $T.MinutesTopic (2 + $rng.Next(0, 2)))) {
                     Add-Block $model 'Heading' @{ Text = (Expand-SampleText $topic.Title $ctx) }
                     Add-Block $model 'Para' @{ Text = (Expand-SampleText $topic.Text $ctx) }
                 }
-                $path = Get-AreaPath $date ('Abteilungen\Marketing\{0}\{1}\{2}' -f $Unit.Site, $F.Minutes, $year) ('Marketing\{0}\{1}' -f $Unit.Site, $F.Minutes)
+                $path = Get-AreaPath $date ('{0}\{1}\{2}\{3}' -f $Paths.Marketing, $Unit.Site, $F.Minutes, $year) ('{0}\{1}\{2}' -f $AreaName.Marketing, $Unit.Site, $F.Minutes)
                 Add-Spec $specs ('{0}\{1}_{2:yyyy-MM-dd}.docx' -f $path, $L.Minutes, $date) 'docx' $date.AddHours(2) $rng @{ Model = $model }
             }
         }
@@ -4858,14 +4925,15 @@ function Build-ItUnit {
     $specs = [System.Collections.Generic.List[object]]::new()
     $rng = Get-Rng -Index $Unit.Seed -Salt 801
     $date = $Reference.AddDays(-$rng.Next(20, 90)).Date.AddHours(10)
-    $it = Get-Person 'NPohl' $date 'Berlin' $rng
-    $ci = Get-DocumentCi $date 'Berlin'
-    $devices = foreach ($n in 1..(14 + $rng.Next(0, 10))) { $type = Get-RandomEntry $rng $C.DeviceTypes; , @(('{0}-{1:D3}' -f $(if ($n % 3) { 'BER' } else { 'HAM' }), $n), $type, ('10.0.1.{0}' -f (20 + $n)), $(if ($n % 3) { 'Berlin' } else { 'Hamburg' }), (New-Object -TypeName DateTime -ArgumentList ($Reference.Year - $rng.Next(0, 6)), (1 + $rng.Next(0, 12)), 1)) }
-    Add-Spec $specs ('Abteilungen\IT\{0}\{1}.xlsx' -f $F.Docs, $L.Inventory) 'xlsx' $date $rng @{ Model = (Get-XlsxTable -Title $L.Inventory -Author $it -Ci $ci -Sheet $L.Inventory -Header @($L.Hostname, $L.Device, $L.IpAddress, $L.Location, 'Anschaffung') -Rows @($devices) -Widths @(14, 22, 14, 12, 12) -Formats @($null, $null, $null, $null, 'Date') -Classification $L.Internal) }
+    $it = Get-Person $Roles.Office $date $HqSite.Name $rng
+    $ci = Get-DocumentCi $date $HqSite.Name
+    # Zwei von drei Geraeten stehen in der Zentrale, eines in der Niederlassung (Sites[].Code im Geraetenamen).
+    $devices = foreach ($n in 1..(14 + $rng.Next(0, 10))) { $type = Get-RandomEntry $rng $C.DeviceTypes; $site = if ($n % 3) { $HqSite } else { $BranchSite }; , @(('{0}-{1:D3}' -f $site.Code, $n), $type, ('10.0.1.{0}' -f (20 + $n)), $site.Name, (New-Object -TypeName DateTime -ArgumentList ($Reference.Year - $rng.Next(0, 6)), (1 + $rng.Next(0, 12)), 1)) }
+    Add-Spec $specs ('{0}\{1}\{2}.xlsx' -f $Paths.IT, $F.Docs, $L.Inventory) 'xlsx' $date $rng @{ Model = (Get-XlsxTable -Title $L.Inventory -Author $it -Ci $ci -Sheet $L.Inventory -Header @($L.Hostname, $L.Device, $L.IpAddress, $L.Location, $L.Purchase) -Rows @($devices) -Widths @(14, 22, 14, 12, 12) -Formats @($null, $null, $null, $null, 'Date') -Classification $L.Internal) }
     $licenses = foreach ($s in $C.Software) { , @($s, [double]$rng.Next(2, 18), $Reference.AddDays($rng.Next(-60, 400)).Date) }
-    Add-Spec $specs ('Abteilungen\IT\{0}\{1}.xlsx' -f $F.Docs, $L.LicenseList) 'xlsx' $date $rng @{ Model = (Get-XlsxTable -Title $L.LicenseList -Author $it -Ci $ci -Sheet $L.LicenseList -Header @($L.Product, $L.Licenses, $L.ValidUntil) -Rows @($licenses) -Widths @(26, 10, 14) -Formats @($null, 'Integer', 'Date')) }
-    $creds = foreach ($s in $C.Systems) { , @($s, ('admin{0}' -f $rng.Next(1, 9)), ('{0}{1}!' -f (Get-RandomEntry $rng @('Sommer', 'Agentur', 'Berlin', 'Hafen', 'Kaffee')), (2016 + $rng.Next(0, 9)))) }
-    Add-Spec $specs ('Abteilungen\IT\{0}_alt.xlsx' -f $L.Credentials) 'xlsx' $date.AddYears(-3) $rng @{ Model = (Get-XlsxTable -Title $L.Credentials -Author $it -Ci (Get-DocumentCi $date.AddYears(-3) 'Berlin') -Sheet $L.Credentials -Header @($L.System, $L.Username, $L.Password) -Rows @($creds) -Widths @(30, 16, 20)) }
+    Add-Spec $specs ('{0}\{1}\{2}.xlsx' -f $Paths.IT, $F.Docs, $L.LicenseList) 'xlsx' $date $rng @{ Model = (Get-XlsxTable -Title $L.LicenseList -Author $it -Ci $ci -Sheet $L.LicenseList -Header @($L.Product, $L.Licenses, $L.ValidUntil) -Rows @($licenses) -Widths @(26, 10, 14) -Formats @($null, 'Integer', 'Date')) }
+    $creds = foreach ($s in $C.Systems) { , @($s, ('admin{0}' -f $rng.Next(1, 9)), ('{0}{1}!' -f (Get-RandomEntry $rng $C.PasswordWords), (2016 + $rng.Next(0, 9)))) }
+    Add-Spec $specs ('{0}\{1}_{2}.xlsx' -f $Paths.IT, $L.Credentials, $L.OldFile) 'xlsx' $date.AddYears(-3) $rng @{ Model = (Get-XlsxTable -Title $L.Credentials -Author $it -Ci (Get-DocumentCi $date.AddYears(-3) $HqSite.Name) -Sheet $L.Credentials -Header @($L.System, $L.Username, $L.Password) -Rows @($creds) -Widths @(30, 16, 20)) }
     if ($UseRaster) { Build-BrandingSpec $specs $date $rng }
     , $specs.ToArray()
 }
@@ -4873,9 +4941,9 @@ function Build-ItUnit {
 function Build-BrandingSpec {
     # Entra- und Edge-Branding aus derselben CI wie die Dokumente; Groessen und Grenzen nach Microsoft Learn.
     param($Specs, [datetime] $Date, $Rng)
-    $ciNew = Get-DocumentCi $Reference 'Berlin'
-    $ciOld = Get-DocumentCi $Founded 'Berlin'
-    $folder = 'Abteilungen\IT\{0}' -f $F.Branding
+    $ciNew = Get-DocumentCi $Reference $HqSite.Name
+    $ciOld = Get-DocumentCi $Founded $HqSite.Name
+    $folder = '{0}\{1}' -f $Paths.IT, $F.Branding
     $signet = { param($x, $y, $s, $neg) $p = Get-SignetPolygon $x $y $s; @(@{ K = 'Poly'; Points = $p[0]; Color = $(if ($neg) { @(255, 255, 255) } else { $ciNew.Primary }) }, @{ K = 'Poly'; Points = $p[1]; Color = $ciNew.Accent }) }
     $add = {
         param($name, $image, [int] $maxKb)
@@ -4884,21 +4952,22 @@ function Build-BrandingSpec {
     }
     & $add 'favicon_32x32.png' (Export-BrandingPng -Items (& $signet 2 2 28 $false) -Width 32 -Height 32) 5
     $bg = @(@{ K = 'Texture'; X = 0; Y = 0; W = 1920; H = 1080; Kind = 'Clouds'; Seed = 5; Color = $ciNew.Primary; Color2 = (Get-MixedColor $ciNew.Primary @(255, 255, 255) 0.35) }, @{ K = 'Rect'; X = 0; Y = 1000; W = 1920; H = 80; Color = $ciNew.Accent })
-    & $add 'hintergrund_1920x1080.jpg' (Export-BrandingPng -Items $bg -Width 1920 -Height 1080 -Format 'jpeg' -Quality 70) 300
-    & $add 'logo_kopfzeile_245x36.png' (Export-BrandingPng -Items (Get-LogoItem 4 2 32 $ciNew) -Width 245 -Height 36) 10
+    & $add ('{0}_1920x1080.jpg' -f $L.BrandBackground) (Export-BrandingPng -Items $bg -Width 1920 -Height 1080 -Format 'jpeg' -Quality 70) 300
+    & $add ('{0}_245x36.png' -f $L.BrandHeader) (Export-BrandingPng -Items (Get-LogoItem 4 2 32 $ciNew) -Width 245 -Height 36) 10
     & $add 'logo_banner_245x36.png' (Export-BrandingPng -Items (Get-LogoItem 4 2 32 $ciNew) -Width 245 -Height 36) 50
-    & $add 'logo_quadrat_hell.png' (Export-BrandingPng -Items (& $signet 30 30 180 $false) -Width 240 -Height 240 -Background @(255, 255, 255)) 50
-    & $add 'logo_quadrat_dunkel.png' (Export-BrandingPng -Items (& $signet 30 30 180 $true) -Width 240 -Height 240 -Background @(32, 32, 32)) 50
+    & $add ('{0}.png' -f $L.BrandLight) (Export-BrandingPng -Items (& $signet 30 30 180 $false) -Width 240 -Height 240 -Background @(255, 255, 255)) 50
+    & $add ('{0}.png' -f $L.BrandDark) (Export-BrandingPng -Items (& $signet 30 30 180 $true) -Width 240 -Height 240 -Background @(32, 32, 32)) 50
     Add-Spec $Specs "$folder\edge_logo.svg" 'text' $Date $Rng @{ Text = (Get-LogoSvg $ciNew 520 100) }
-    Add-Spec $Specs "$folder\edge_taskleiste.svg" 'text' $Date $Rng @{ Text = (Get-LogoSvg $ciNew 100 100 -SignetOnly) }
-    Add-Spec $Specs "$folder\Logo\Logo_Mustermann_Medien.svg" 'text' $Date $Rng @{ Text = (Get-LogoSvg $ciNew 520 100) }
-    Add-Spec $Specs "$folder\Logo\Logo_Mustermann_Medien_negativ.svg" 'text' $Date $Rng @{ Text = (Get-LogoSvg $ciNew 520 100 -Negative) }
-    Add-Spec $Specs "$folder\Logo\Logo_Mustermann_Medien_1200.png" 'bin' $Date $Rng @{ Bytes = (Get-LogoPng $ciNew 200 300).Bytes }
-    Add-Spec $Specs "$folder\Archiv_alte_CI\Logo_alt_NICHT_VERWENDEN.png" 'bin' $Date.AddYears(-5) $Rng @{ Bytes = (Get-LogoPng $ciOld 120 200).Bytes }
-    foreach ($doc in @(@{ Kind = 'BrandingGuide'; Name = 'Anleitung_Entra-Branding' }, @{ Kind = 'SignInText'; Name = 'Anmeldeseite_Texte' })) {
-        $model = Get-DocModel -Title ($doc.Name -replace '_', ' ') -Author (Get-Person 'NPohl' $Date 'Berlin' $Rng) -Created $Date -Modified $Date -Ci $ciNew -SenderKind 'None' -Classification $L.Internal
+    Add-Spec $Specs ('{0}\{1}.svg' -f $folder, $L.BrandTaskbar) 'text' $Date $Rng @{ Text = (Get-LogoSvg $ciNew 100 100 -SignetOnly) }
+    $logoFile = '{0}\Logo\Logo_{1}' -f $folder, $C.Company.Short.Replace(' ', '_')
+    Add-Spec $Specs "$logoFile.svg" 'text' $Date $Rng @{ Text = (Get-LogoSvg $ciNew 520 100) }
+    Add-Spec $Specs ('{0}_{1}.svg' -f $logoFile, $L.BrandNegative) 'text' $Date $Rng @{ Text = (Get-LogoSvg $ciNew 520 100 -Negative) }
+    Add-Spec $Specs "$($logoFile)_1200.png" 'bin' $Date $Rng @{ Bytes = (Get-LogoPng $ciNew 200 300).Bytes }
+    Add-Spec $Specs ('{0}\{1}.png' -f $folder, $L.BrandOld) 'bin' $Date.AddYears(-5) $Rng @{ Bytes = (Get-LogoPng $ciOld 120 200).Bytes }
+    foreach ($doc in @(@{ Kind = 'BrandingGuide'; Name = $L.BrandGuide }, @{ Kind = 'SignInText'; Name = $L.BrandSignIn })) {
+        $model = Get-DocModel -Title ($doc.Name -replace '_', ' ') -Author (Get-Person $Roles.Office $Date $HqSite.Name $Rng) -Created $Date -Modified $Date -Ci $ciNew -SenderKind 'None' -Classification $L.Internal
         Add-Block $model 'Title' @{ Text = ($doc.Name -replace '_', ' ') }
-        $docCtx = Get-TextContext -Rng $Rng -Date $Date -Author (Get-Person 'NPohl' $Date 'Berlin' $Rng)
+        $docCtx = Get-TextContext -Rng $Rng -Date $Date -Author (Get-Person $Roles.Office $Date $HqSite.Name $Rng)
         foreach ($chapter in @($T[$doc.Kind])) { Add-Block $model 'Heading' @{ Text = (Expand-SampleText $chapter.Title $docCtx) }; Add-Block $model 'Para' @{ Text = (Expand-SampleText $chapter.Text $docCtx) } }
         Add-Spec $Specs "$folder\$($doc.Name).docx" 'docx' $Date $Rng @{ Model = $model }
     }
@@ -4993,7 +5062,7 @@ function Export-Spec {
     if ([IO.File]::Exists($full)) { return (New-Object -TypeName System.IO.FileInfo -ArgumentList $full).Length }
     [void][IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($full))
     $tmp = $full + $TempSuffix
-    $info = @{ Title = ''; Author = $Spec.Author; Creator = 'Layoutprogramm'; Producer = 'PDF-Export'; Created = $Spec.Created; Modified = $Spec.Modified }
+    $info = @{ Title = ''; Author = $Spec.Author; Creator = $L.LayoutApp; Producer = $L.PdfExport; Created = $Spec.Created; Modified = $Spec.Modified }
     switch ($Spec.Kind) {
         { $_ -in 'docx', 'dotx' } { if ($_ -eq 'dotx') { $Spec.Model.Template = $true }; Write-DocxFile -Path $tmp -Model $Spec.Model }
         { $_ -in 'xlsx', 'xltx' } { $Spec.Model.Created = $Spec.Created; $Spec.Model.Modified = $Spec.Modified; if ($_ -eq 'xltx') { $Spec.Model.Template = $true }; Write-XlsxFile -Path $tmp -Model $Spec.Model }
@@ -5001,7 +5070,7 @@ function Export-Spec {
         'pdf' { Export-FlowPdf -Path $tmp -Model $Spec.Model }
         'design' {
             # Druckdaten mit feinem Korn und hoher Qualitaet (gross wie echte Druck-PDFs), Entwuerfe klein.
-            $size = $ShapeSizes[$Spec.Motif.File]
+            $size = $ShapeSizes[$Spec.Motif.Format]
             $info.Title = '{0} {1}' -f $Spec.Motif.Name, $Spec.Customer.Short
             $pageProfile = switch ($Spec.Stage) {
                 'Final' { @{ Dpi = $Spec.Dpi; Quality = 100; Noise = 1 } }
@@ -5014,8 +5083,8 @@ function Export-Spec {
                 $items = switch ($Spec.Motif.Layout) {
                     'Brochure' { Get-BrochurePageItem $Spec.Ctx $Spec.Customer $size.W $size.H $p $pageCount $Spec.Variant $stage $Spec.Seed $Spec.DesignDate }
                     'Web' { Get-WebPageItem $Spec.Ctx $Spec.Customer $size.W $size.H $p $pageCount $stage $Spec.Seed $Spec.DesignDate }
-                    'Series' { Get-DesignItem $Spec.Ctx $Spec.Customer $size.W $size.H (@('A', 'B', 'C')[($p + [int][char]$Spec.Variant) % 3]) $stage ($Spec.Seed * 100 + $p) $Spec.Motif.File $Spec.DesignDate }
-                    default { Get-DesignItem $Spec.Ctx $Spec.Customer $size.W $size.H $Spec.Variant $stage $Spec.Seed $Spec.Motif.File $Spec.DesignDate }
+                    'Series' { Get-DesignItem $Spec.Ctx $Spec.Customer $size.W $size.H (@('A', 'B', 'C')[($p + [int][char]$Spec.Variant) % 3]) $stage ($Spec.Seed * 100 + $p) $Spec.Motif.Format $Spec.DesignDate }
+                    default { Get-DesignItem $Spec.Ctx $Spec.Customer $size.W $size.H $Spec.Variant $stage $Spec.Seed $Spec.Motif.Format $Spec.DesignDate }
                 }
                 if ($Spec.Stage -eq 'Proof') { $items = @($items) + @(Get-ProofItem $size.W $size.H $Spec.Job $p $pageCount $Spec.DesignDate) }
                 @{ W = $size.W; H = $size.H; Items = $items; Profile = $pageProfile }
@@ -5138,7 +5207,7 @@ function Invoke-DuplicatePass {
     $total = ($files | Measure-Object -Property Length -Sum).Sum
     if ($total -ge $TargetBytes) { return $total }
     $sep = [string][IO.Path]::DirectorySeparatorChar
-    $sources = @($files | Where-Object { $_.Length -gt 50KB -and $_.FullName -notmatch ('\{0}Home\{0}' -f $sep) } | Sort-Object FullName)
+    $sources = @($files | Where-Object { $_.Length -gt 50KB -and $_.FullName -notmatch ('\{0}{1}\{0}' -f $sep, [regex]::Escape($Paths.Home)) } | Sort-Object FullName)
     $homes = @($People | Where-Object { $_.Lab })
     $rng = Get-Rng -Index 99 -Salt 99
     $attempts = 0
@@ -5147,10 +5216,10 @@ function Invoke-DuplicatePass {
         $src = $sources[$rng.Next(0, $sources.Count)]
         $relative = $src.FullName.Substring($TargetPath.Length).TrimStart('\', '/')
         $kind = $rng.Next(0, 10)
-        $target = if ($kind -lt 3) { Join-SamplePath $TargetPath ('Home\{0}\{1}\{2}' -f (Get-RandomEntry $rng $homes).Sam, $F.Documents, $src.Name) }
+        $target = if ($kind -lt 3) { Join-SamplePath $TargetPath ('{0}\{1}\{2}\{3}' -f $Paths.Home, (Get-RandomEntry $rng $homes).Sam, $F.Documents, $src.Name) }
         elseif ($kind -lt 5) { Join-Path $src.DirectoryName ($L.Copy + $src.Name) }
-        elseif ($kind -lt 6) { Join-Path $src.DirectoryName ('{0}_alt{1}' -f [IO.Path]::GetFileNameWithoutExtension($src.Name), $src.Extension) }
-        else { Join-SamplePath $TargetPath ('Archiv\{0}_{1:yyyy-MM-dd}\{2}' -f $F.Backup, (Get-BackupDate $src.LastWriteTime), $relative) }
+        elseif ($kind -lt 6) { Join-Path $src.DirectoryName ('{0}_{1}{2}' -f [IO.Path]::GetFileNameWithoutExtension($src.Name), $L.OldFile, $src.Extension) }
+        else { Join-SamplePath $TargetPath ('{0}\{1}_{2:yyyy-MM-dd}\{3}' -f $Paths.Archive, $F.Backup, (Get-BackupDate $src.LastWriteTime), $relative) }
         if ([IO.File]::Exists($target)) { continue }
         [void][IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($target))
         [IO.File]::Copy($src.FullName, $target)
@@ -5199,7 +5268,7 @@ function Initialize-Generator {
     if ($Worker -lt 0) { [IO.File]::WriteAllText($PlanFile, (@{ Reference = $Reference.ToString('yyyy-MM-dd'); Seed = $Seed } | ConvertTo-Json)) }
     Import-SampleCorpus
     Initialize-World
-    $script:CompanyIban = Get-Iban (Get-Rng -Index 2 -Salt 9)
+    $script:CompanyIban = Get-NationalId 'Iban' (Get-Rng -Index 2 -Salt 9)
     if ($UseRaster) { Initialize-Raster }
 }
 

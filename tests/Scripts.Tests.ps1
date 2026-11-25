@@ -523,6 +523,11 @@ Describe 'Beispieldokumente (Korpus, Artefakte, Generator)' {
         $generatorPath = Join-Path $repoRoot 'scripts/New-SampleDocuments.ps1'
         $generatorText = [IO.File]::ReadAllText($generatorPath)
         $rebuild = 'tools/Build-SampleArtifacts.ps1 ausfuehren und die Artefakte committen'
+        # Wie tools/Build-SampleArtifacts.ps1: ohne Kommentarzeilen und Einrueckung.
+        function Get-MinifiedCorpusText([string] $Path) {
+            $text = [IO.File]::ReadAllText($Path).Replace("`r`n", "`n")
+            (($text -split "`n") | Where-Object { $_ -notmatch '^\s*#' } | ForEach-Object { $_.TrimStart() }) -join "`n"
+        }
     }
 
     It 'SampleCorpus.gz passt in die userData und entspricht den Quellen' {
@@ -531,7 +536,12 @@ Describe 'Beispieldokumente (Korpus, Artefakte, Generator)' {
         $json = [Text.Encoding]::UTF8.GetString((Expand-GzipByte $bytes)) | ConvertFrom-Json
         @($json.PSObject.Properties.Name) | Should -Be @($corpusFiles.Name) -Because $rebuild
         foreach ($file in $corpusFiles) {
-            $json.($file.Name) | Should -BeExactly ([IO.File]::ReadAllText($file.FullName).Replace("`r`n", "`n")) -Because $rebuild
+            $json.($file.Name) | Should -BeExactly (Get-MinifiedCorpusText $file.FullName) -Because $rebuild
+            # Das Kuerzen darf die Daten nicht aendern (z. B. eingerueckte Zeilen in mehrzeiligen Texten).
+            $minified = Join-Path $TestDrive $file.Name
+            [IO.File]::WriteAllText($minified, $json.($file.Name), (New-Object -TypeName System.Text.UTF8Encoding -ArgumentList $true))
+            (Import-PowerShellDataFile -Path $minified | ConvertTo-Json -Depth 30 -Compress) |
+                Should -BeExactly (Import-PowerShellDataFile -Path $file.FullName | ConvertTo-Json -Depth 30 -Compress) -Because "$($file.Name) ohne Kommentare und Einrueckung"
         }
     }
 
@@ -545,7 +555,9 @@ Describe 'Beispieldokumente (Korpus, Artefakte, Generator)' {
 
     It 'laedt alle Korpus-Dateien und kennt die Pflichtbereiche des Drehbuchs' {
         foreach ($file in $corpusFiles) { { Import-PowerShellDataFile -Path $file.FullName } | Should -Not -Throw -Because $file.Name }
-        foreach ($key in 'Company', 'Ci', 'Timeline', 'Employees', 'Customers', 'Suppliers', 'Shops', 'Motifs', 'Labels', 'FolderNames') {
+        foreach ($key in 'Company', 'Ci', 'Timeline', 'Employees', 'Customers', 'Suppliers', 'Shops', 'Motifs', 'Labels', 'FolderNames',
+            'Locale', 'Paths', 'Roles', 'Departments', 'Industries', 'Patterns', 'Office',
+            'BirthPlaces', 'LocalCities', 'Phases', 'WebMenu', 'CardBookings', 'PasswordWords', 'NoteNames') {
             $company.Keys | Should -Contain $key
         }
         # Drehbuch und LabUsers.psd1 beschreiben dieselben Lab-Benutzer.
@@ -581,7 +593,47 @@ Describe 'Beispieldokumente (Korpus, Artefakte, Generator)' {
             $company.FolderNames.Keys | Should -Contain $key
         }
         $shapes = [regex]::Match($generatorText, '(?s)\$ShapeSizes = @\{.*?\n\}').Value
-        foreach ($motif in $company.Motifs) { $shapes | Should -Match ("'?{0}'?\s*=\s*@\{{" -f [regex]::Escape($motif.File)) }
+        foreach ($motif in $company.Motifs) { $shapes | Should -Match ("'?{0}'?\s*=\s*@\{{" -f [regex]::Escape($motif.Format)) }
+    }
+
+    It 'findet jeden Schluessel der sprachabhaengigen Bereiche im Drehbuch' {
+        # Zugriff im Generator -> Bereich in Company.psd1 (AreaName hat dieselben Schluessel wie Paths).
+        $sections = [ordered]@{
+            '$Locale.' = 'Locale'; '$Paths.' = 'Paths'; '$AreaName.' = 'Paths'; '$Roles.' = 'Roles'; '$Office.' = 'Office'; '$Patterns.' = 'Patterns'
+            '$C.Departments.' = 'Departments'; '$C.Company.' = 'Company'
+        }
+        foreach ($prefix in $sections.Keys) {
+            $keys = @([regex]::Matches($generatorText, ('{0}([A-Za-z]+)' -f [regex]::Escape($prefix))) | ForEach-Object { $_.Groups[1].Value } | Where-Object { $_ -cnotin 'Keys', 'Values', 'Count' } | Select-Object -Unique)
+            $keys | Should -Not -BeNullOrEmpty -Because "der Generator nutzt $prefix"
+            foreach ($key in $keys) { $company[$sections[$prefix]].Keys | Should -Contain $key -Because "$prefix$key" }
+        }
+        foreach ($layout in 'Title', 'Content', 'ImageRight', 'ImageFull', 'Section', 'Closing') { $company.Office.Layouts.Keys | Should -Contain $layout }
+        foreach ($site in 'HQ', 'Branch') { @($company.Company.Sites.Key) | Should -Contain $site }
+        foreach ($site in $company.Company.Sites) { foreach ($key in 'Key', 'Code', 'Name', 'City', 'Dial') { $site.Keys | Should -Contain $key } }
+        foreach ($sam in $company.Roles.Values) { @($company.Employees.Sam) | Should -Contain $sam }
+        @($company.Suppliers | Where-Object { $_.Role -eq 'TaxAdvisor' }) | Should -HaveCount 1
+    }
+
+    It 'nutzt sprachneutrale IDs fuer Abteilungen, Branchen, Richtlinien und Werbemittel' {
+        foreach ($employee in $company.Employees) { $company.Departments.Keys | Should -Contain $employee.Department -Because $employee.Sam }
+        $textFiles = ($corpusFiles | Where-Object Name -Like 'Texts-*' | ForEach-Object { [IO.File]::ReadAllText($_.FullName) }) -join "`n"
+        $industries = @($company.Customers.Industry) + @([regex]::Matches($textFiles, "Industry = '([^']+)'") | ForEach-Object { $_.Groups[1].Value })
+        foreach ($industry in $industries | Select-Object -Unique) { $company.Industries.Keys | Should -Contain $industry }
+        $texture = [regex]::Match($generatorText, '\$IndustryTexture = @\{[^\n]*\}').Value
+        foreach ($industry in $company.Industries.Keys) { $texture | Should -Match ("\b{0} = '" -f $industry) }
+        $texts = Import-PowerShellDataFile -Path (Join-Path $corpusDir 'Texts-Company.psd1')
+        foreach ($policy in $texts.Policy) {
+            $company.Paths.Keys | Should -Contain $policy.Folder -Because $policy.Title
+            $company.Labels.Keys | Should -Contain $policy.Classification -Because $policy.Title
+        }
+    }
+
+    It 'legt nur in Ordner aus FileServer.psd1 ab (Paths)' {
+        $folders = @($fileServer.Folders.Path)
+        $targets = @($company.Paths.Values) + @($company.Company.Sites | ForEach-Object { '{0}\{1}' -f $company.Paths.Marketing, $_.Name })
+        foreach ($path in $targets) {
+            @($folders | Where-Object { $path -eq $_ -or $path.StartsWith($_ + '\') }) | Should -Not -BeNullOrEmpty -Because "$path fehlt in FileServer.psd1"
+        }
     }
 
     It 'legt die Altlasten in Ordner, die der Generator befuellt' {

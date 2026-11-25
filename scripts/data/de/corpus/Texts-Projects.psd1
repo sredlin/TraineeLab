@@ -28,162 +28,162 @@ Wir freuen uns auf die Zusammenarbeit.' }
         @{ Text = 'Sobald Sie den Auftrag bestätigen, schicken wir Ihnen einen Terminplan und die Liste der Unterlagen, die wir von Ihnen brauchen. Am schnellsten geht es, wenn Logo, Texte und Bilder bis {Termin} bei uns sind.' }
     )
     BriefingBackground = @(
-        @{ Industry = 'Handel'; Text = 'Das Geschäft lebt von Laufkundschaft. Seit dem Umbau der Straße kommen weniger Leute vorbei. Das Sortiment an {Produkt} ist gewachsen, aber kaum jemand weiß davon.' }
-        @{ Industry = 'Gastronomie'; Text = 'Mittags ist es voll, abends bleiben Tische leer. Die neue Saisonkarte startet im {Monat}, der Lieferdienst läuft seit einem Jahr, ist aber kaum bekannt.' }
-        @{ Industry = 'Hotellerie'; Text = 'Im Sommer ist das Haus ausgebucht, von November bis März liegt die Auslastung bei rund {Prozent} Prozent. Die {Produkt} sollen die Nebensaison füllen.' }
-        @{ Industry = 'Handwerk'; Text = 'Die Auftragslage ist gut, das Problem sind die Leute: Zwei Gesellen gehen in Rente, auf die letzte Stellenanzeige kamen drei Bewerbungen. Aufträge werden schon abgelehnt.' }
-        @{ Industry = 'Gesundheit'; Text = 'Mehr Patientinnen und Patienten sollen {Produkt} nutzen. Werbung ist eng geregelt: Das Heilmittelwerbegesetz verbietet Heilversprechen, auch Vorher-nachher-Vergleiche sind tabu.' }
-        @{ Industry = 'Bildung'; Text = 'Die Anmeldezahlen für {Jahr} sind gesunken. Eltern informieren sich fast nur noch online, die Broschüre von vor fünf Jahren zeigt Räume, die es so nicht mehr gibt.' }
-        @{ Industry = 'Freizeit'; Text = 'Von Oktober bis März sind die Kurse voll, im Sommer bricht die Nachfrage um ein Drittel ein. Sommerkurse gibt es, nur weiß das kaum jemand.' }
-        @{ Industry = 'Immobilien'; Text = 'Das Objekt ist zu einem Drittel vermarktet. Die Besichtigungen sind gut besucht, danach kommen zu wenige Reservierungen. Die Exposés sind textlastig und ohne Grundrisse im Anhang.' }
-        @{ Industry = 'Energie'; Text = 'Nach den Preissprüngen der letzten Jahre sind viele Haushalte verunsichert, manche haben den Anbieter schon zweimal gewechselt. {KundeKurz} will mit Vertrauen punkten, nicht mit dem billigsten Tarif.' }
+        @{ Industry = 'Retail'; Text = 'Das Geschäft lebt von Laufkundschaft. Seit dem Umbau der Straße kommen weniger Leute vorbei. Das Sortiment an {Produkt} ist gewachsen, aber kaum jemand weiß davon.' }
+        @{ Industry = 'Hospitality'; Text = 'Mittags ist es voll, abends bleiben Tische leer. Die neue Saisonkarte startet im {Monat}, der Lieferdienst läuft seit einem Jahr, ist aber kaum bekannt.' }
+        @{ Industry = 'Hotel'; Text = 'Im Sommer ist das Haus ausgebucht, von November bis März liegt die Auslastung bei rund {Prozent} Prozent. Die {Produkt} sollen die Nebensaison füllen.' }
+        @{ Industry = 'Crafts'; Text = 'Die Auftragslage ist gut, das Problem sind die Leute: Zwei Gesellen gehen in Rente, auf die letzte Stellenanzeige kamen drei Bewerbungen. Aufträge werden schon abgelehnt.' }
+        @{ Industry = 'Health'; Text = 'Mehr Patientinnen und Patienten sollen {Produkt} nutzen. Werbung ist eng geregelt: Das Heilmittelwerbegesetz verbietet Heilversprechen, auch Vorher-nachher-Vergleiche sind tabu.' }
+        @{ Industry = 'Education'; Text = 'Die Anmeldezahlen für {Jahr} sind gesunken. Eltern informieren sich fast nur noch online, die Broschüre von vor fünf Jahren zeigt Räume, die es so nicht mehr gibt.' }
+        @{ Industry = 'Leisure'; Text = 'Von Oktober bis März sind die Kurse voll, im Sommer bricht die Nachfrage um ein Drittel ein. Sommerkurse gibt es, nur weiß das kaum jemand.' }
+        @{ Industry = 'RealEstate'; Text = 'Das Objekt ist zu einem Drittel vermarktet. Die Besichtigungen sind gut besucht, danach kommen zu wenige Reservierungen. Die Exposés sind textlastig und ohne Grundrisse im Anhang.' }
+        @{ Industry = 'Energy'; Text = 'Nach den Preissprüngen der letzten Jahre sind viele Haushalte verunsichert, manche haben den Anbieter schon zweimal gewechselt. {KundeKurz} will mit Vertrauen punkten, nicht mit dem billigsten Tarif.' }
         @{ Industry = 'IT'; Text = '{KundeKurz} verkauft {Produkt} an Mittelständler, Neukunden kommen fast nur über Empfehlungen. Dazu vier offene Stellen: Fachkräfte sind schwerer zu finden als Kunden.' }
-        @{ Industry = 'Verein'; Text = 'Rund 300 Mitglieder, das Durchschnittsalter steigt. Ohne neue Ehrenamtliche fallen ab der nächsten Saison die Jugendkurse weg, der Vorstand sucht seit einem Jahr eine Kassenwartin.' }
-        @{ Industry = 'Kultur'; Text = 'Die neue Spielzeit beginnt im {Monat}. Der Vorverkauf lief letztes Jahr schleppend, Abos gehen seit drei Jahren zurück, Einzelkarten werden immer kurzfristiger gekauft.' }
+        @{ Industry = 'Club'; Text = 'Rund 300 Mitglieder, das Durchschnittsalter steigt. Ohne neue Ehrenamtliche fallen ab der nächsten Saison die Jugendkurse weg, der Vorstand sucht seit einem Jahr eine Kassenwartin.' }
+        @{ Industry = 'Culture'; Text = 'Die neue Spielzeit beginnt im {Monat}. Der Vorverkauf lief letztes Jahr schleppend, Abos gehen seit drei Jahren zurück, Einzelkarten werden immer kurzfristiger gekauft.' }
         @{ Text = '{KundeKurz} ist in {Stadt} seit Jahren bekannt, wird aber mit dem alten Angebot verbunden. {Produkt} soll nach vorn, ohne Stammkunden zu verprellen.' }
         @{ Text = 'Die letzte Kampagne ({Vortermin}) brachte Reichweite, aber kaum Anfragen. Diesmal soll messbar sein, was ankommt: eigene Landingpage, eigener Code auf jedem Flyer.' }
     )
     BriefingAudience = @(
-        @{ Industry = 'Handel'; Text = 'Kundschaft aus dem Viertel, die zu Fuß oder mit dem Rad vorbeikommt. Will anfassen und beraten werden, vergleicht online Preise, kauft aber gern vor Ort.' }
-        @{ Industry = 'Gastronomie'; Text = 'Berufstätige aus den Büros im Umkreis, die mittags eine halbe Stunde haben. Am Wochenende Familien und Paare, die Zeit mitbringen und Neues probieren.' }
-        @{ Industry = 'Hotellerie'; Text = 'Paare zwischen 35 und 60 mit höchstens zwei Stunden Anfahrt, die kurzfristig für ein oder zwei Nächte buchen. Wichtig sind Ruhe, gutes Frühstück und kein Trubel.' }
-        @{ Industry = 'Handwerk'; Text = 'Zwei Gruppen: Gesellinnen und Gesellen, die wechseln würden, wenn Lohn und Klima stimmen, und Schulabgänger auf Ausbildungssuche. Bei den Jüngeren lesen die Eltern mit.' }
-        @{ Industry = 'Gesundheit'; Text = 'Erwachsene ab 40, die bisher nur bei Beschwerden kommen. Sie sind skeptisch gegenüber Werbung und wollen sachliche Informationen statt Versprechen.' }
-        @{ Industry = 'Bildung'; Text = 'Eltern, die ein Angebot für ihre Kinder suchen, und Erwachsene, die sich neben dem Beruf weiterbilden. Entscheidend sind Uhrzeit, Erreichbarkeit und Preis. Angemeldet wird online.' }
-        @{ Industry = 'Freizeit'; Text = 'Einsteigerinnen und Einsteiger zwischen 20 und 45, die etwas ausprobieren wollen, aber Angst haben, sich zu blamieren. Das Probetraining ist die eigentliche Hürde.' }
-        @{ Industry = 'Immobilien'; Text = 'Paare und kleine Familien mit gutem Einkommen, die seit Monaten suchen. Sie kennen die Preise, lesen Exposés genau und kommen mit Fragenliste zur Besichtigung.' }
-        @{ Industry = 'Energie'; Text = 'Haushalte, die beim Tarifwechsel vorsichtig sind, weil sie schon einmal reingefallen sind. Ein Ansprechpartner vor Ort ist ihnen wichtiger als ein Cent pro Kilowattstunde.' }
+        @{ Industry = 'Retail'; Text = 'Kundschaft aus dem Viertel, die zu Fuß oder mit dem Rad vorbeikommt. Will anfassen und beraten werden, vergleicht online Preise, kauft aber gern vor Ort.' }
+        @{ Industry = 'Hospitality'; Text = 'Berufstätige aus den Büros im Umkreis, die mittags eine halbe Stunde haben. Am Wochenende Familien und Paare, die Zeit mitbringen und Neues probieren.' }
+        @{ Industry = 'Hotel'; Text = 'Paare zwischen 35 und 60 mit höchstens zwei Stunden Anfahrt, die kurzfristig für ein oder zwei Nächte buchen. Wichtig sind Ruhe, gutes Frühstück und kein Trubel.' }
+        @{ Industry = 'Crafts'; Text = 'Zwei Gruppen: Gesellinnen und Gesellen, die wechseln würden, wenn Lohn und Klima stimmen, und Schulabgänger auf Ausbildungssuche. Bei den Jüngeren lesen die Eltern mit.' }
+        @{ Industry = 'Health'; Text = 'Erwachsene ab 40, die bisher nur bei Beschwerden kommen. Sie sind skeptisch gegenüber Werbung und wollen sachliche Informationen statt Versprechen.' }
+        @{ Industry = 'Education'; Text = 'Eltern, die ein Angebot für ihre Kinder suchen, und Erwachsene, die sich neben dem Beruf weiterbilden. Entscheidend sind Uhrzeit, Erreichbarkeit und Preis. Angemeldet wird online.' }
+        @{ Industry = 'Leisure'; Text = 'Einsteigerinnen und Einsteiger zwischen 20 und 45, die etwas ausprobieren wollen, aber Angst haben, sich zu blamieren. Das Probetraining ist die eigentliche Hürde.' }
+        @{ Industry = 'RealEstate'; Text = 'Paare und kleine Familien mit gutem Einkommen, die seit Monaten suchen. Sie kennen die Preise, lesen Exposés genau und kommen mit Fragenliste zur Besichtigung.' }
+        @{ Industry = 'Energy'; Text = 'Haushalte, die beim Tarifwechsel vorsichtig sind, weil sie schon einmal reingefallen sind. Ein Ansprechpartner vor Ort ist ihnen wichtiger als ein Cent pro Kilowattstunde.' }
         @{ Industry = 'IT'; Text = 'Geschäftsführung und IT-Verantwortliche in Firmen mit 20 bis 200 Beschäftigten: wenig Zeit, viel Skepsis. Dazu Fachkräfte, die über einen Wechsel nachdenken.' }
-        @{ Industry = 'Verein'; Text = 'Mitglieder, die wieder mehr mitmachen sollen, und Familien aus der Nachbarschaft, die den Verein nur vom Vorbeigehen kennen.' }
-        @{ Industry = 'Kultur'; Text = 'Stammpublikum über 50, das Abos kauft, und Jüngere, die spontan kommen, wenn sie rechtzeitig davon erfahren. Die zweite Gruppe ist schwerer zu erreichen.' }
+        @{ Industry = 'Club'; Text = 'Mitglieder, die wieder mehr mitmachen sollen, und Familien aus der Nachbarschaft, die den Verein nur vom Vorbeigehen kennen.' }
+        @{ Industry = 'Culture'; Text = 'Stammpublikum über 50, das Abos kauft, und Jüngere, die spontan kommen, wenn sie rechtzeitig davon erfahren. Die zweite Gruppe ist schwerer zu erreichen.' }
         @{ Text = 'Im Mittelpunkt stehen {Zielgruppe}. Daneben Bestandskunden, die {KundeKurz} kennen, aber {Produkt} noch nie ausprobiert haben.' }
         @{ Text = 'Primär {Zielgruppe} im Umkreis von 15 Kilometern um {Stadt}. Nicht im Fokus: Schnäppchenjäger, die nur für den Rabatt kommen und nicht wieder.' }
     )
     ConceptSituation = @(
-        @{ Industry = 'Handel'; Text = 'Gute Lage, aber das Schaufenster wirkt beliebig. Laufkundschaft geht vorbei, weil von außen nicht zu erkennen ist, was es drinnen gibt.' }
-        @{ Industry = 'Gastronomie'; Text = 'Der Mittagstisch trägt den Laden. Saisonkarte und Lieferdienst kennen vor allem die Stammgäste.' }
-        @{ Industry = 'Hotellerie'; Text = 'Sommer voll, Winter halb leer. Die Nebensaison wurde bisher nur über Rabatte beworben, das drückt die Preise.' }
-        @{ Industry = 'Handwerk'; Text = 'Volle Auftragsbücher, zu wenig Personal. Die Stellenanzeigen sehen aus wie die aller anderen Betriebe.' }
-        @{ Industry = 'Gesundheit'; Text = 'Guter Ruf durch Empfehlungen, online kaum sichtbar. Die Werbung muss ohne Heilversprechen auskommen.' }
-        @{ Industry = 'Bildung'; Text = 'Die Anmeldung läuft über ein PDF-Formular, an dem viele Eltern scheitern. Die Website ist auf dem Handy kaum lesbar.' }
-        @{ Industry = 'Freizeit'; Text = 'Starke Wintersaison, schwacher Sommer. Die Kurse sind gut, aber Neue trauen sich nicht hinein.' }
-        @{ Industry = 'Immobilien'; Text = 'Viele Besichtigungen, wenig Abschlüsse. Interessierte vergleichen fünf Objekte, und unser Exposé bleibt nicht hängen.' }
-        @{ Industry = 'Energie'; Text = 'Der Markt ist voller Lockangebote. {KundeKurz} ist nicht der Billigste, aber vor Ort und erreichbar.' }
+        @{ Industry = 'Retail'; Text = 'Gute Lage, aber das Schaufenster wirkt beliebig. Laufkundschaft geht vorbei, weil von außen nicht zu erkennen ist, was es drinnen gibt.' }
+        @{ Industry = 'Hospitality'; Text = 'Der Mittagstisch trägt den Laden. Saisonkarte und Lieferdienst kennen vor allem die Stammgäste.' }
+        @{ Industry = 'Hotel'; Text = 'Sommer voll, Winter halb leer. Die Nebensaison wurde bisher nur über Rabatte beworben, das drückt die Preise.' }
+        @{ Industry = 'Crafts'; Text = 'Volle Auftragsbücher, zu wenig Personal. Die Stellenanzeigen sehen aus wie die aller anderen Betriebe.' }
+        @{ Industry = 'Health'; Text = 'Guter Ruf durch Empfehlungen, online kaum sichtbar. Die Werbung muss ohne Heilversprechen auskommen.' }
+        @{ Industry = 'Education'; Text = 'Die Anmeldung läuft über ein PDF-Formular, an dem viele Eltern scheitern. Die Website ist auf dem Handy kaum lesbar.' }
+        @{ Industry = 'Leisure'; Text = 'Starke Wintersaison, schwacher Sommer. Die Kurse sind gut, aber Neue trauen sich nicht hinein.' }
+        @{ Industry = 'RealEstate'; Text = 'Viele Besichtigungen, wenig Abschlüsse. Interessierte vergleichen fünf Objekte, und unser Exposé bleibt nicht hängen.' }
+        @{ Industry = 'Energy'; Text = 'Der Markt ist voller Lockangebote. {KundeKurz} ist nicht der Billigste, aber vor Ort und erreichbar.' }
         @{ Industry = 'IT'; Text = 'Fachlich stark, nach außen unsichtbar. Weder Kunden noch Bewerber wissen, was {KundeKurz} eigentlich macht.' }
-        @{ Industry = 'Verein'; Text = 'Ein kleiner Kern trägt seit Jahren alles und wird müde. Neue Mitglieder kommen, bleiben aber passiv.' }
-        @{ Industry = 'Kultur'; Text = 'Treues Publikum, das älter wird. Der Vorverkauf startet spät, viele erfahren erst nach der Premiere davon.' }
+        @{ Industry = 'Club'; Text = 'Ein kleiner Kern trägt seit Jahren alles und wird müde. Neue Mitglieder kommen, bleiben aber passiv.' }
+        @{ Industry = 'Culture'; Text = 'Treues Publikum, das älter wird. Der Vorverkauf startet spät, viele erfahren erst nach der Premiere davon.' }
         @{ Text = 'Stand nach dem Briefing am {Vortermin}: bekannte Marke, sinkende Nachfrage nach {Produkt}, {Budget} für das ganze Jahr.' }
         @{ Text = 'Der Wettbewerb wirbt laut und über den Preis. {KundeKurz} hat dafür weder Budget noch Lust, aber die besseren Geschichten.' }
     )
     ConceptIdea = @(
-        @{ Industry = 'Handel'; Text = 'Das Schaufenster wird zum Plakat: jeden Monat ein Stück aus dem Sortiment groß inszeniert, dieselbe Szene parallel auf {Kanal}.' }
-        @{ Industry = 'Gastronomie'; Text = 'Der Mittagstisch bekommt ein Gesicht: Wochenkarte als Plakat, montags auf {Kanal}, Bestellung beim Lieferdienst per QR-Code.' }
-        @{ Industry = 'Hotellerie'; Text = 'Nebensaison als Vorteil: leerer Strand, warme Sauna, kein Gedränge. Statt Rabatt ein Arrangement mit Abendessen.' }
-        @{ Industry = 'Handwerk'; Text = 'Die eigenen Leute sind die Kampagne: echte Gesellinnen und Gesellen mit Namen, Werkzeug und einem Satz, warum sie bleiben.' }
-        @{ Industry = 'Gesundheit'; Text = 'Information statt Versprechen: Was passiert bei {Produkt}, wie lange dauert es, was kostet es. Sachlich, freundlich, ohne Effekte.' }
-        @{ Industry = 'Bildung'; Text = 'Ein ganz normaler Tag, ehrlich fotografiert. Dazu eine Anmeldung, die auf dem Handy in drei Minuten erledigt ist.' }
-        @{ Industry = 'Freizeit'; Text = '„Das erste Mal“ als Leitmotiv: Neue erzählen von ihrer ersten Stunde. Probetraining kostenlos, Sommerkurse draußen.' }
-        @{ Industry = 'Immobilien'; Text = 'Wohnen statt Quadratmeter: Jedes Exposé beginnt mit einem Morgen in der Wohnung, Grundriss und Zahlen folgen auf Seite zwei.' }
-        @{ Industry = 'Energie'; Text = 'Gesichter statt Tarifrechner: Leute aus dem Kundenservice stehen mit Namen für den Tarifwechsel. Wer anruft, landet bei ihnen.' }
+        @{ Industry = 'Retail'; Text = 'Das Schaufenster wird zum Plakat: jeden Monat ein Stück aus dem Sortiment groß inszeniert, dieselbe Szene parallel auf {Kanal}.' }
+        @{ Industry = 'Hospitality'; Text = 'Der Mittagstisch bekommt ein Gesicht: Wochenkarte als Plakat, montags auf {Kanal}, Bestellung beim Lieferdienst per QR-Code.' }
+        @{ Industry = 'Hotel'; Text = 'Nebensaison als Vorteil: leerer Strand, warme Sauna, kein Gedränge. Statt Rabatt ein Arrangement mit Abendessen.' }
+        @{ Industry = 'Crafts'; Text = 'Die eigenen Leute sind die Kampagne: echte Gesellinnen und Gesellen mit Namen, Werkzeug und einem Satz, warum sie bleiben.' }
+        @{ Industry = 'Health'; Text = 'Information statt Versprechen: Was passiert bei {Produkt}, wie lange dauert es, was kostet es. Sachlich, freundlich, ohne Effekte.' }
+        @{ Industry = 'Education'; Text = 'Ein ganz normaler Tag, ehrlich fotografiert. Dazu eine Anmeldung, die auf dem Handy in drei Minuten erledigt ist.' }
+        @{ Industry = 'Leisure'; Text = '„Das erste Mal“ als Leitmotiv: Neue erzählen von ihrer ersten Stunde. Probetraining kostenlos, Sommerkurse draußen.' }
+        @{ Industry = 'RealEstate'; Text = 'Wohnen statt Quadratmeter: Jedes Exposé beginnt mit einem Morgen in der Wohnung, Grundriss und Zahlen folgen auf Seite zwei.' }
+        @{ Industry = 'Energy'; Text = 'Gesichter statt Tarifrechner: Leute aus dem Kundenservice stehen mit Namen für den Tarifwechsel. Wer anruft, landet bei ihnen.' }
         @{ Industry = 'IT'; Text = 'Die Probleme der Kunden zeigen, nicht die Technik: der Drucker am Montag, das Backup am Freitag. {KundeKurz} kümmert sich.' }
-        @{ Industry = 'Verein'; Text = '„Mitmachen in klein“: statt Vorstandsamt eine Stunde im Monat. Jede Aufgabe steht auf einer Karte zum Mitnehmen im Vereinsheim.' }
-        @{ Industry = 'Kultur'; Text = 'Hinter die Bühne schauen: Plakate zeigen Proben und Menschen, die man sonst nie sieht. Der Vorverkaufsstart wird zum eigenen Abend.' }
+        @{ Industry = 'Club'; Text = '„Mitmachen in klein“: statt Vorstandsamt eine Stunde im Monat. Jede Aufgabe steht auf einer Karte zum Mitnehmen im Vereinsheim.' }
+        @{ Industry = 'Culture'; Text = 'Hinter die Bühne schauen: Plakate zeigen Proben und Menschen, die man sonst nie sieht. Der Vorverkaufsstart wird zum eigenen Abend.' }
         @{ Text = 'Leitidee ist der Claim „{Claim}“. Alles, was wir zeigen, muss diesen Satz einlösen, sonst fliegt es raus.' }
         @{ Text = 'Weniger Kanäle, dafür richtig: {Kanal} als Hauptkanal, {Kanal2} begleitend. Alles andere streichen wir für diese Runde.' }
     )
     Claim = @(
-        @{ Industry = 'Handel'; Text = 'Anfassen erlaubt.' }
-        @{ Industry = 'Handel'; Text = 'Gleich um die Ecke.' }
-        @{ Industry = 'Gastronomie'; Text = 'Mittags bei uns.' }
-        @{ Industry = 'Gastronomie'; Text = 'Frisch aus der Saison.' }
-        @{ Industry = 'Hotellerie'; Text = 'Endlich Nebensaison.' }
-        @{ Industry = 'Hotellerie'; Text = 'Zeit hat hier Platz.' }
-        @{ Industry = 'Handwerk'; Text = 'Hände gesucht.' }
-        @{ Industry = 'Handwerk'; Text = 'Gute Arbeit bleibt.' }
-        @{ Industry = 'Gesundheit'; Text = 'Gut beraten.' }
-        @{ Industry = 'Gesundheit'; Text = 'In ruhigen Händen.' }
-        @{ Industry = 'Bildung'; Text = 'Anmelden, ankommen.' }
-        @{ Industry = 'Bildung'; Text = 'Hier lernt man gern.' }
-        @{ Industry = 'Freizeit'; Text = 'Einfach mal anfangen.' }
-        @{ Industry = 'Freizeit'; Text = 'Die Saison gehört dir.' }
-        @{ Industry = 'Immobilien'; Text = 'Erst wohnen, dann rechnen.' }
-        @{ Industry = 'Immobilien'; Text = 'Besichtigen lohnt sich.' }
-        @{ Industry = 'Energie'; Text = 'Strom von nebenan.' }
-        @{ Industry = 'Energie'; Text = 'Wechseln ohne Bauchweh.' }
+        @{ Industry = 'Retail'; Text = 'Anfassen erlaubt.' }
+        @{ Industry = 'Retail'; Text = 'Gleich um die Ecke.' }
+        @{ Industry = 'Hospitality'; Text = 'Mittags bei uns.' }
+        @{ Industry = 'Hospitality'; Text = 'Frisch aus der Saison.' }
+        @{ Industry = 'Hotel'; Text = 'Endlich Nebensaison.' }
+        @{ Industry = 'Hotel'; Text = 'Zeit hat hier Platz.' }
+        @{ Industry = 'Crafts'; Text = 'Hände gesucht.' }
+        @{ Industry = 'Crafts'; Text = 'Gute Arbeit bleibt.' }
+        @{ Industry = 'Health'; Text = 'Gut beraten.' }
+        @{ Industry = 'Health'; Text = 'In ruhigen Händen.' }
+        @{ Industry = 'Education'; Text = 'Anmelden, ankommen.' }
+        @{ Industry = 'Education'; Text = 'Hier lernt man gern.' }
+        @{ Industry = 'Leisure'; Text = 'Einfach mal anfangen.' }
+        @{ Industry = 'Leisure'; Text = 'Die Saison gehört dir.' }
+        @{ Industry = 'RealEstate'; Text = 'Erst wohnen, dann rechnen.' }
+        @{ Industry = 'RealEstate'; Text = 'Besichtigen lohnt sich.' }
+        @{ Industry = 'Energy'; Text = 'Strom von nebenan.' }
+        @{ Industry = 'Energy'; Text = 'Wechseln ohne Bauchweh.' }
         @{ Industry = 'IT'; Text = 'Läuft. Auch montags.' }
         @{ Industry = 'IT'; Text = 'IT, die man nicht bemerkt.' }
-        @{ Industry = 'Verein'; Text = 'Eine Stunde reicht.' }
-        @{ Industry = 'Verein'; Text = 'Mach mit. Bleib dabei.' }
-        @{ Industry = 'Kultur'; Text = 'Der Abend gehört Ihnen.' }
-        @{ Industry = 'Kultur'; Text = 'Neue Spielzeit, gute Plätze.' }
+        @{ Industry = 'Club'; Text = 'Eine Stunde reicht.' }
+        @{ Industry = 'Club'; Text = 'Mach mit. Bleib dabei.' }
+        @{ Industry = 'Culture'; Text = 'Der Abend gehört Ihnen.' }
+        @{ Industry = 'Culture'; Text = 'Neue Spielzeit, gute Plätze.' }
         @{ Text = 'Gut. Von hier.' }
         @{ Text = 'Näher dran.' }
     )
     Motif = @(
-        @{ Industry = 'Handel'; Text = 'Kundin hebt ein Stück aus dem Regal, der Verkäufer zeigt lachend auf ein Detail' }
-        @{ Industry = 'Handel'; Text = 'Blick von der Straße ins beleuchtete Schaufenster, früher Abend, Passanten unscharf' }
-        @{ Industry = 'Gastronomie'; Text = 'Tagesgericht auf dem Holztisch, im Hintergrund die volle Theke zur Mittagszeit' }
-        @{ Industry = 'Gastronomie'; Text = 'Fahrradkurier nimmt an der Tür eine Tüte für den Lieferdienst entgegen' }
-        @{ Industry = 'Hotellerie'; Text = 'Paar im Bademantel mit Tee am Fenster, draußen ein grauer Wintertag' }
-        @{ Industry = 'Hotellerie'; Text = 'Leerer Strand im Morgennebel, zwei Strandkörbe, Dünengras im Vordergrund' }
-        @{ Industry = 'Handwerk'; Text = 'Gesellin misst mit dem Zollstock nach, Bleistift hinterm Ohr, Werkstatt im Hintergrund' }
-        @{ Industry = 'Handwerk'; Text = 'Team in Arbeitskleidung beim Frühstück auf der Ladefläche des Firmenwagens' }
-        @{ Industry = 'Gesundheit'; Text = 'Beratungsgespräch am Empfang, freundlich und ruhig, keine Behandlungsszene' }
-        @{ Industry = 'Gesundheit'; Text = 'Heller Wartebereich mit Pflanze und Blick ins Grüne, niemand wartet' }
-        @{ Industry = 'Bildung'; Text = 'Erwachsene im Kursraum am Abend, eine Teilnehmerin lacht über ihre eigene Notiz' }
-        @{ Industry = 'Bildung'; Text = 'Mutter füllt am Küchentisch die Anmeldung auf dem Handy aus, Kind malt daneben' }
-        @{ Industry = 'Freizeit'; Text = 'Einsteigerin in ihrer ersten Stunde, der Trainer zeigt die Haltung, beide lachen' }
-        @{ Industry = 'Freizeit'; Text = 'Gruppe nach dem Sommerkurs draußen auf der Wiese, verschwitzt und zufrieden' }
-        @{ Industry = 'Immobilien'; Text = 'Morgenlicht in der leeren Küche, eine Kaffeetasse auf der Fensterbank' }
-        @{ Industry = 'Immobilien'; Text = 'Paar mit Exposé in der Hand bei der Besichtigung, sie zeigt auf das große Fenster' }
-        @{ Industry = 'Energie'; Text = 'Kundenberaterin am Telefon, Namensschild lesbar, im Fenster die Stadt' }
-        @{ Industry = 'Energie'; Text = 'Familie am Küchentisch mit der Jahresabrechnung, entspannt statt erschrocken' }
+        @{ Industry = 'Retail'; Text = 'Kundin hebt ein Stück aus dem Regal, der Verkäufer zeigt lachend auf ein Detail' }
+        @{ Industry = 'Retail'; Text = 'Blick von der Straße ins beleuchtete Schaufenster, früher Abend, Passanten unscharf' }
+        @{ Industry = 'Hospitality'; Text = 'Tagesgericht auf dem Holztisch, im Hintergrund die volle Theke zur Mittagszeit' }
+        @{ Industry = 'Hospitality'; Text = 'Fahrradkurier nimmt an der Tür eine Tüte für den Lieferdienst entgegen' }
+        @{ Industry = 'Hotel'; Text = 'Paar im Bademantel mit Tee am Fenster, draußen ein grauer Wintertag' }
+        @{ Industry = 'Hotel'; Text = 'Leerer Strand im Morgennebel, zwei Strandkörbe, Dünengras im Vordergrund' }
+        @{ Industry = 'Crafts'; Text = 'Gesellin misst mit dem Zollstock nach, Bleistift hinterm Ohr, Werkstatt im Hintergrund' }
+        @{ Industry = 'Crafts'; Text = 'Team in Arbeitskleidung beim Frühstück auf der Ladefläche des Firmenwagens' }
+        @{ Industry = 'Health'; Text = 'Beratungsgespräch am Empfang, freundlich und ruhig, keine Behandlungsszene' }
+        @{ Industry = 'Health'; Text = 'Heller Wartebereich mit Pflanze und Blick ins Grüne, niemand wartet' }
+        @{ Industry = 'Education'; Text = 'Erwachsene im Kursraum am Abend, eine Teilnehmerin lacht über ihre eigene Notiz' }
+        @{ Industry = 'Education'; Text = 'Mutter füllt am Küchentisch die Anmeldung auf dem Handy aus, Kind malt daneben' }
+        @{ Industry = 'Leisure'; Text = 'Einsteigerin in ihrer ersten Stunde, der Trainer zeigt die Haltung, beide lachen' }
+        @{ Industry = 'Leisure'; Text = 'Gruppe nach dem Sommerkurs draußen auf der Wiese, verschwitzt und zufrieden' }
+        @{ Industry = 'RealEstate'; Text = 'Morgenlicht in der leeren Küche, eine Kaffeetasse auf der Fensterbank' }
+        @{ Industry = 'RealEstate'; Text = 'Paar mit Exposé in der Hand bei der Besichtigung, sie zeigt auf das große Fenster' }
+        @{ Industry = 'Energy'; Text = 'Kundenberaterin am Telefon, Namensschild lesbar, im Fenster die Stadt' }
+        @{ Industry = 'Energy'; Text = 'Familie am Küchentisch mit der Jahresabrechnung, entspannt statt erschrocken' }
         @{ Industry = 'IT'; Text = 'Techniker tauscht im Serverschrank eine Festplatte, der Kunde schaut über die Schulter' }
         @{ Industry = 'IT'; Text = 'Büro am Montagmorgen, alle arbeiten, niemand steht fluchend am Drucker' }
-        @{ Industry = 'Verein'; Text = 'Ehrenamtliche streichen gemeinsam das Vereinsheim, Kaffeekanne auf der Leiter' }
-        @{ Industry = 'Verein'; Text = 'Ältere Mitglieder zeigen beim Saisonstart den Neuen die Handgriffe' }
-        @{ Industry = 'Kultur'; Text = 'Darstellerin in der Garderobe vor dem Spiegel, kurz vor dem Auftritt' }
-        @{ Industry = 'Kultur'; Text = 'Foyer nach der Vorstellung: Gläser, Gespräche, zusammengerollte Programmhefte' }
+        @{ Industry = 'Club'; Text = 'Ehrenamtliche streichen gemeinsam das Vereinsheim, Kaffeekanne auf der Leiter' }
+        @{ Industry = 'Club'; Text = 'Ältere Mitglieder zeigen beim Saisonstart den Neuen die Handgriffe' }
+        @{ Industry = 'Culture'; Text = 'Darstellerin in der Garderobe vor dem Spiegel, kurz vor dem Auftritt' }
+        @{ Industry = 'Culture'; Text = 'Foyer nach der Vorstellung: Gläser, Gespräche, zusammengerollte Programmhefte' }
         @{ Text = '{Ansprechpartner} vor dem Eingang in {Stadt}, Ärmel hochgekrempelt' }
         @{ Text = '{Produkt} auf neutralem Grund, weich ausgeleuchtet, rechts viel Platz für Text' }
     )
     AdCopy = @(
-        @{ Industry = 'Handel'; Text = 'Kommen Sie rein und nehmen Sie es in die Hand. Unser Sortiment an {Produkt} ist gewachsen, die Beratung ist so gründlich wie immer.' }
-        @{ Industry = 'Gastronomie'; Text = 'Neue Saisonkarte ab {Termin2}. Mittagstisch werktags ab 11:30 Uhr. Keine Zeit? Wir liefern im ganzen Viertel.' }
-        @{ Industry = 'Hotellerie'; Text = 'Drei Nächte, zwei bezahlen: unter der Woche von November bis März. Sauna, Frühstück bis 11 Uhr und ein Strand fast für Sie allein.' }
-        @{ Industry = 'Handwerk'; Text = 'Wir haben mehr Aufträge als Hände. Du kannst dein Handwerk und suchst einen Betrieb, in dem man dich kennt? Ruf an oder komm vorbei.' }
-        @{ Industry = 'Gesundheit'; Text = 'Wir nehmen uns Zeit für Ihre Fragen zu {Produkt}. Termine auch früh morgens und am späten Nachmittag.' }
-        @{ Industry = 'Bildung'; Text = 'Das neue Programm ist da. Anmelden geht jetzt online, auch abends vom Sofa aus. Anmeldeschluss ist der {Termin}.' }
-        @{ Industry = 'Freizeit'; Text = 'Die erste Stunde ist kostenlos, Vorkenntnisse brauchst du keine. Die Sommerkurse starten am {Termin2}.' }
-        @{ Industry = 'Immobilien'; Text = 'Drei Zimmer, Südbalkon, Bezug im {Quartal}. Besichtigung samstags nach Vereinbarung, das Exposé schicken wir Ihnen gern vorab.' }
-        @{ Industry = 'Energie'; Text = 'Der Tarifwechsel dauert zehn Minuten, die Kündigung beim alten Anbieter übernehmen wir. Und bei Fragen sitzen wir hier in {Stadt}.' }
+        @{ Industry = 'Retail'; Text = 'Kommen Sie rein und nehmen Sie es in die Hand. Unser Sortiment an {Produkt} ist gewachsen, die Beratung ist so gründlich wie immer.' }
+        @{ Industry = 'Hospitality'; Text = 'Neue Saisonkarte ab {Termin2}. Mittagstisch werktags ab 11:30 Uhr. Keine Zeit? Wir liefern im ganzen Viertel.' }
+        @{ Industry = 'Hotel'; Text = 'Drei Nächte, zwei bezahlen: unter der Woche von November bis März. Sauna, Frühstück bis 11 Uhr und ein Strand fast für Sie allein.' }
+        @{ Industry = 'Crafts'; Text = 'Wir haben mehr Aufträge als Hände. Du kannst dein Handwerk und suchst einen Betrieb, in dem man dich kennt? Ruf an oder komm vorbei.' }
+        @{ Industry = 'Health'; Text = 'Wir nehmen uns Zeit für Ihre Fragen zu {Produkt}. Termine auch früh morgens und am späten Nachmittag.' }
+        @{ Industry = 'Education'; Text = 'Das neue Programm ist da. Anmelden geht jetzt online, auch abends vom Sofa aus. Anmeldeschluss ist der {Termin}.' }
+        @{ Industry = 'Leisure'; Text = 'Die erste Stunde ist kostenlos, Vorkenntnisse brauchst du keine. Die Sommerkurse starten am {Termin2}.' }
+        @{ Industry = 'RealEstate'; Text = 'Drei Zimmer, Südbalkon, Bezug im {Quartal}. Besichtigung samstags nach Vereinbarung, das Exposé schicken wir Ihnen gern vorab.' }
+        @{ Industry = 'Energy'; Text = 'Der Tarifwechsel dauert zehn Minuten, die Kündigung beim alten Anbieter übernehmen wir. Und bei Fragen sitzen wir hier in {Stadt}.' }
         @{ Industry = 'IT'; Text = 'Ihr Netzwerk läuft, Ihre Daten sind gesichert, und wenn etwas klemmt, ruft Sie jemand mit Namen zurück. {Produkt} für Firmen aus der Region.' }
-        @{ Industry = 'Verein'; Text = 'Wir suchen keine Vorstände, sondern Leute mit einer Stunde Zeit im Monat. Mehr beim Tag der offenen Tür am {Termin2}.' }
-        @{ Industry = 'Kultur'; Text = 'Die neue Spielzeit steht. Vorverkauf ab {Termin2}, Abonnements bis {Termin} noch zum alten Preis.' }
-        @{ Industry = 'Handel'; Text = 'Neu im Laden: {Produkt}. Wir haben es selbst ausprobiert, bevor es ins Regal kam. Testen vor Ort, ohne Kaufzwang.' }
-        @{ Industry = 'Handel'; Text = 'Samstags bis 18 Uhr geöffnet, Parkplätze direkt vor der Tür. Was Sie bis Donnerstag bestellen, liegt am Samstag bereit.' }
-        @{ Industry = 'Gastronomie'; Text = 'Frisch aus dem Ofen ab 7 Uhr. Vorbestellen geht bis 18 Uhr am Vortag, telefonisch oder per Mail.' }
-        @{ Industry = 'Gastronomie'; Text = 'Feiern Sie bei uns: Nebenraum für bis zu 30 Personen, Menü nach Absprache. Fragen Sie nach freien Terminen im {Monat}.' }
-        @{ Industry = 'Hotellerie'; Text = 'Ankommen, Koffer abstellen, ans Wasser gehen. Die Zimmer zur Seeseite sind ab {Termin2} wieder buchbar.' }
-        @{ Industry = 'Hotellerie'; Text = 'Tagungen bis 40 Personen mit Technik, Pausenversorgung und Zimmerkontingent. Eine Ansprechpartnerin für alles.' }
-        @{ Industry = 'Handwerk'; Text = 'Termin in der Werkstatt meist innerhalb einer Woche. Kostenvoranschlag vorher, Abrechnung nach Aufwand, keine Überraschungen.' }
-        @{ Industry = 'Handwerk'; Text = 'Ausbildung bei uns heißt: ab dem ersten Tag mit auf der Baustelle. Bewerben bis {Termin}, Praktikum jederzeit.' }
-        @{ Industry = 'Gesundheit'; Text = 'Neue Patientinnen und Patienten sind willkommen. Den ersten Termin vergeben wir innerhalb von zwei Wochen, auch online.' }
-        @{ Industry = 'Gesundheit'; Text = 'Barrierefreier Zugang, Aufzug im Haus, Parkplätze im Hof. Bitte bringen Sie Ihre Versichertenkarte mit.' }
-        @{ Industry = 'Bildung'; Text = 'Kurse am Vormittag, am Abend und am Wochenende, in Gruppen mit höchstens zwölf Teilnehmenden.' }
-        @{ Industry = 'Bildung'; Text = 'Ermäßigung für Studierende und Rentner. Viele Kurse sind als Bildungsurlaub anerkannt, fragen Sie uns.' }
-        @{ Industry = 'Freizeit'; Text = 'Kinder bis sechs Jahre frei, Geschwister zahlen die Hälfte. Leihausrüstung gibt es vor Ort.' }
-        @{ Industry = 'Freizeit'; Text = 'Geöffnet bei jedem Wetter, Halle und Außenbereich. Gutscheine an der Kasse und online.' }
-        @{ Industry = 'Immobilien'; Text = 'Neubau nach aktuellem Effizienzstandard, Fertigstellung im {Quartal}. Noch vier Wohnungen frei, Grundrisse auf Anfrage.' }
-        @{ Industry = 'Immobilien'; Text = 'Sie wollen verkaufen? Wir bewerten Ihre Immobilie kostenlos und sagen Ihnen ehrlich, was realistisch ist.' }
-        @{ Industry = 'Energie'; Text = 'Strom aus der Region, Preisgarantie für 24 Monate. Den Abschlag passen Sie online an, jederzeit.' }
-        @{ Industry = 'Energie'; Text = 'Störung? Unsere Hotline ist rund um die Uhr besetzt, und zwar mit Leuten aus {Stadt}.' }
+        @{ Industry = 'Club'; Text = 'Wir suchen keine Vorstände, sondern Leute mit einer Stunde Zeit im Monat. Mehr beim Tag der offenen Tür am {Termin2}.' }
+        @{ Industry = 'Culture'; Text = 'Die neue Spielzeit steht. Vorverkauf ab {Termin2}, Abonnements bis {Termin} noch zum alten Preis.' }
+        @{ Industry = 'Retail'; Text = 'Neu im Laden: {Produkt}. Wir haben es selbst ausprobiert, bevor es ins Regal kam. Testen vor Ort, ohne Kaufzwang.' }
+        @{ Industry = 'Retail'; Text = 'Samstags bis 18 Uhr geöffnet, Parkplätze direkt vor der Tür. Was Sie bis Donnerstag bestellen, liegt am Samstag bereit.' }
+        @{ Industry = 'Hospitality'; Text = 'Frisch aus dem Ofen ab 7 Uhr. Vorbestellen geht bis 18 Uhr am Vortag, telefonisch oder per Mail.' }
+        @{ Industry = 'Hospitality'; Text = 'Feiern Sie bei uns: Nebenraum für bis zu 30 Personen, Menü nach Absprache. Fragen Sie nach freien Terminen im {Monat}.' }
+        @{ Industry = 'Hotel'; Text = 'Ankommen, Koffer abstellen, ans Wasser gehen. Die Zimmer zur Seeseite sind ab {Termin2} wieder buchbar.' }
+        @{ Industry = 'Hotel'; Text = 'Tagungen bis 40 Personen mit Technik, Pausenversorgung und Zimmerkontingent. Eine Ansprechpartnerin für alles.' }
+        @{ Industry = 'Crafts'; Text = 'Termin in der Werkstatt meist innerhalb einer Woche. Kostenvoranschlag vorher, Abrechnung nach Aufwand, keine Überraschungen.' }
+        @{ Industry = 'Crafts'; Text = 'Ausbildung bei uns heißt: ab dem ersten Tag mit auf der Baustelle. Bewerben bis {Termin}, Praktikum jederzeit.' }
+        @{ Industry = 'Health'; Text = 'Neue Patientinnen und Patienten sind willkommen. Den ersten Termin vergeben wir innerhalb von zwei Wochen, auch online.' }
+        @{ Industry = 'Health'; Text = 'Barrierefreier Zugang, Aufzug im Haus, Parkplätze im Hof. Bitte bringen Sie Ihre Versichertenkarte mit.' }
+        @{ Industry = 'Education'; Text = 'Kurse am Vormittag, am Abend und am Wochenende, in Gruppen mit höchstens zwölf Teilnehmenden.' }
+        @{ Industry = 'Education'; Text = 'Ermäßigung für Studierende und Rentner. Viele Kurse sind als Bildungsurlaub anerkannt, fragen Sie uns.' }
+        @{ Industry = 'Leisure'; Text = 'Kinder bis sechs Jahre frei, Geschwister zahlen die Hälfte. Leihausrüstung gibt es vor Ort.' }
+        @{ Industry = 'Leisure'; Text = 'Geöffnet bei jedem Wetter, Halle und Außenbereich. Gutscheine an der Kasse und online.' }
+        @{ Industry = 'RealEstate'; Text = 'Neubau nach aktuellem Effizienzstandard, Fertigstellung im {Quartal}. Noch vier Wohnungen frei, Grundrisse auf Anfrage.' }
+        @{ Industry = 'RealEstate'; Text = 'Sie wollen verkaufen? Wir bewerten Ihre Immobilie kostenlos und sagen Ihnen ehrlich, was realistisch ist.' }
+        @{ Industry = 'Energy'; Text = 'Strom aus der Region, Preisgarantie für 24 Monate. Den Abschlag passen Sie online an, jederzeit.' }
+        @{ Industry = 'Energy'; Text = 'Störung? Unsere Hotline ist rund um die Uhr besetzt, und zwar mit Leuten aus {Stadt}.' }
         @{ Industry = 'IT'; Text = 'Neue Arbeitsplätze an einem Tag eingerichtet, Daten übernommen, Altgeräte fachgerecht entsorgt.' }
         @{ Industry = 'IT'; Text = 'Fernwartung innerhalb von 30 Minuten, vor Ort am selben Tag im Stadtgebiet. Monatlicher Festpreis.' }
-        @{ Industry = 'Verein'; Text = 'Training dienstags und donnerstags ab 18 Uhr, Probetraining jederzeit. Beitrag 8 Euro im Monat.' }
-        @{ Industry = 'Verein'; Text = 'Sommerfest am {Termin2}: Flohmarkt, Kuchenbuffet und Turnier für alle. Helferinnen und Helfer gesucht.' }
-        @{ Industry = 'Kultur'; Text = 'Sonntags Familienvorstellung um 15 Uhr. Kinder zahlen 5 Euro, Erwachsene 12 Euro.' }
-        @{ Industry = 'Kultur'; Text = 'Führungen hinter die Kulissen an jedem ersten Samstag im Monat. Anmeldung an der Theaterkasse.' }
+        @{ Industry = 'Club'; Text = 'Training dienstags und donnerstags ab 18 Uhr, Probetraining jederzeit. Beitrag 8 Euro im Monat.' }
+        @{ Industry = 'Club'; Text = 'Sommerfest am {Termin2}: Flohmarkt, Kuchenbuffet und Turnier für alle. Helferinnen und Helfer gesucht.' }
+        @{ Industry = 'Culture'; Text = 'Sonntags Familienvorstellung um 15 Uhr. Kinder zahlen 5 Euro, Erwachsene 12 Euro.' }
+        @{ Industry = 'Culture'; Text = 'Führungen hinter die Kulissen an jedem ersten Samstag im Monat. Anmeldung an der Theaterkasse.' }
         @{ Text = '{Claim} {Produkt} von {KundeKurz}, mitten in {Stadt}. Der Kaffee steht schon da.' }
         @{ Text = 'Seit Jahren in {Stadt}, und trotzdem kennen uns noch nicht alle. Ändern wir das: {Produkt}, ehrlich beraten und fair berechnet.' }
     )

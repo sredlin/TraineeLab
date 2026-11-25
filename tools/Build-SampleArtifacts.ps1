@@ -5,6 +5,8 @@
 .DESCRIPTION
     - scripts/SampleCorpus.<Sprache>.gz: gzip-JSON { "<Datei>.psd1": "<Inhalt>" } aus scripts/data/<Sprache>/corpus/*.psd1,
       ein Paket je Sprache. Gelangt als userData auf die FS-VM (Grenze 64 KB Base64, also hoechstens 48 KB gzip).
+      Platz sparen: ohne Kommentarzeilen und Einrueckung, gzip mit hoechster Kompression (braucht PowerShell 7;
+      Windows PowerShell 5.1 auf der VM entpackt das normal).
     - scripts/Start-SampleDocuments.ps1: Startskript mit dem gzip-gepackten Generator
       scripts/New-SampleDocuments.ps1. Spart rund zwei Drittel der Groesse im Run Command.
 
@@ -24,18 +26,20 @@ $scripts = Join-Path $repoRoot 'scripts'
 function ConvertTo-GzipByte {
     param([Parameter(Mandatory)][byte[]] $Bytes)
     $buffer = New-Object -TypeName System.IO.MemoryStream
-    $gzip = New-Object -TypeName System.IO.Compression.GZipStream -ArgumentList $buffer, ([IO.Compression.CompressionLevel]::Optimal)
+    $gzip = New-Object -TypeName System.IO.Compression.GZipStream -ArgumentList $buffer, ([IO.Compression.CompressionLevel]::SmallestSize)
     $gzip.Write($Bytes, 0, $Bytes.Length)
     $gzip.Dispose()
     , $buffer.ToArray()
 }
 
-# Korpus je Sprache (scripts/data/<Sprache>/corpus): Dateien sortiert, Inhalt ohne BOM, Zeilenenden LF.
+# Korpus je Sprache (scripts/data/<Sprache>/corpus): Dateien sortiert, Inhalt ohne BOM, Zeilenenden LF,
+# ohne Kommentarzeilen und Einrueckung (gleiche Regel im Pester-Test; der Test prueft auch, dass die Daten gleich bleiben).
 foreach ($languageDir in Get-ChildItem -Path (Join-Path $scripts 'data') -Directory | Sort-Object -Property Name) {
     $language = $languageDir.Name
     $corpus = [ordered]@{}
     foreach ($file in Get-ChildItem -Path (Join-Path $languageDir.FullName 'corpus') -Filter '*.psd1' -File | Sort-Object -Property Name) {
-        $corpus[$file.Name] = [IO.File]::ReadAllText($file.FullName).Replace("`r`n", "`n")
+        $text = [IO.File]::ReadAllText($file.FullName).Replace("`r`n", "`n")
+        $corpus[$file.Name] = (($text -split "`n") | Where-Object { $_ -notmatch '^\s*#' } | ForEach-Object { $_.TrimStart() }) -join "`n"
     }
     $json = $corpus | ConvertTo-Json -Compress
     $corpusGzip = ConvertTo-GzipByte ([Text.Encoding]::UTF8.GetBytes($json))

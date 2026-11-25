@@ -14,17 +14,71 @@
         VatId    = 'USt-IdNr. DE000000000'
         Managers = 'Geschäftsführung: Max Mustermann, Erika Mustermann'
         Support  = '+49 30 23125-777'
+        # Logo der neuen CI: Wortmarke in zwei Zeilen.
+        Wordmark = @('Mustermann', 'Medien')
+        # Key: HQ = Zentrale, Branch = Niederlassung. Code = Kuerzel in Geraetenamen, Dial = Durchwahl ({0} = Nebenstelle).
         Sites    = @(
-            @{ Name = 'Berlin'; Street = 'Weg 1'; OldStreet = 'Kastanienallee 8'; PostalCode = '10117'; City = 'Berlin'; Phone = '+49 30 23125-000'; Fax = '+49 30 23125-099'; OpenedYearsAgo = 12; Lead = 'MMustermann' }
-            @{ Name = 'Hamburg'; Street = 'Ring 1'; PostalCode = '20257'; City = 'Hamburg'; Phone = '+49 40 66969-000'; Fax = '+49 40 66969-099'; OpenedYearsAgo = 7; Lead = 'CHerz' }
+            @{ Key = 'HQ'; Code = 'BER'; Name = 'Berlin'; Street = 'Weg 1'; OldStreet = 'Kastanienallee 8'; PostalCode = '10117'; City = 'Berlin'; Phone = '+49 30 23125-000'; Fax = '+49 30 23125-099'; Dial = '+49 30 23125-{0:D3}'; OpenedYearsAgo = 12; Lead = 'MMustermann' }
+            @{ Key = 'Branch'; Code = 'HAM'; Name = 'Hamburg'; Street = 'Ring 1'; PostalCode = '20257'; City = 'Hamburg'; Phone = '+49 40 66969-000'; Fax = '+49 40 66969-099'; Dial = '+49 40 66969-{0:D3}'; OpenedYearsAgo = 7; Lead = 'CHerz' }
         )
+    }
+
+    # Sprache und Land. Country waehlt die Erzeugung von Steuer-ID, Sozialversicherungs-, Ausweisnummer und IBAN.
+    # Money: {0} = Betrag im Format N2 der Culture. Vat, Mileage (je Entfernungseinheit), Allowance, Tax, Social: Saetze.
+    # Mobiles: Format mit {0} = Min + Zufall unter Span. PostalCodes: Ort = @(Format, Min, Anzahl), sonst PostalCode.
+    Locale        = @{
+        Culture = 'de-DE'; Country = 'DE'; Date = 'dd.MM.yyyy'; ReceiptDate = 'dd.MM.yyyy  HH:mm'; Money = '{0} €'; ListSeparator = ';'; PdfZone = '+01''00'''
+        XlsxDate = 'dd\.mm\.yyyy'; XlsxMoney = '#,##0.00 [$€-407]'
+        Vat = 0.19; Mileage = 0.3; Distance = 'km'; Allowance = 28; Tax = 0.14; Social = 0.205
+        Salutations = @{ Frau = 'Sehr geehrte Frau'; Herr = 'Sehr geehrter Herr' }
+        Mobiles = @(@{ Format = '+49 171 39200{0:D2}'; Min = 12; Span = 88 }, @{ Format = '+49 176 040690{0:D2}'; Min = 0; Span = 100 })
+        PostalCodes = @{ Berlin = @('{0}', 10115, 2400); Hamburg = @('{0}', 20095, 2600); Potsdam = @('{0}', 14467, 10) }; PostalCode = '12345'
+        TaxClasses = @('I', 'I', 'III', 'IV', 'IV', 'V')
+        # Musterausweis: diese Person erhaelt die amtliche Musternummer und dieses Geburtsdatum.
+        Specimen = @{ Name = 'Erika Mustermann'; Birth = '1964-08-12' }
+    }
+
+    # Freigabepfade relativ zu Root aus FileServer.psd1 (Test). Im Archiv heisst ein Bereich wie der letzte Pfadteil.
+    Paths         = @{
+        Management = 'Abteilungen\Geschaeftsleitung'; Marketing = 'Abteilungen\Marketing'; Accounting = 'Abteilungen\Buchhaltung'; HR = 'Abteilungen\Personal'
+        Sales = 'Abteilungen\Vertrieb'; IT = 'Abteilungen\IT'; General = 'Abteilungen\Allgemein'; Projects = 'Projekte'; Home = 'Home'; Scans = 'Scans'; Archive = 'Archiv'
+    }
+
+    # Wer welche Aufgabe im Drehbuch hat (SamAccountName aus Employees).
+    Roles         = @{ Ceo = 'MMustermann'; ManagingDirector = 'EMustermann'; Accountant = 'DHoffmann'; Office = 'NPohl'; Designer = 'VSpula'; PrivateFiles = 'JFrick'; Intern = 'PPraktikant' }
+
+    # Anzeigenamen der IDs in Employees.Department und Customers.Industry bzw. Texts-*.Industry.
+    Departments   = @{ Management = 'Geschäftsleitung'; Marketing = 'Marketing'; Accounting = 'Buchhaltung'; HR = 'Personal'; Sales = 'Vertrieb'; IT = 'IT' }
+    Industries    = @{ Retail = 'Handel'; Hospitality = 'Gastronomie'; Hotel = 'Hotellerie'; Crafts = 'Handwerk'; Health = 'Gesundheit'; Education = 'Bildung'; Leisure = 'Freizeit'; RealEstate = 'Immobilien'; Energy = 'Energie'; IT = 'IT'; Club = 'Verein'; Culture = 'Kultur' }
+
+    # Regulaere Ausdruecke auf Vornamen, Kontakte, Projektnamen und Texte. Seasons: erster Treffer bestimmt den Startmonat (+ Zufall unter Spread).
+    Patterns      = @{
+        Female = '(a|e|ine|ia|ja)$'; AcademicTitle = '^(Dr\.|Prof\.)$'; Report = 'Kampagne|Aktion|Mailing|Social|Saison|Neujahr'; Thanks = 'Danke'; Invitation = 'Einladung'
+        Agreements = @{ Move = 'Miet'; Scanner = 'Leasing'; FrameworkContract = 'Rahmen' }
+        Seasons = @(
+            @{ Match = 'Weihnacht'; Month = 9; Spread = 2 }
+            @{ Match = 'Fr.hjahr|Saisonstart'; Month = 1; Spread = 2 }
+            @{ Match = 'Sommer|Hoffest|Bierfest'; Month = 4; Spread = 2 }
+            @{ Match = 'Neujahr'; Month = 11 }
+            @{ Match = 'Spielzeit|Programmheft'; Month = 5; Spread = 2 }
+        )
+    }
+
+    # Namen in Office-Dateien wie in der deutschen Oberflaeche (Folienmaster, Platzhalter, Standardblatt).
+    Office        = @{
+        Picture = 'Grafik'; Sheet = 'Tabelle'; Title = 'Titel'; Subtitle = 'Untertitel'; Content = 'Inhalt'; Text = 'Text'; Image = 'Bild'
+        TitlePlaceholder = 'Titelplatzhalter'; TextPlaceholder = 'Textplatzhalter'; SlideImage = 'Folienbildplatzhalter'; Notes = 'Notizenplatzhalter'
+        MasterTitle = 'Mastertitelformat bearbeiten'; MasterText = 'Mastertextformat bearbeiten'; Levels = @('Zweite Ebene', 'Dritte Ebene', 'Vierte Ebene', 'Fünfte Ebene')
+        AccentBar = 'Akzentbalken'; AccentLine = 'Akzentlinie'; TitleArea = 'Titelflaeche'; TitleBar = 'Titelbalken'; Band = 'Band'
+        Footer = 'Fusszeile'; FooterCompany = 'Fusszeile Firma'; Marking = 'Kennzeichnung'; Sender = 'Absender'
+        Layouts = @{ Title = 'Titelfolie'; Content = 'Titel und Inhalt'; ImageRight = 'Text und Bild'; ImageFull = 'Bild ganzseitig'; Section = 'Abschnitt'; Closing = 'Abschluss' }
     }
 
     # Corporate Identity vor und nach dem Rebranding. Farben RGB, Schriften muessen unter Windows vorhanden sein.
     Ci            = @{
         RebrandYearsAgo = 4
         New             = @{ Primary = @(0, 84, 97); Accent = @(232, 119, 34); Light = @(242, 242, 242); Dark = @(51, 51, 51); Font = 'Arial'; TitleFont = 'Segoe UI'; Mark = 'Signet' }
-        Old             = @{ Primary = @(128, 30, 40); Accent = @(166, 140, 110); Light = @(246, 241, 234); Dark = @(40, 40, 40); Font = 'Times New Roman'; TitleFont = 'Georgia'; Mark = 'Wortmarke' }
+        Old             = @{ Primary = @(128, 30, 40); Accent = @(166, 140, 110); Light = @(246, 241, 234); Dark = @(40, 40, 40); Font = 'Times New Roman'; TitleFont = 'Georgia'; Mark = 'Wordmark' }
     }
 
     # Firmenereignisse; Christmas und Summer wiederholen sich jedes Jahr.
@@ -46,26 +100,26 @@
     # Ergaenzt LabUsers.psd1 (gleiche SamAccountName) und nennt ehemalige Mitarbeitende.
     # Entry/Leave = Jahre vor dem Stichtag, Leave 0 = noch da. Salary = Monatsbrutto in Euro.
     Employees     = @(
-        @{ Sam = 'MMustermann'; Role = 'Geschäftsführer'; Department = 'Geschaeftsleitung'; Site = 'Berlin'; Entry = 12; Leave = 0; Salary = 7800; Born = 1971; Grade = 1 }
-        @{ Sam = 'EMustermann'; Role = 'Geschäftsführerin Marketing'; Department = 'Geschaeftsleitung'; Site = 'Berlin'; Entry = 12; Leave = 0; Salary = 7600; Born = 1974; Grade = 1 }
+        @{ Sam = 'MMustermann'; Role = 'Geschäftsführer'; Department = 'Management'; Site = 'Berlin'; Entry = 12; Leave = 0; Salary = 7800; Born = 1971; Grade = 1 }
+        @{ Sam = 'EMustermann'; Role = 'Geschäftsführerin Marketing'; Department = 'Management'; Site = 'Berlin'; Entry = 12; Leave = 0; Salary = 7600; Born = 1974; Grade = 1 }
         @{ Sam = 'JDoe'; Role = 'Leiter Marketing'; Department = 'Marketing'; Site = 'Berlin'; Entry = 12; Leave = 0; Salary = 5400; Born = 1983; Grade = 1 }
         @{ Sam = 'KAnders'; Role = 'Grafiker'; Department = 'Marketing'; Site = 'Berlin'; Entry = 10; Leave = 0; Salary = 3900; Born = 1986; Grade = 2 }
         @{ Sam = 'VSpula'; Role = 'Grafikerin'; Department = 'Marketing'; Site = 'Berlin'; Entry = 8; Leave = 0; Salary = 3800; Born = 1990; Grade = 1 }
         @{ Sam = 'LMayer'; Role = 'Junior-Grafikerin'; Department = 'Marketing'; Site = 'Berlin'; Entry = 2; Leave = 0; Salary = 2900; Born = 2001; Grade = 2 }
-        @{ Sam = 'CHerz'; Role = 'Leitung Hamburg'; Department = 'Geschaeftsleitung'; Site = 'Hamburg'; Entry = 7; Leave = 0; Salary = 5900; Born = 1979; Grade = 1 }
+        @{ Sam = 'CHerz'; Role = 'Leitung Hamburg'; Department = 'Management'; Site = 'Hamburg'; Entry = 7; Leave = 0; Salary = 5900; Born = 1979; Grade = 1 }
         @{ Sam = 'WErnst'; Role = 'Senior-Grafiker'; Department = 'Marketing'; Site = 'Hamburg'; Entry = 7; Leave = 0; Salary = 4600; Born = 1966; Grade = 2 }
         @{ Sam = 'JFrick'; Role = 'Grafiker'; Department = 'Marketing'; Site = 'Hamburg'; Entry = 6; Leave = 0; Salary = 3900; Born = 1988; Grade = 2 }
         @{ Sam = 'SHarz'; Role = 'Grafiker'; Department = 'Marketing'; Site = 'Hamburg'; Entry = 5; Leave = 0; Salary = 3700; Born = 1992; Grade = 2 }
         @{ Sam = 'WLonska'; Role = 'Grafikerin'; Department = 'Marketing'; Site = 'Hamburg'; Entry = 3; Leave = 0; Salary = 3600; Born = 1994; Grade = 1 }
         @{ Sam = 'RJung'; Role = 'Junior-Grafiker'; Department = 'Marketing'; Site = 'Hamburg'; Entry = 1; Leave = 0; Salary = 2800; Born = 2002; Grade = 3 }
-        @{ Sam = 'DHoffmann'; GivenName = 'Dirk'; Surname = 'Hoffmann'; Role = 'Buchhalter (Teilzeit)'; Department = 'Buchhaltung'; Site = 'Berlin'; Entry = 12; Leave = 3; Salary = 2400; Born = 1962; Grade = 1 }
+        @{ Sam = 'DHoffmann'; GivenName = 'Dirk'; Surname = 'Hoffmann'; Role = 'Buchhalter (Teilzeit)'; Department = 'Accounting'; Site = 'Berlin'; Entry = 12; Leave = 3; Salary = 2400; Born = 1962; Grade = 1 }
         @{ Sam = 'TSchneider'; GivenName = 'Tanja'; Surname = 'Schneider'; Role = 'Grafikerin'; Department = 'Marketing'; Site = 'Berlin'; Entry = 11; Leave = 4; Salary = 3500; Born = 1985; Grade = 1 }
-        @{ Sam = 'NPohl'; GivenName = 'Nadine'; Surname = 'Pohl'; Role = 'Office-Managerin'; Department = 'Personal'; Site = 'Berlin'; Entry = 10; Leave = 1; Salary = 3100; Born = 1980; Grade = 2 }
+        @{ Sam = 'NPohl'; GivenName = 'Nadine'; Surname = 'Pohl'; Role = 'Office-Managerin'; Department = 'HR'; Site = 'Berlin'; Entry = 10; Leave = 1; Salary = 3100; Born = 1980; Grade = 2 }
         @{ Sam = 'MBrenner'; GivenName = 'Markus'; Surname = 'Brenner'; Role = 'Texter'; Department = 'Marketing'; Site = 'Berlin'; Entry = 9; Leave = 6; Salary = 3400; Born = 1982; Grade = 2 }
-        @{ Sam = 'SKowalski'; GivenName = 'Svenja'; Surname = 'Kowalski'; Role = 'Projektmanagerin'; Department = 'Vertrieb'; Site = 'Berlin'; Entry = 8; Leave = 2; Salary = 4200; Born = 1987; Grade = 1 }
+        @{ Sam = 'SKowalski'; GivenName = 'Svenja'; Surname = 'Kowalski'; Role = 'Projektmanagerin'; Department = 'Sales'; Site = 'Berlin'; Entry = 8; Leave = 2; Salary = 4200; Born = 1987; Grade = 1 }
         @{ Sam = 'LWeber'; GivenName = 'Lukas'; Surname = 'Weber'; Role = 'Auszubildender Mediengestalter'; Department = 'Marketing'; Site = 'Berlin'; Entry = 6; Leave = 3; Salary = 950; Born = 2001; Grade = 2 }
         @{ Sam = 'JPetersen'; GivenName = 'Jan'; Surname = 'Petersen'; Role = 'Grafiker'; Department = 'Marketing'; Site = 'Hamburg'; Entry = 7; Leave = 5; Salary = 3600; Born = 1984; Grade = 3 }
-        @{ Sam = 'AKraemer'; GivenName = 'Anja'; Surname = 'Krämer'; Role = 'Assistenz Niederlassung'; Department = 'Personal'; Site = 'Hamburg'; Entry = 6; Leave = 2; Salary = 2900; Born = 1978; Grade = 2 }
+        @{ Sam = 'AKraemer'; GivenName = 'Anja'; Surname = 'Krämer'; Role = 'Assistenz Niederlassung'; Department = 'HR'; Site = 'Hamburg'; Entry = 6; Leave = 2; Salary = 2900; Born = 1978; Grade = 2 }
         @{ Sam = 'MAydin'; GivenName = 'Merve'; Surname = 'Aydin'; Role = 'Werkstudentin Social Media'; Department = 'Marketing'; Site = 'Hamburg'; Entry = 4; Leave = 3; Salary = 1100; Born = 1999; Grade = 1 }
         @{ Sam = 'PPraktikant'; GivenName = 'Paul'; Surname = 'Praktikant'; Role = 'Praktikant Marketing'; Department = 'Marketing'; Site = 'Berlin'; Entry = 1; Leave = 0.5; Salary = 600; Born = 2004; Grade = 2 }
     )
@@ -73,41 +127,41 @@
     # Kunden: Since/Until = Jahre vor dem Stichtag (Until 0 = aktiv), Owner = Betreuung (SamAccountName),
     # Colors = zwei Hausfarben (RRGGBB), Yearly = wiederkehrendes Projekt, Projects = typische Projekte.
     Customers     = @(
-        @{ Name = 'Bäckerei Krume & Kruste KG'; Short = 'Krume und Kruste'; Industry = 'Gastronomie'; City = 'Berlin'; Contact = 'Herr Tobias Lenz'; Domain = 'krume-kruste.example.com'; Product = 'Brot aus Natursauerteig'; Since = 12; Until = 0; Owner = 'EMustermann'; Colors = '7A3E1D F2C14E'; Yearly = 'Weihnachtsmailing'; Projects = @('Neueröffnung', 'Sommeraktion') }
-        @{ Name = 'Spreeufer Fahrradmanufaktur GmbH'; Short = 'Spreeufer'; Industry = 'Handel'; City = 'Berlin'; Contact = 'Frau Annika Böhm'; Domain = 'spreeufer-rad.example.com'; Product = 'Lastenräder'; Since = 11; Until = 0; Owner = 'JDoe'; Colors = '1F4E79 F2A900'; Yearly = 'Frühjahrskampagne'; Projects = @('Produktkatalog', 'Messeauftritt', 'Website-Relaunch') }
-        @{ Name = 'Stadtwerke Musterstadt GmbH'; Short = 'Stadtwerke'; Industry = 'Energie'; City = 'Musterstadt'; Contact = 'Frau Dr. Karin Vogt'; Domain = 'stadtwerke-musterstadt.example.org'; Product = 'Ökostromtarife'; Since = 10; Until = 3; Owner = 'MMustermann'; Colors = '00796B FFD54F'; Yearly = 'Kundenmagazin'; Projects = @('Tarifkampagne', 'Imagebroschüre', 'Jahresbericht') }
-        @{ Name = 'Zahnarztpraxis Dr. Weiß'; Short = 'Praxis Weiß'; Industry = 'Gesundheit'; City = 'Berlin'; Contact = 'Frau Dr. Lena Weiß'; Domain = 'praxis-weiss.example.com'; Product = 'Prophylaxe und Zahnreinigung'; Since = 10; Until = 6; Owner = 'KAnders'; Colors = '4FC3F7 FFFFFF'; Projects = @('Praxisflyer', 'Website-Relaunch') }
-        @{ Name = 'Kiezkaffee Rösterei GmbH'; Short = 'Kiezkaffee'; Industry = 'Gastronomie'; City = 'Berlin'; Contact = 'Frau Mira Yilmaz'; Domain = 'kiezkaffee.example.com'; Product = 'Espresso-Röstungen'; Since = 9; Until = 0; Owner = 'VSpula'; Colors = '3E2723 FF8A65'; Yearly = 'Weihnachtsmailing'; Projects = @('Verpackungsdesign', 'Social-Media-Kampagne') }
-        @{ Name = 'Möbelhaus Holzwurm OHG'; Short = 'Holzwurm'; Industry = 'Handel'; City = 'Musterstadt'; Contact = 'Herr Klaus Brandt'; Domain = 'holzwurm-moebel.example.com'; Product = 'Massivholzmöbel'; Since = 9; Until = 4; Owner = 'JDoe'; Colors = '5D4037 A5D6A7'; Projects = @('Prospekt', 'Jubiläumskampagne') }
-        @{ Name = 'Kita Sonnenschein gGmbH'; Short = 'Kita Sonnenschein'; Industry = 'Bildung'; City = 'Berlin'; Contact = 'Frau Sabine Hartmann'; Domain = 'kita-sonnenschein.example.org'; Product = 'Betreuungsplätze'; Since = 8; Until = 0; Owner = 'LMayer'; Colors = 'FFB300 43A047'; Projects = @('Recruiting-Kampagne', 'Elternbroschüre', 'Sommerfest') }
-        @{ Name = 'Grünzeug Gartenbau GmbH'; Short = 'Grünzeug'; Industry = 'Handwerk'; City = 'Berlin'; Contact = 'Herr Marco Fischer'; Domain = 'gruenzeug.example.net'; Product = 'Dachbegrünung'; Since = 8; Until = 0; Owner = 'KAnders'; Colors = '2E7D32 C5E1A5'; Projects = @('Recruiting-Kampagne', 'Fahrzeugbeschriftung', 'Imagebroschüre') }
-        @{ Name = 'Autohaus Ringbahn GmbH'; Short = 'Autohaus Ringbahn'; Industry = 'Handel'; City = 'Berlin'; Contact = 'Herr Stefan Kuhn'; Domain = 'autohaus-ringbahn.example.com'; Product = 'Elektroautos'; Since = 7; Until = 0; Owner = 'JDoe'; Colors = '263238 00BCD4'; Yearly = 'Frühjahrskampagne'; Projects = @('Probefahrt-Aktion', 'Anzeigenserie') }
-        @{ Name = 'Brauhaus Spreegold GmbH'; Short = 'Spreegold'; Industry = 'Gastronomie'; City = 'Berlin'; Contact = 'Herr Lukas Bauer'; Domain = 'spreegold.example.com'; Product = 'Craft-Bier'; Since = 7; Until = 0; Owner = 'KAnders'; Colors = 'B71C1C FFE082'; Yearly = 'Sommeraktion'; Projects = @('Etikettendesign', 'Bierfest') }
-        @{ Name = 'Hotel Elbstrand Möwe GmbH'; Short = 'Hotel Möwe'; Industry = 'Hotellerie'; City = 'Hamburg'; Contact = 'Frau Svenja Petersen'; Domain = 'hotel-moewe.example.com'; Product = 'Wellness-Wochenenden'; Since = 7; Until = 0; Owner = 'CHerz'; Colors = '0D47A1 E3F2FD'; Yearly = 'Sommeraktion'; Projects = @('Website-Relaunch', 'Imagebroschüre') }
-        @{ Name = 'Speicherstadt Teehandel GmbH'; Short = 'Teehandel'; Industry = 'Handel'; City = 'Hamburg'; Contact = 'Frau Hannah Krüger'; Domain = 'speicher-tee.example.com'; Product = 'Teemischungen'; Since = 7; Until = 0; Owner = 'WErnst'; Colors = '33691E D7CCC8'; Yearly = 'Weihnachtsmailing'; Projects = @('Verpackungsdesign', 'Produktkatalog') }
-        @{ Name = 'Segelschule Westwind e. V.'; Short = 'Westwind'; Industry = 'Verein'; City = 'Hamburg'; Contact = 'Herr Ole Hansen'; Domain = 'segelschule-westwind.example.org'; Product = 'Segelkurse'; Since = 6; Until = 0; Owner = 'SHarz'; Colors = '01579B FFFFFF'; Yearly = 'Saisonstart'; Projects = @('Mitgliederwerbung', 'Vereinsheft') }
+        @{ Name = 'Bäckerei Krume & Kruste KG'; Short = 'Krume und Kruste'; Industry = 'Hospitality'; City = 'Berlin'; Contact = 'Herr Tobias Lenz'; Domain = 'krume-kruste.example.com'; Product = 'Brot aus Natursauerteig'; Since = 12; Until = 0; Owner = 'EMustermann'; Colors = '7A3E1D F2C14E'; Yearly = 'Weihnachtsmailing'; Projects = @('Neueröffnung', 'Sommeraktion') }
+        @{ Name = 'Spreeufer Fahrradmanufaktur GmbH'; Short = 'Spreeufer'; Industry = 'Retail'; City = 'Berlin'; Contact = 'Frau Annika Böhm'; Domain = 'spreeufer-rad.example.com'; Product = 'Lastenräder'; Since = 11; Until = 0; Owner = 'JDoe'; Colors = '1F4E79 F2A900'; Yearly = 'Frühjahrskampagne'; Projects = @('Produktkatalog', 'Messeauftritt', 'Website-Relaunch') }
+        @{ Name = 'Stadtwerke Musterstadt GmbH'; Short = 'Stadtwerke'; Industry = 'Energy'; City = 'Musterstadt'; Contact = 'Frau Dr. Karin Vogt'; Domain = 'stadtwerke-musterstadt.example.org'; Product = 'Ökostromtarife'; Since = 10; Until = 3; Owner = 'MMustermann'; Colors = '00796B FFD54F'; Yearly = 'Kundenmagazin'; Projects = @('Tarifkampagne', 'Imagebroschüre', 'Jahresbericht') }
+        @{ Name = 'Zahnarztpraxis Dr. Weiß'; Short = 'Praxis Weiß'; Industry = 'Health'; City = 'Berlin'; Contact = 'Frau Dr. Lena Weiß'; Domain = 'praxis-weiss.example.com'; Product = 'Prophylaxe und Zahnreinigung'; Since = 10; Until = 6; Owner = 'KAnders'; Colors = '4FC3F7 FFFFFF'; Projects = @('Praxisflyer', 'Website-Relaunch') }
+        @{ Name = 'Kiezkaffee Rösterei GmbH'; Short = 'Kiezkaffee'; Industry = 'Hospitality'; City = 'Berlin'; Contact = 'Frau Mira Yilmaz'; Domain = 'kiezkaffee.example.com'; Product = 'Espresso-Röstungen'; Since = 9; Until = 0; Owner = 'VSpula'; Colors = '3E2723 FF8A65'; Yearly = 'Weihnachtsmailing'; Projects = @('Verpackungsdesign', 'Social-Media-Kampagne') }
+        @{ Name = 'Möbelhaus Holzwurm OHG'; Short = 'Holzwurm'; Industry = 'Retail'; City = 'Musterstadt'; Contact = 'Herr Klaus Brandt'; Domain = 'holzwurm-moebel.example.com'; Product = 'Massivholzmöbel'; Since = 9; Until = 4; Owner = 'JDoe'; Colors = '5D4037 A5D6A7'; Projects = @('Prospekt', 'Jubiläumskampagne') }
+        @{ Name = 'Kita Sonnenschein gGmbH'; Short = 'Kita Sonnenschein'; Industry = 'Education'; City = 'Berlin'; Contact = 'Frau Sabine Hartmann'; Domain = 'kita-sonnenschein.example.org'; Product = 'Betreuungsplätze'; Since = 8; Until = 0; Owner = 'LMayer'; Colors = 'FFB300 43A047'; Projects = @('Recruiting-Kampagne', 'Elternbroschüre', 'Sommerfest') }
+        @{ Name = 'Grünzeug Gartenbau GmbH'; Short = 'Grünzeug'; Industry = 'Crafts'; City = 'Berlin'; Contact = 'Herr Marco Fischer'; Domain = 'gruenzeug.example.net'; Product = 'Dachbegrünung'; Since = 8; Until = 0; Owner = 'KAnders'; Colors = '2E7D32 C5E1A5'; Projects = @('Recruiting-Kampagne', 'Fahrzeugbeschriftung', 'Imagebroschüre') }
+        @{ Name = 'Autohaus Ringbahn GmbH'; Short = 'Autohaus Ringbahn'; Industry = 'Retail'; City = 'Berlin'; Contact = 'Herr Stefan Kuhn'; Domain = 'autohaus-ringbahn.example.com'; Product = 'Elektroautos'; Since = 7; Until = 0; Owner = 'JDoe'; Colors = '263238 00BCD4'; Yearly = 'Frühjahrskampagne'; Projects = @('Probefahrt-Aktion', 'Anzeigenserie') }
+        @{ Name = 'Brauhaus Spreegold GmbH'; Short = 'Spreegold'; Industry = 'Hospitality'; City = 'Berlin'; Contact = 'Herr Lukas Bauer'; Domain = 'spreegold.example.com'; Product = 'Craft-Bier'; Since = 7; Until = 0; Owner = 'KAnders'; Colors = 'B71C1C FFE082'; Yearly = 'Sommeraktion'; Projects = @('Etikettendesign', 'Bierfest') }
+        @{ Name = 'Hotel Elbstrand Möwe GmbH'; Short = 'Hotel Möwe'; Industry = 'Hotel'; City = 'Hamburg'; Contact = 'Frau Svenja Petersen'; Domain = 'hotel-moewe.example.com'; Product = 'Wellness-Wochenenden'; Since = 7; Until = 0; Owner = 'CHerz'; Colors = '0D47A1 E3F2FD'; Yearly = 'Sommeraktion'; Projects = @('Website-Relaunch', 'Imagebroschüre') }
+        @{ Name = 'Speicherstadt Teehandel GmbH'; Short = 'Teehandel'; Industry = 'Retail'; City = 'Hamburg'; Contact = 'Frau Hannah Krüger'; Domain = 'speicher-tee.example.com'; Product = 'Teemischungen'; Since = 7; Until = 0; Owner = 'WErnst'; Colors = '33691E D7CCC8'; Yearly = 'Weihnachtsmailing'; Projects = @('Verpackungsdesign', 'Produktkatalog') }
+        @{ Name = 'Segelschule Westwind e. V.'; Short = 'Westwind'; Industry = 'Club'; City = 'Hamburg'; Contact = 'Herr Ole Hansen'; Domain = 'segelschule-westwind.example.org'; Product = 'Segelkurse'; Since = 6; Until = 0; Owner = 'SHarz'; Colors = '01579B FFFFFF'; Yearly = 'Saisonstart'; Projects = @('Mitgliederwerbung', 'Vereinsheft') }
         @{ Name = 'TechNova Systemhaus GmbH'; Short = 'TechNova'; Industry = 'IT'; City = 'Hamburg'; Contact = 'Herr Dennis Wolf'; Domain = 'technova.example.net'; Product = 'IT-Wartungsverträge'; Since = 6; Until = 0; Owner = 'JFrick'; Colors = '311B92 64FFDA'; Projects = @('Messeauftritt', 'Website-Relaunch', 'Recruiting-Kampagne') }
-        @{ Name = 'Optik Klarsicht e. K.'; Short = 'Klarsicht'; Industry = 'Gesundheit'; City = 'Hamburg'; Contact = 'Frau Nina Schulz'; Domain = 'optik-klarsicht.example.com'; Product = 'Gleitsichtbrillen'; Since = 6; Until = 2; Owner = 'WLonska'; Colors = '006064 FFAB91'; Projects = @('Anzeigenserie', 'Neueröffnung') }
-        @{ Name = 'Musikschule Taktvoll'; Short = 'Taktvoll'; Industry = 'Kultur'; City = 'Berlin'; Contact = 'Herr Paul Neumann'; Domain = 'taktvoll.example.org'; Product = 'Instrumentalunterricht'; Since = 6; Until = 0; Owner = 'LMayer'; Colors = '4A148C FFCA28'; Yearly = 'Konzertplakate'; Projects = @('Website-Relaunch') }
-        @{ Name = 'Weingut Sonnenhang'; Short = 'Sonnenhang'; Industry = 'Gastronomie'; City = 'Musterhausen'; Contact = 'Frau Maria Roth'; Domain = 'weingut-sonnenhang.example.net'; Product = 'Riesling'; Since = 5; Until = 0; Owner = 'WErnst'; Colors = '880E4F F8BBD0'; Yearly = 'Weihnachtsmailing'; Projects = @('Etikettendesign', 'Hoffest') }
-        @{ Name = 'Alsterblick Immobilien GmbH'; Short = 'Alsterblick'; Industry = 'Immobilien'; City = 'Hamburg'; Contact = 'Frau Julia Meyer'; Domain = 'alsterblick-immo.example.com'; Product = 'Neubauwohnungen'; Since = 5; Until = 0; Owner = 'CHerz'; Colors = '37474F B0BEC5'; Projects = @('Exposé-Serie', 'Bauschild', 'Website-Relaunch') }
-        @{ Name = 'Fitnessstudio Kraftwerk'; Short = 'Kraftwerk'; Industry = 'Freizeit'; City = 'Berlin'; Contact = 'Herr Timo Schreiber'; Domain = 'kraftwerk-fitness.example.com'; Product = 'Mitgliedschaften'; Since = 5; Until = 1; Owner = 'VSpula'; Colors = '212121 FF3D00'; Yearly = 'Neujahrsaktion'; Projects = @('Social-Media-Kampagne') }
-        @{ Name = 'Biohof Schulte'; Short = 'Biohof Schulte'; Industry = 'Handel'; City = 'Musterhausen'; Contact = 'Herr Jens Schulte'; Domain = 'biohof-schulte.example.org'; Product = 'Gemüsekisten'; Since = 4; Until = 0; Owner = 'KAnders'; Colors = '558B2F FFF59D'; Projects = @('Hofladen-Eröffnung', 'Abo-Kampagne') }
-        @{ Name = 'Theater am Kanal e. V.'; Short = 'Theater am Kanal'; Industry = 'Kultur'; City = 'Berlin'; Contact = 'Frau Leonie Graf'; Domain = 'theater-kanal.example.org'; Product = 'Spielzeit und Abonnements'; Since = 4; Until = 0; Owner = 'EMustermann'; Colors = '000000 E53935'; Yearly = 'Spielzeitheft'; Projects = @('Plakatserie') }
-        @{ Name = 'Physiotherapie Bewegt'; Short = 'Physio Bewegt'; Industry = 'Gesundheit'; City = 'Hamburg'; Contact = 'Herr Malte Jensen'; Domain = 'physio-bewegt.example.com'; Product = 'Rückenkurse'; Since = 4; Until = 0; Owner = 'RJung'; Colors = '00897B FFFFFF'; Projects = @('Praxisflyer', 'Website-Relaunch') }
-        @{ Name = 'Tischlerei Hobelspan GmbH'; Short = 'Hobelspan'; Industry = 'Handwerk'; City = 'Hamburg'; Contact = 'Herr Henning Claasen'; Domain = 'hobelspan.example.net'; Product = 'Einbaumöbel nach Maß'; Since = 3; Until = 0; Owner = 'JFrick'; Colors = '6D4C41 FFCC80'; Projects = @('Recruiting-Kampagne', 'Fahrzeugbeschriftung') }
-        @{ Name = 'Volkshochschule Musterstadt'; Short = 'VHS Musterstadt'; Industry = 'Bildung'; City = 'Musterstadt'; Contact = 'Frau Petra Lindner'; Domain = 'vhs-musterstadt.example.org'; Product = 'Kursprogramm'; Since = 3; Until = 0; Owner = 'VSpula'; Yearly = 'Programmheft'; Colors = 'C62828 ECEFF1'; Projects = @('Anzeigenserie') }
-        @{ Name = 'Solarwerk Nord GmbH'; Short = 'Solarwerk'; Industry = 'Energie'; City = 'Hamburg'; Contact = 'Herr Fabian Ohlsen'; Domain = 'solarwerk-nord.example.com'; Product = 'Balkonkraftwerke'; Since = 3; Until = 0; Owner = 'SHarz'; Colors = 'F9A825 263238'; Projects = @('Tarifkampagne', 'Messeauftritt', 'Social-Media-Kampagne') }
-        @{ Name = 'Kletterhalle Gipfelstürmer'; Short = 'Gipfelstürmer'; Industry = 'Freizeit'; City = 'Berlin'; Contact = 'Frau Jana Wilke'; Domain = 'gipfelstuermer.example.com'; Product = 'Kletterkurse'; Since = 2; Until = 0; Owner = 'LMayer'; Colors = 'FF6F00 37474F'; Projects = @('Neueröffnung', 'Social-Media-Kampagne') }
-        @{ Name = 'Hafenbistro Kombüse'; Short = 'Kombüse'; Industry = 'Gastronomie'; City = 'Hamburg'; Contact = 'Herr Okan Demir'; Domain = 'kombuese.example.com'; Product = 'Fischbrötchen und Mittagstisch'; Since = 2; Until = 0; Owner = 'WLonska'; Colors = '1A237E FFEB3B'; Projects = @('Speisekarte', 'Lieferdienst-Start') }
+        @{ Name = 'Optik Klarsicht e. K.'; Short = 'Klarsicht'; Industry = 'Health'; City = 'Hamburg'; Contact = 'Frau Nina Schulz'; Domain = 'optik-klarsicht.example.com'; Product = 'Gleitsichtbrillen'; Since = 6; Until = 2; Owner = 'WLonska'; Colors = '006064 FFAB91'; Projects = @('Anzeigenserie', 'Neueröffnung') }
+        @{ Name = 'Musikschule Taktvoll'; Short = 'Taktvoll'; Industry = 'Culture'; City = 'Berlin'; Contact = 'Herr Paul Neumann'; Domain = 'taktvoll.example.org'; Product = 'Instrumentalunterricht'; Since = 6; Until = 0; Owner = 'LMayer'; Colors = '4A148C FFCA28'; Yearly = 'Konzertplakate'; Projects = @('Website-Relaunch') }
+        @{ Name = 'Weingut Sonnenhang'; Short = 'Sonnenhang'; Industry = 'Hospitality'; City = 'Musterhausen'; Contact = 'Frau Maria Roth'; Domain = 'weingut-sonnenhang.example.net'; Product = 'Riesling'; Since = 5; Until = 0; Owner = 'WErnst'; Colors = '880E4F F8BBD0'; Yearly = 'Weihnachtsmailing'; Projects = @('Etikettendesign', 'Hoffest') }
+        @{ Name = 'Alsterblick Immobilien GmbH'; Short = 'Alsterblick'; Industry = 'RealEstate'; City = 'Hamburg'; Contact = 'Frau Julia Meyer'; Domain = 'alsterblick-immo.example.com'; Product = 'Neubauwohnungen'; Since = 5; Until = 0; Owner = 'CHerz'; Colors = '37474F B0BEC5'; Projects = @('Exposé-Serie', 'Bauschild', 'Website-Relaunch') }
+        @{ Name = 'Fitnessstudio Kraftwerk'; Short = 'Kraftwerk'; Industry = 'Leisure'; City = 'Berlin'; Contact = 'Herr Timo Schreiber'; Domain = 'kraftwerk-fitness.example.com'; Product = 'Mitgliedschaften'; Since = 5; Until = 1; Owner = 'VSpula'; Colors = '212121 FF3D00'; Yearly = 'Neujahrsaktion'; Projects = @('Social-Media-Kampagne') }
+        @{ Name = 'Biohof Schulte'; Short = 'Biohof Schulte'; Industry = 'Retail'; City = 'Musterhausen'; Contact = 'Herr Jens Schulte'; Domain = 'biohof-schulte.example.org'; Product = 'Gemüsekisten'; Since = 4; Until = 0; Owner = 'KAnders'; Colors = '558B2F FFF59D'; Projects = @('Hofladen-Eröffnung', 'Abo-Kampagne') }
+        @{ Name = 'Theater am Kanal e. V.'; Short = 'Theater am Kanal'; Industry = 'Culture'; City = 'Berlin'; Contact = 'Frau Leonie Graf'; Domain = 'theater-kanal.example.org'; Product = 'Spielzeit und Abonnements'; Since = 4; Until = 0; Owner = 'EMustermann'; Colors = '000000 E53935'; Yearly = 'Spielzeitheft'; Projects = @('Plakatserie') }
+        @{ Name = 'Physiotherapie Bewegt'; Short = 'Physio Bewegt'; Industry = 'Health'; City = 'Hamburg'; Contact = 'Herr Malte Jensen'; Domain = 'physio-bewegt.example.com'; Product = 'Rückenkurse'; Since = 4; Until = 0; Owner = 'RJung'; Colors = '00897B FFFFFF'; Projects = @('Praxisflyer', 'Website-Relaunch') }
+        @{ Name = 'Tischlerei Hobelspan GmbH'; Short = 'Hobelspan'; Industry = 'Crafts'; City = 'Hamburg'; Contact = 'Herr Henning Claasen'; Domain = 'hobelspan.example.net'; Product = 'Einbaumöbel nach Maß'; Since = 3; Until = 0; Owner = 'JFrick'; Colors = '6D4C41 FFCC80'; Projects = @('Recruiting-Kampagne', 'Fahrzeugbeschriftung') }
+        @{ Name = 'Volkshochschule Musterstadt'; Short = 'VHS Musterstadt'; Industry = 'Education'; City = 'Musterstadt'; Contact = 'Frau Petra Lindner'; Domain = 'vhs-musterstadt.example.org'; Product = 'Kursprogramm'; Since = 3; Until = 0; Owner = 'VSpula'; Yearly = 'Programmheft'; Colors = 'C62828 ECEFF1'; Projects = @('Anzeigenserie') }
+        @{ Name = 'Solarwerk Nord GmbH'; Short = 'Solarwerk'; Industry = 'Energy'; City = 'Hamburg'; Contact = 'Herr Fabian Ohlsen'; Domain = 'solarwerk-nord.example.com'; Product = 'Balkonkraftwerke'; Since = 3; Until = 0; Owner = 'SHarz'; Colors = 'F9A825 263238'; Projects = @('Tarifkampagne', 'Messeauftritt', 'Social-Media-Kampagne') }
+        @{ Name = 'Kletterhalle Gipfelstürmer'; Short = 'Gipfelstürmer'; Industry = 'Leisure'; City = 'Berlin'; Contact = 'Frau Jana Wilke'; Domain = 'gipfelstuermer.example.com'; Product = 'Kletterkurse'; Since = 2; Until = 0; Owner = 'LMayer'; Colors = 'FF6F00 37474F'; Projects = @('Neueröffnung', 'Social-Media-Kampagne') }
+        @{ Name = 'Hafenbistro Kombüse'; Short = 'Kombüse'; Industry = 'Hospitality'; City = 'Hamburg'; Contact = 'Herr Okan Demir'; Domain = 'kombuese.example.com'; Product = 'Fischbrötchen und Mittagstisch'; Since = 2; Until = 0; Owner = 'WLonska'; Colors = '1A237E FFEB3B'; Projects = @('Speisekarte', 'Lieferdienst-Start') }
         @{ Name = 'CloudWerk Software GmbH'; Short = 'CloudWerk'; Industry = 'IT'; City = 'Berlin'; Contact = 'Frau Sophie Brandl'; Domain = 'cloudwerk.example.net'; Product = 'Buchhaltungssoftware'; Since = 1; Until = 0; Owner = 'JDoe'; Colors = '1565C0 76FF03'; Projects = @('Website-Relaunch', 'Recruiting-Kampagne') }
-        @{ Name = 'Hausverwaltung Elbblick GmbH'; Short = 'Elbblick'; Industry = 'Immobilien'; City = 'Hamburg'; Contact = 'Herr Torben Rasch'; Domain = 'elbblick-hv.example.com'; Product = 'Mietverwaltung'; Since = 1; Until = 0; Owner = 'RJung'; Colors = '455A64 80CBC4'; Projects = @('Imagebroschüre') }
+        @{ Name = 'Hausverwaltung Elbblick GmbH'; Short = 'Elbblick'; Industry = 'RealEstate'; City = 'Hamburg'; Contact = 'Herr Torben Rasch'; Domain = 'elbblick-hv.example.com'; Product = 'Mietverwaltung'; Since = 1; Until = 0; Owner = 'RJung'; Colors = '455A64 80CBC4'; Projects = @('Imagebroschüre') }
     )
 
-    # Posten: Text|Preis von|Preis bis|Einheit|Menge bis (Menge fehlt = 1)
+    # Posten: Text|Preis von|Preis bis|Einheit|Menge bis (Menge fehlt = 1). Role = TaxAdvisor: Steuerkanzlei (BWA, Entgeltabrechnungen).
     Suppliers     = @(
         @{ Name = 'Nordlicht Druckerei GmbH'; City = 'Hamburg'; Domain = 'nordlicht.example.com'; Items = @('Druck Flyer DIN A5, 4/4-farbig, 135 g/m², 5.000 Stück|180|420|pauschal', 'Druck Plakate DIN A1, 4/0-farbig, 100 Stück|240|560|pauschal', 'Broschüre 16 Seiten DIN A4, Klebebindung, 1.000 Stück|1450|2900|pauschal', 'Visitenkarten 85 x 55 mm, 350 g/m², 250 Stück|29|49|Stk.|6', 'Roll-up 85 x 200 cm inkl. Kassette|89|149|Stk.|3') }
-        @{ Name = 'Steuerkanzlei Hanse'; City = 'Hamburg'; Domain = 'kanzlei-hanse.example.org'; Items = @('Finanzbuchhaltung laut Vereinbarung|380|620|Monat', 'Lohnabrechnung je Mitarbeiter|19|28|Stk.|14', 'Umsatzsteuer-Voranmeldung|65|120|Monat') }
+        @{ Name = 'Steuerkanzlei Hanse'; Role = 'TaxAdvisor'; City = 'Hamburg'; Domain = 'kanzlei-hanse.example.org'; Items = @('Finanzbuchhaltung laut Vereinbarung|380|620|Monat', 'Lohnabrechnung je Mitarbeiter|19|28|Stk.|14', 'Umsatzsteuer-Voranmeldung|65|120|Monat') }
         @{ Name = 'Papierhaus Mitte KG'; City = 'Berlin'; Domain = 'papierhaus-mitte.example.com'; Items = @('Kopierpapier A4, 80 g/m², 5 x 500 Blatt|19|29|Karton|6', 'Toner schwarz für Multifunktionsgerät|69|139|Stk.|3', 'Ordner breit, 10 Stück|18|32|Pack|3', 'Layoutblock A3|6|12|Stk.|8') }
         @{ Name = 'Messebau Elbufer GmbH'; City = 'Hamburg'; Domain = 'messebau-elbufer.example.com'; Items = @('Messestand 12 m², Systembau|2400|4800|pauschal', 'Grafikwand 3 x 2,5 m, bedruckt|680|1250|Stk.|2', 'Auf- und Abbau Messestand|650|1200|pauschal', 'Lagerung Standelemente|45|90|Monat') }
         @{ Name = 'Fotostudio Lichtblick'; City = 'Berlin'; Domain = 'lichtblick-foto.example.com'; Items = @('Fotoshooting Produkt, Tagessatz|950|1400|Tag|2', 'Bildbearbeitung je Motiv|25|60|Stk.|20', 'Nutzungsrechte Print und Online, 2 Jahre|300|900|pauschal') }
@@ -157,22 +211,32 @@
     Software      = @('Office-Paket', 'Bildbearbeitung', 'Layoutprogramm', 'Virenschutz', 'Fernwartung', 'Schriftenpaket', 'Videoschnitt')
     Systems       = @('Webmail', 'Router Büro', 'Social-Media-Konto Agentur', 'Bildagentur Pixelmeer', 'Druckerei-Portal', 'Domain-Verwaltung', 'WLAN Gäste')
     Months        = @('Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember')
+    # Geburtsorte im Personalbogen, Wohnorte im Gewinnspiel, Projektphasen im Zeitplan, Menue im Screendesign,
+    # Kreditkartenposten, Woerter alter Kennwoerter, Dateinamen der Notizen im Basisordner.
+    BirthPlaces   = @('Berlin', 'Hamburg', 'Potsdam', 'Rostock', 'Leipzig', 'Kiel', 'Bremen', 'Musterstadt')
+    LocalCities   = @('Berlin', 'Hamburg', 'Potsdam')
+    Phases        = @('Konzeption', 'Gestaltung', 'Abstimmung', 'Produktion')
+    WebMenu       = @('Start', 'Leistungen', 'Team', 'Aktuelles', 'Kontakt', 'Karriere', 'Presse', 'FAQ')
+    CardBookings  = @('Bildagentur Pixelmeer', 'Hotel am Markt', 'Bahn-Ticket', 'Software-Abo', 'Schriftlizenz', 'Messe-Eintritt')
+    PasswordWords = @('Sommer', 'Agentur', 'Berlin', 'Hafen', 'Kaffee')
+    NoteNames     = @('Notizen', 'ToDo', 'Ideen', 'Wichtig', 'Entwurf', 'Ablage')
     Motifs        = @(
-        @{ Name = 'Flyer DIN A5'; File = 'Flyer'; Shape = 'Portrait' }
-        @{ Name = 'Plakat DIN A1'; File = 'Plakat'; Shape = 'Portrait' }
-        @{ Name = 'Anzeige Lokalzeitung'; File = 'Anzeige'; Shape = 'Portrait' }
-        @{ Name = 'Social-Media-Post'; File = 'Social-Post'; Shape = 'Square' }
-        @{ Name = 'Banner Website'; File = 'Banner'; Shape = 'Landscape' }
+        @{ Name = 'Flyer DIN A5'; Format = 'Flyer'; File = 'Flyer'; Shape = 'Portrait' }
+        @{ Name = 'Plakat DIN A1'; Format = 'Poster'; File = 'Plakat'; Shape = 'Portrait' }
+        @{ Name = 'Anzeige Lokalzeitung'; Format = 'Ad'; File = 'Anzeige'; Shape = 'Portrait' }
+        @{ Name = 'Social-Media-Post'; Format = 'SocialPost'; File = 'Social-Post'; Shape = 'Square' }
+        @{ Name = 'Banner Website'; Format = 'Banner'; File = 'Banner'; Shape = 'Landscape' }
         # Projekttypische Lieferungen: nur, wenn Match auf den Projektnamen passt. Pages = Seiten bzw. Motive der Serie.
-        @{ Name = 'Broschüre DIN A4'; File = 'Broschuere'; Pages = 12; Layout = 'Brochure'; Match = 'brosch|katalog|bericht|heft|prospekt|speisekarte|exposé' }
-        @{ Name = 'Messewand 3 x 2,5 m'; File = 'Messewand'; Match = 'messe' }
-        @{ Name = 'Bauschild 3 x 2 m'; File = 'Bauschild'; Match = 'bauschild' }
-        @{ Name = 'Fahrzeugbeschriftung Seitenansicht'; File = 'Fahrzeug'; Match = 'fahrzeug' }
-        @{ Name = 'Stanzbogen DIN A2'; File = 'Stanzbogen'; Match = 'verpackung|etikett' }
-        @{ Name = 'Plakatserie DIN A1'; File = 'Plakatserie'; Pages = 4; Layout = 'Series'; Match = 'plakatserie|kampagne|eröffnung' }
-        @{ Name = 'Anzeigenserie'; File = 'Anzeigenserie'; Pages = 4; Layout = 'Series'; Match = 'anzeigenserie|recruiting|tarif' }
-        @{ Name = 'Social-Media-Serie'; File = 'Social-Serie'; Pages = 12; Layout = 'Series'; Match = 'social|aktion|fest|start|jubiläum|werbung' }
-        @{ Name = 'Screendesign Website'; File = 'Screendesign'; Pages = 8; Layout = 'Web'; Match = 'website|relaunch|landingpage|lieferdienst|abo' }
+        # Format = Masse im Generator ($ShapeSizes), File = Anfang des Dateinamens.
+        @{ Name = 'Broschüre DIN A4'; Format = 'Brochure'; File = 'Broschuere'; Pages = 12; Layout = 'Brochure'; Match = 'brosch|katalog|bericht|heft|prospekt|speisekarte|exposé' }
+        @{ Name = 'Messewand 3 x 2,5 m'; Format = 'TradeShowWall'; File = 'Messewand'; Match = 'messe' }
+        @{ Name = 'Bauschild 3 x 2 m'; Format = 'SiteSign'; File = 'Bauschild'; Match = 'bauschild' }
+        @{ Name = 'Fahrzeugbeschriftung Seitenansicht'; Format = 'Vehicle'; File = 'Fahrzeug'; Match = 'fahrzeug' }
+        @{ Name = 'Stanzbogen DIN A2'; Format = 'DieCut'; File = 'Stanzbogen'; Match = 'verpackung|etikett' }
+        @{ Name = 'Plakatserie DIN A1'; Format = 'PosterSeries'; File = 'Plakatserie'; Pages = 4; Layout = 'Series'; Match = 'plakatserie|kampagne|eröffnung' }
+        @{ Name = 'Anzeigenserie'; Format = 'AdSeries'; File = 'Anzeigenserie'; Pages = 4; Layout = 'Series'; Match = 'anzeigenserie|recruiting|tarif' }
+        @{ Name = 'Social-Media-Serie'; Format = 'SocialSeries'; File = 'Social-Serie'; Pages = 12; Layout = 'Series'; Match = 'social|aktion|fest|start|jubiläum|werbung' }
+        @{ Name = 'Screendesign Website'; Format = 'WebDesign'; File = 'Screendesign'; Pages = 8; Layout = 'Web'; Match = 'website|relaunch|landingpage|lieferdienst|abo' }
     )
 
     Labels        = @{
@@ -206,6 +270,19 @@
         Idea = 'Leitidee'; Goals = 'Ziele'; Measures = 'Maßnahmen'; Risks = 'Risiken und offene Punkte'; Feedback = 'Anmerkungen des Kunden'; Note = 'Notiz'
         PrintData = 'Druckdaten'; Cancelled = 'abgesagt'; Results = 'Ergebnis'; Learnings = 'Erkenntnisse'; Agenda2 = 'Agenda'; Welcome = 'Willkommen'
         Margin = 'Marge'; ExternalCosts = 'Fremdkosten'; Overview = 'Übersicht'; Policy = 'Richtlinie'; Announcement = 'Rundschreiben'; Template = 'Vorlage'
+        Industry = 'Branche'; Days = 'Tage'; Purchase = 'Anschaffung'; IdDocument = 'Personalausweis'; Interview = 'Gespraech'; Rejection = 'Absage'
+        Hour = 'Std.'; Day = 'Tag'; Piece = 'Stk.'; Night = 'Nacht'; Review = 'Mitarbeitergespraech'; Warning = 'Abmahnung'; Doctor = 'Praxis Dr. {0}'; OnBehalf = 'i. A. {0}'
+        ReadMore = 'Mehr erfahren >'; WebFooter = 'Impressum | Datenschutz | Cookie-Einstellungen'; Teaser = 'Teaser-Headline'; ProofNote = 'nicht farbverbindlich'
+        ReceiptTotal = 'SUMME EUR'; ReceiptVat = 'MwSt 19 %'; ReceiptNo = 'Beleg-Nr. {0}'; Copier = 'Kopierer Scan-to-Mail'; LayoutApp = 'Layoutprogramm'; PdfExport = 'PDF-Export'
+        Anniversary = '10 Jahre'; NewLook = 'Unser neuer Auftritt'; CiHandbook = 'Corporate-Design-Handbuch'; CiTitle = 'Corporate Design'; Letterhead = 'Briefbogen'
+        # Platzhalter der Vorlagen (Briefbogen, Praesentation, Kalkulation)
+        TemplateAddress = @('Firma', 'Name', 'Straße', 'PLZ Ort'); DateMask = 'TT.MM.JJJJ'; Subject = 'Betreff'; Point = 'Punkt'
+        # Nummernkreise (AN-2024-0001 ...) und Postfaecher in Mailadressen
+        OfferId = 'AN-'; OrderId = 'AB-'; InvoiceId = 'RE-'; CustomerId = 'K-'; SupplierRef = 'KD-'; MailContact = 'kontakt'; MailInvoice = 'rechnung'
+        # Teile von Dateinamen
+        PayslipFile = 'Entgelt'; BwaFile = 'BWA'; ReviewFile = 'Gespraech'; PressFile = 'PM'; SalaryList = 'Gehaltsliste'; CopyFile = 'Kopie'; ReplyFile = 'Antwort'; OldFile = 'alt'; FinalNew = 'final_NEU'
+        BrandBackground = 'hintergrund'; BrandHeader = 'logo_kopfzeile'; BrandLight = 'logo_quadrat_hell'; BrandDark = 'logo_quadrat_dunkel'; BrandTaskbar = 'edge_taskleiste'; BrandNegative = 'negativ'
+        BrandOld = 'Archiv_alte_CI\Logo_alt_NICHT_VERWENDEN'; BrandGuide = 'Anleitung_Entra-Branding'; BrandSignIn = 'Anmeldeseite_Texte'
     }
 
     # Unterordner unterhalb der Freigaben aus FileServer.psd1. Travel und Applications muessen zu den Altlast-Pfaden passen (Test).
