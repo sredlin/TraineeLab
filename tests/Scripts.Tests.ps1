@@ -320,6 +320,17 @@ Describe 'azuredeploy.json' {
         $templateText | Should -Match 'TraineeLab-FileServerResize'
         $templateText | Should -Match 'ResizeScriptB64'
     }
+
+    It 'startet nach dem Domaenenbeitritt von <_> erst nach dessen Neustart weitere Skripte' -ForEach 'exchange-install', 'client-join', 'file-server-join' {
+        # JsonADDomainExtension meldet Erfolg vor dem Neustart, ein direkt folgender Run Command wuerde abgebrochen.
+        $module = ($template.resources | Where-Object name -EQ $_).properties.template
+        $runCommands = @($module.resources | Where-Object type -EQ 'Microsoft.Compute/virtualMachines/runCommands')
+        $afterJoin = @($runCommands | Where-Object { ($_.dependsOn -join ' ') -match "'JoinDomain'" })
+        $afterJoin.Count | Should -Be 1
+        $afterJoin[0].name | Should -Match 'Wait-DomainJoinReboot'
+        $afterJoin[0].properties.treatFailureAsDeploymentFailure | Should -BeFalse
+        @($runCommands | Where-Object { ($_.dependsOn -join ' ') -match "'Wait-DomainJoinReboot'" }).Count | Should -Be 1
+    }
 }
 
 Describe 'Beispieldokumente (Korpus, Artefakte, Generator)' {

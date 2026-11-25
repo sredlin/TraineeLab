@@ -113,6 +113,26 @@ resource joinDomain 'Microsoft.Compute/virtualMachines/extensions@2025-04-01' = 
   ]
 }
 
+// Die Extension startet die VM erst nach ihrer Erfolgsmeldung neu. Dieser Run Command darf vom Neustart
+// abgebrochen werden (kein Deployment-Fehler), damit der naechste Run Command sicher erst danach startet.
+resource waitJoinReboot 'Microsoft.Compute/virtualMachines/runCommands@2025-04-01' = {
+  parent: vm
+  name: 'Wait-DomainJoinReboot'
+  location: location
+  tags: tags
+  properties: {
+    source: {
+      script: loadTextContent('../../scripts/Wait-DomainJoinReboot.ps1')
+    }
+    asyncExecution: false
+    timeoutInSeconds: 1200
+    treatFailureAsDeploymentFailure: false
+  }
+  dependsOn: [
+    joinDomain
+  ]
+}
+
 resource completeClient 'Microsoft.Compute/virtualMachines/runCommands@2025-04-01' = {
   parent: vm
   name: 'Complete-LabClient'
@@ -151,6 +171,6 @@ resource completeClient 'Microsoft.Compute/virtualMachines/runCommands@2025-04-0
     treatFailureAsDeploymentFailure: true
   }
   dependsOn: [
-    joinDomain
+    waitJoinReboot
   ]
 }
