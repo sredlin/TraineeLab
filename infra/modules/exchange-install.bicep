@@ -192,7 +192,7 @@ resource installExchangeServer 'Microsoft.Compute/virtualMachines/runCommands@20
       }
       {
         name: 'LabUsersB64'
-        value: base64(loadTextContent('../../scripts/data/de/LabUsers.psd1'))
+        value: base64(labLanguage == 'en' ? loadTextContent('../../scripts/data/en/LabUsers.psd1') : loadTextContent('../../scripts/data/de/LabUsers.psd1'))
       }
       {
         name: 'UpdateScriptB64'

@@ -175,11 +175,11 @@ resource prepareFileServer 'Microsoft.Compute/virtualMachines/runCommands@2025-0
       }
       {
         name: 'LabUsersB64'
-        value: loadFileAsBase64('../../scripts/data/de/LabUsers.psd1')
+        value: labLanguage == 'en' ? loadFileAsBase64('../../scripts/data/en/LabUsers.psd1') : loadFileAsBase64('../../scripts/data/de/LabUsers.psd1')
       }
       {
         name: 'FileServerB64'
-        value: loadFileAsBase64('../../scripts/data/de/FileServer.psd1')
+        value: labLanguage == 'en' ? loadFileAsBase64('../../scripts/data/en/FileServer.psd1') : loadFileAsBase64('../../scripts/data/de/FileServer.psd1')
       }
     ]
     asyncExecution: false

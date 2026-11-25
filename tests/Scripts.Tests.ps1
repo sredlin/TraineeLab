@@ -6,6 +6,8 @@ BeforeDiscovery {
     $scriptFiles = Get-ChildItem -Path (Join-Path $repoRoot 'scripts') -Filter '*.ps1' | ForEach-Object {
         @{ Name = $_.Name; Path = $_.FullName }
     }
+    # Lab-Daten je Sprache unter scripts/data/<Sprache>.
+    $languages = @(@{ Language = 'de' }, @{ Language = 'en' })
 }
 
 BeforeAll {
@@ -14,6 +16,12 @@ BeforeAll {
     $fileServer = Import-PowerShellDataFile -Path (Join-Path -Path $repoRoot -ChildPath 'scripts/data/de/FileServer.psd1')
     $templateText = Get-Content -Path (Join-Path $repoRoot 'azuredeploy.json') -Raw
     $template = $templateText | ConvertFrom-Json -Depth 100
+    # Nur fiktive Rufnummern: Deutsch Bundesnetzagentur (Medienproduktionen, Mitteilung 148/2021), Englisch Ofcom
+    # (Drama-Nummern fuer TV und Radio). Echte Anschluesse duerfen weder im Adressbuch noch auf Dokumenten stehen.
+    $phonePattern = @{
+        de = @{ Fixed = '^\+49 (30 23125|40 66969)-\d{3}$'; Mobile = '^\+49 171 39200\d{2}$'; Source = 'Bundesnetzagentur: Berlin 030 23125, Hamburg 040 66969, Mobil 0171 39200' }
+        en = @{ Fixed = '^\+44 (20 7946 0|161 496 0)\d{3}$'; Mobile = '^\+44 7700 900\d{3}$'; Source = 'Ofcom: London 020 7946 0, Manchester 0161 496 0, Mobil 07700 900' }
+    }
 }
 
 Describe 'Skript <Name>' -ForEach $scriptFiles {
@@ -39,7 +47,11 @@ Describe 'Skript <Name>' -ForEach $scriptFiles {
     }
 }
 
-Describe 'LabUsers.psd1' {
+Describe 'LabUsers.psd1 (<Language>)' -ForEach $languages {
+    BeforeAll {
+        $labUsers = Import-PowerShellDataFile -Path (Join-Path -Path $repoRoot -ChildPath "scripts/data/$Language/LabUsers.psd1")
+    }
+
     It 'enthaelt 28 Lab-Benutzer, davon die 16 Microsoft-Demo-Personas mit ihren Demo-Tenant-Konten' {
         $labUsers.Users.Count | Should -Be 28
         $personas = 'Adele Vance', 'Alex Wilber', 'Diego Siciliani', 'Grady Archie', 'Henrietta Mueller', 'Isaiah Langer', 'Johanna Lorenz', 'Joni Sherman',
@@ -75,18 +87,18 @@ Describe 'LabUsers.psd1' {
         $labUsers.Country.Number | Should -BeOfType [int]
     }
 
-    It 'nutzt nur fiktive Rufnummern der Bundesnetzagentur (Medienproduktionen, Mitteilung 148/2021)' {
-        # Echte Anschluesse duerfen weder im Adressbuch noch auf Beispieldokumenten auftauchen.
+    It 'nutzt nur fiktive Rufnummern fuer Medienproduktionen' {
+        $pattern = $phonePattern[$Language]
         $numbers = @($labUsers.Users.OfficePhone) + @($labUsers.Users.MobilePhone)
         ($numbers | Select-Object -Unique).Count | Should -Be $numbers.Count
         foreach ($user in $labUsers.Users) {
-            $user.OfficePhone | Should -Match '^\+49 (30 23125|40 66969)-\d{3}$' -Because "$($user.SamAccountName) braucht eine Festnetznummer aus Berlin 030 23125 oder Hamburg 040 66969"
-            $user.MobilePhone | Should -Match '^\+49 171 39200\d{2}$' -Because "$($user.SamAccountName) braucht eine Mobilnummer aus 0171 39200-00..99"
-            $user.Fax | Should -Match '^\+49 (30 23125|40 66969)-\d{3}$' -Because "$($user.SamAccountName) braucht eine Faxnummer des Standorts"
+            $user.OfficePhone | Should -Match $pattern.Fixed -Because "$($user.SamAccountName) braucht eine Festnetznummer ($($pattern.Source))"
+            $user.MobilePhone | Should -Match $pattern.Mobile -Because "$($user.SamAccountName) braucht eine Mobilnummer ($($pattern.Source))"
+            $user.Fax | Should -Match $pattern.Fixed -Because "$($user.SamAccountName) braucht eine Faxnummer des Standorts"
         }
         foreach ($contact in $labUsers.Contacts) {
             foreach ($number in $contact.Phone, $contact.Fax) {
-                $number | Should -Match '^\+49 (30 23125|40 66969)-\d{3}$' -Because "Kontakt $($contact.Alias) braucht Telefon und Fax aus den fiktiven Bereichen"
+                $number | Should -Match $pattern.Fixed -Because "Kontakt $($contact.Alias) braucht Telefon und Fax aus den fiktiven Bereichen"
             }
         }
     }
@@ -151,8 +163,10 @@ Describe 'LabUsers.psd1' {
     }
 }
 
-Describe 'FileServer.psd1' {
+Describe 'FileServer.psd1 (<Language>)' -ForEach $languages {
     BeforeAll {
+        $labUsers = Import-PowerShellDataFile -Path (Join-Path -Path $repoRoot -ChildPath "scripts/data/$Language/LabUsers.psd1")
+        $fileServer = Import-PowerShellDataFile -Path (Join-Path -Path $repoRoot -ChildPath "scripts/data/$Language/FileServer.psd1")
         $groupNames = @($fileServer.GlobalGroups.Name)
         $folderPaths = @($fileServer.Folders.Path)
         $specialPrincipals = '@DomainUsers', '@Everyone', '@AuthenticatedUsers'
@@ -237,6 +251,42 @@ Describe 'FileServer.psd1' {
                 $fileServer.Shares.Name | Should -Contain $item.Share
             }
         }
+    }
+}
+
+Describe 'Lab-Daten Deutsch und Englisch gleich aufgebaut' {
+    BeforeAll {
+        $data = @{}
+        foreach ($language in 'de', 'en') {
+            $data[$language] = @{
+                Users      = Import-PowerShellDataFile -Path (Join-Path -Path $repoRoot -ChildPath "scripts/data/$language/LabUsers.psd1")
+                FileServer = Import-PowerShellDataFile -Path (Join-Path -Path $repoRoot -ChildPath "scripts/data/$language/FileServer.psd1")
+            }
+        }
+    }
+
+    It 'hat dieselben Schluessel und Mengen in LabUsers.psd1' {
+        @($data.de.Users.Keys | Sort-Object) | Should -Be @($data.en.Users.Keys | Sort-Object)
+        foreach ($key in 'OrganizationalUnits', 'Users', 'DistributionGroups', 'SharedMailboxes', 'RoomMailboxes', 'Contacts') {
+            @($data.en.Users[$key]).Count | Should -Be @($data.de.Users[$key]).Count -Because "$key braucht in beiden Sprachen gleich viele Eintraege"
+        }
+        $data.en.Users.Managers.Count | Should -Be $data.de.Users.Managers.Count
+    }
+
+    It 'hat dieselben Personas mit denselben Konten' {
+        $personas = { param($d) @($d.Users.Users | Where-Object { $_.SamAccountName -ceq ($_.GivenName + $_.Surname.Substring(0, 1)) } | ForEach-Object { '{0}|{1}|{2}' -f $_.SamAccountName, $_.GivenName, $_.Surname } | Sort-Object) }
+        $de = & $personas $data.de
+        $de.Count | Should -Be 16
+        & $personas $data.en | Should -Be $de
+    }
+
+    It 'hat dieselbe Struktur in FileServer.psd1 (Gruppen, Ordner, Freigaben, Altlasten)' {
+        @($data.de.FileServer.Keys | Sort-Object) | Should -Be @($data.en.FileServer.Keys | Sort-Object)
+        foreach ($key in 'GlobalGroups', 'Folders', 'Shares') {
+            @($data.en.FileServer[$key]).Count | Should -Be @($data.de.FileServer[$key]).Count -Because "$key braucht in beiden Sprachen gleich viele Eintraege"
+        }
+        @($data.en.FileServer.Legacy.Type) | Should -Be @($data.de.FileServer.Legacy.Type)
+        @($data.en.FileServer.Folders | Where-Object { $_.Stem }).Count | Should -Be @($data.de.FileServer.Folders | Where-Object { $_.Stem }).Count
     }
 }
 
@@ -419,7 +469,7 @@ Describe 'Lab-Sprache in den Skripten' {
         [regex]::Match($exchangeInstallScript, '(?s)function Invoke-InstallTask \{.*?\n\}').Value | Should -Match '-LabLanguage \{\d+\}'
     }
 
-    It 'benennt die AD-Standorte wie die Standort-OUs in LabUsers.psd1 (<_>)' -ForEach 'de' {
+    It 'benennt die AD-Standorte wie die Standort-OUs in LabUsers.psd1 (<_>)' -ForEach 'de', 'en' {
         $data = Import-PowerShellDataFile -Path (Join-Path $repoRoot "scripts/data/$_/LabUsers.psd1")
         $block = [regex]::Match($dcScript, "(?m)^\s+$_ = @\{ Headquarters = '([^']+)'; Branch = '([^']+)'")
         $block.Success | Should -BeTrue
