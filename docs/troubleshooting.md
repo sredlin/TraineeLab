@@ -17,7 +17,7 @@ Typische Ursachen:
 
 | Meldung / Symptom | Ursache | Lösung |
 | --- | --- | --- |
-| `QuotaExceeded` | zu wenig vCPU in der Region | Kontingent erhöhen lassen oder `deployClient`/`deploySecondDc` aus. Betrifft es die DSv5-Familie: `fileServerVmSize = Standard_B2ms` |
+| `QuotaExceeded` | zu wenig vCPU in der Region | Kontingent erhöhen lassen oder `deployClient`/`deploySecondDc` aus. Betrifft es die DSv5-Familie: `fileServerVmSize = Standard_B2s_v2` |
 | `AuthorizationFailed` bei der Rollenzuweisung | kein Owner auf der Ressourcengruppe | Rechte vom Ausbilder holen oder `enableLetsEncrypt = false` und `fileServerFinalVmSize` leer lassen |
 | `New-SampleDocuments` meldet einen Fehler | Datendisk fehlt oder Textkorpus aus der userData nicht lesbar | `New-SampleDocuments.log` auf dem Fileserver lesen. Ein reines Zeitproblem ist kein Fehler: Nach 60 Minuten endet der Run Command erfolgreich und der Task setzt fort |
 | `Wait-DomainController` läuft in Timeout | DC nicht fertig geworden | `Install-DomainController-*.log` auf dem DC lesen, bei vorgemerktem Neustart auch `Install-DomainController-Promote.log` |
@@ -138,7 +138,7 @@ Steht dort, dass die Größe im aktuellen Cluster nicht verfügbar ist, von Hand
 
 ```bash
 az vm deallocate -g rg-exlab-<k> -n vm-<k>-fs01
-az vm resize -g rg-exlab-<k> -n vm-<k>-fs01 --size Standard_B2ms
+az vm resize -g rg-exlab-<k> -n vm-<k>-fs01 --size Standard_B2s_v2
 az vm start -g rg-exlab-<k> -n vm-<k>-fs01
 ```
 

@@ -307,9 +307,12 @@ Describe 'azuredeploy.json' {
         ($join.dependsOn -join ' ') | Should -Match 'file-server'
     }
 
-    It 'erzeugt mit D4s_v5 und verkleinert den Fileserver danach selbst auf B2ms' {
+    It 'erzeugt mit D4s_v5 und verkleinert den Fileserver danach selbst auf B2s_v2 (gleicher Hardware-Cluster)' {
         $template.parameters.fileServerVmSize.defaultValue | Should -Be 'Standard_D4s_v5'
-        $template.parameters.fileServerFinalVmSize.defaultValue | Should -Be 'Standard_B2ms'
+        $template.parameters.fileServerFinalVmSize.defaultValue | Should -Be 'Standard_B2s_v2'
+        # Die alte B-Serie laeuft nicht auf den Dsv5-Clustern, ein Resize im Betrieb scheitert dorthin.
+        $template.parameters.fileServerFinalVmSize.allowedValues | Should -Not -Contain 'Standard_B2ms'
+        $template.variables.fileServerResizeTo | Should -Match "startsWith\(parameters\('fileServerVmSize'\), 'Standard_B'\)"
         $fileServerModule = ($template.resources | Where-Object name -EQ 'file-server').properties.template
         $vm = $fileServerModule.resources | Where-Object type -EQ 'Microsoft.Compute/virtualMachines'
         $vm.identity.type | Should -Be 'SystemAssigned'

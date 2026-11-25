@@ -72,7 +72,7 @@ az vm run-command list -g rg-exlab-<k> --vm-name vm-<k>-fs01 --query "[].{name:n
 
 ## Fileserver: Beispieldaten und VM-Größe
 
-Die Beispieldokumente entstehen im Deployment höchstens 60 Minuten lang, den Rest erzeugt der Task `TraineeLab-SampleDocuments` im Hintergrund. Danach verkleinert sich der Fileserver selbst auf `fileServerFinalVmSize` (Standard `Standard_B2ms`). Das passiert erst, wenn Beispieldaten, Einrichtung und Update-Lauf fertig sind, und kostet einen Neustart.
+Die Beispieldokumente entstehen im Deployment höchstens 60 Minuten lang, den Rest erzeugt der Task `TraineeLab-SampleDocuments` im Hintergrund. Danach verkleinert sich der Fileserver selbst auf `fileServerFinalVmSize` (Standard `Standard_B2s_v2`). Das passiert erst, wenn Beispieldaten, Einrichtung und Update-Lauf fertig sind, und kostet einen Neustart.
 
 Stand der Beispieldaten und der Verkleinerung:
 
@@ -89,7 +89,7 @@ Start-ScheduledTask -TaskName TraineeLab-SampleDocuments
 Get-Content C:\ExchangeLab\Logs\New-SampleDocuments.log -Tail 10 -Wait
 ```
 
-**Erneut deployen:** Mit den Standardwerten setzt das Template den Fileserver wieder auf `Standard_D4s_v5`, er startet neu und verkleinert sich später erneut. Das vermeidest du mit dem Parameter `fileServerVmSize = Standard_B2ms`.
+**Erneut deployen:** Mit den Standardwerten setzt das Template den Fileserver wieder auf `Standard_D4s_v5`, er startet neu und verkleinert sich später erneut. Das vermeidest du mit dem Parameter `fileServerVmSize = Standard_B2s_v2`.
 
 ## Kosten im Blick behalten
 

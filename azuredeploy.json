@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.40.2.10011",
-      "templateHash": "18053644303267265221"
+      "templateHash": "4781311226835365245"
     },
     "name": "Exchange Server SE Lab",
     "description": "Azubi-Lab: separater Domain Controller und Exchange Server SE auf Windows Server 2025, fertig konfiguriert (Split DNS, Zertifikat, URLs, Postfaecher)."
@@ -180,21 +180,22 @@
       "type": "string",
       "defaultValue": "Standard_D4s_v5",
       "allowedValues": [
+        "Standard_B2s_v2",
         "Standard_B2ms",
         "Standard_D2s_v5",
         "Standard_D4s_v5",
         "Standard_D8s_v5"
       ],
       "metadata": {
-        "description": "VM-Groesse des Fileservers. Mehr vCPUs erzeugen die Beispieldokumente schneller (siehe readme)."
+        "description": "VM-Groesse des Fileservers. Mehr vCPUs erzeugen die Beispieldokumente schneller (siehe readme). Startet er mit einer B-Groesse, bleibt sie."
       }
     },
     "fileServerFinalVmSize": {
       "type": "string",
-      "defaultValue": "Standard_B2ms",
+      "defaultValue": "Standard_B2s_v2",
       "allowedValues": [
         "",
-        "Standard_B2ms",
+        "Standard_B2s_v2",
         "Standard_D2s_v5",
         "Standard_D4s_v5"
       ],
@@ -241,7 +242,7 @@
     "exchangePrivateIp": "10.0.1.5",
     "dc2PrivateIp": "10.0.1.6",
     "fileServerPrivateIp": "10.0.1.7",
-    "fileServerResizeTo": "[if(equals(parameters('fileServerFinalVmSize'), parameters('fileServerVmSize')), '', parameters('fileServerFinalVmSize'))]",
+    "fileServerResizeTo": "[if(or(equals(parameters('fileServerFinalVmSize'), parameters('fileServerVmSize')), startsWith(parameters('fileServerVmSize'), 'Standard_B')), '', parameters('fileServerFinalVmSize'))]",
     "clientPrivateIp": "10.0.1.10",
     "names": {
       "vnet": "[format('vnet-exlab-{0}', variables('traineeLower'))]",

@@ -91,8 +91,9 @@ param officeProductId string = 'O365ProPlusRetail'
 @description('Fileserver <K>-FS01 bereitstellen: Freigaben mit AGDLP-Berechtigungen, Basisordner, FSRM und absichtliche Altlasten fuer Uebungen. Keine Public IP.')
 param deployFileServer bool = true
 
-@description('VM-Groesse des Fileservers. Mehr vCPUs erzeugen die Beispieldokumente schneller (siehe readme).')
+@description('VM-Groesse des Fileservers. Mehr vCPUs erzeugen die Beispieldokumente schneller (siehe readme). Startet er mit einer B-Groesse, bleibt sie.')
 @allowed([
+  'Standard_B2s_v2'
   'Standard_B2ms'
   'Standard_D2s_v5'
   'Standard_D4s_v5'
@@ -100,14 +101,16 @@ param deployFileServer bool = true
 ])
 param fileServerVmSize string = 'Standard_D4s_v5'
 
+// B2s_v2 statt B2ms: Die VM verkleinert sich im laufenden Betrieb, also nur auf Groessen ihres Hardware-Clusters.
+// Die Dsv5-Cluster fuehren Bsv2, aber nicht die alte B-Serie (Testdeployment: B2ms nicht verfuegbar).
 @description('Dauergroesse des Fileservers: Nach Beispieldokumenten und Updates verkleinert sich die VM selbst darauf. Leer = fileServerVmSize bleibt.')
 @allowed([
   ''
-  'Standard_B2ms'
+  'Standard_B2s_v2'
   'Standard_D2s_v5'
   'Standard_D4s_v5'
 ])
-param fileServerFinalVmSize string = 'Standard_B2ms'
+param fileServerFinalVmSize string = 'Standard_B2s_v2'
 
 @description('Umfang der Beispieldokumente auf dem Fileserver in GB (Word, Excel, PowerPoint, PDF), 0 = keine. Was im Deployment nicht fertig wird, entsteht danach im Hintergrund.')
 @minValue(0)
@@ -139,7 +142,7 @@ var dcPrivateIp = '10.0.1.4'
 var exchangePrivateIp = '10.0.1.5'
 var dc2PrivateIp = '10.0.1.6'
 var fileServerPrivateIp = '10.0.1.7'
-var fileServerResizeTo = fileServerFinalVmSize == fileServerVmSize ? '' : fileServerFinalVmSize
+var fileServerResizeTo = fileServerFinalVmSize == fileServerVmSize || startsWith(fileServerVmSize, 'Standard_B') ? '' : fileServerFinalVmSize
 var clientPrivateIp = '10.0.1.10'
 
 var names = {
