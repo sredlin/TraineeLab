@@ -112,6 +112,18 @@ Set-SystemPreferredUILanguage de-DE
 Restart-Computer
 ```
 
+## Remote Desktop Manager zeigt keine Lab-Verbindungen
+
+1. Ist RDM installiert? In `C:\ExchangeLab\Logs\Initialize-LabClient-Prepare.log` stehen die Schritte .NET Desktop Runtime, Remote Desktop Manager, PowerShell 7 und Modul. Bei einem Fehler gibt es zusätzlich `C:\ExchangeLab\rdm-failed.txt` mit der Ursache.
+2. Wurde die Datenquelle angelegt? `Initialize-LabClient-Complete.log` nennt `RDM-Datenquelle ... angelegt` mit allen Servern.
+3. Fehlt nur bei einem Benutzer der Arbeitsbereich „Lab-Server“: `%LOCALAPPDATA%\TraineeLab\Register-LabWorkspace.log` prüfen und das Einbinden als dieser Benutzer von Hand wiederholen (RDM vorher schließen):
+
+   ```powershell
+   pwsh -NoProfile -ExecutionPolicy Bypass -File C:\ProgramData\TraineeLab\RemoteDesktopManager\Register-LabWorkspace.ps1
+   ```
+
+4. Fragt RDM beim Verbinden nach einem Passwort, stimmt das gespeicherte nicht mehr, zum Beispiel weil `azadmin` ein neues Passwort hat. Siehe [Betrieb](betrieb.md#server-vom-client-aus-erreichen-remote-desktop-manager).
+
 ## Beispieldaten fehlen oder wachsen nicht mehr
 
 Stand auf `<K>-FS01` (PowerShell als Administrator):

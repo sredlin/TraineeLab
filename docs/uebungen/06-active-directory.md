@@ -1,6 +1,6 @@
 # 6 Active Directory und DNS
 
-Werkzeuge auf dem Exchange-Server: *Active Directory-Benutzer und -Computer*, *Active Directory-Verwaltungscenter*, *DNS*, *Gruppenrichtlinienverwaltung*. Für den DC selbst: RDP vom Exchange-Server auf `<K>-DC01`.
+Werkzeuge auf dem Exchange-Server: *Active Directory-Benutzer und -Computer*, *Active Directory-Verwaltungscenter*, *DNS*, *Gruppenrichtlinienverwaltung*. Für den DC selbst: RDP vom Client aus auf `<K>-DC01` (Remote Desktop Manager, Arbeitsbereich „Lab-Server“).
 
 ## 6.1 Split DNS ★
 

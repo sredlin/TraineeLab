@@ -39,13 +39,13 @@ flowchart LR
 | Domain Controller | `Standard_B2ms`, Windows Server 2025, Forest `<k>.intern` (Functional Level 2016), NTDS/SYSVOL auf eigener Datendisk (Host-Cache None), keine Public IP |
 | Zweiter DC (optional) | `deploySecondDc = true`: `<K>-DC02` mit gleicher Ausstattung, wird parallel zum ersten DC aufgebaut und heraufgestuft, DNS des VNets zeigt dann auf beide DCs |
 | Exchange-Server | `Standard_E4s_v5` (32 GB RAM), Windows Server 2025, Exchange Server SE (Mailbox), OS- und Datendisk **Premium SSD**, DB und Logs auf ReFS-Datendisk |
-| Windows-11-Client | `deployClient = true` (Standard): `<K>-CL01`, `Standard_B2ms`, Windows 11 Enterprise mit deutscher Oberfläche, Microsoft 365 Apps (de-de, ohne Access/Publisher/Teams), Domänenmitglied in `OU=Computers,OU=Berlin`, eigene Public IP für RDP, aktualisiert sich selbst (Neustarts nur außerhalb 06–23 Uhr) |
+| Windows-11-Client | `deployClient = true` (Standard): `<K>-CL01`, `Standard_B2ms`, Windows 11 Enterprise mit deutscher Oberfläche, Microsoft 365 Apps (de-de, ohne Access/Publisher/Teams), Domänenmitglied in `OU=Computers,OU=Berlin`, eigene Public IP für RDP, aktualisiert sich selbst (Neustarts nur außerhalb 06–23 Uhr). Einstieg ins Lab: Devolutions Remote Desktop Manager Free mit fertigen RDP-Verbindungen zu allen Lab-Servern (Domain-Admin, für jeden Benutzer am Client) |
 | Fileserver | `deployFileServer = true` (Standard): `<K>-FS01`, Windows Server 2025, keine Public IP. Erzeugt die Beispieldaten mit `Standard_D4s_v5` und verkleinert sich danach selbst auf `Standard_B2s_v2`. Datendisk `F:` mit 256 GB Standard SSD. Freigaben `Abteilungen`, `Projekte`, `Archiv`, `Scans` und `Home$` mit zugriffsbasierter Aufzählung und AGDLP-Gruppen, Basisordner `H:`, FSRM. Rund 60 GB Beispieldokumente einer fiktiven Agentur (zwölf Jahre Projekte, Buchhaltung, Personal, Corporate Design, Logos für das Entra-Branding) mit fiktiven personenbezogenen Daten und absichtlichen Altlasten. Definiert in `scripts/FileServer.psd1` und `scripts/corpus` |
 | Netzwerk | ein VNet, ein Subnet, eine NSG (kein Allow-All, SMTP getrennt von HTTP/HTTPS), Standard-Public-IPs für Exchange und Client |
 | DNS | öffentliche Zone `<k>.<zone>` (mail, autodiscover, MX, SPF, DMARC `p=none`) mit Delegation in `<zone>`; intern Split DNS und Reverse-Zone `1.0.10.in-addr.arpa` auf dem DC |
 | AD | OU-Baum `LEARN-<k>` (Branch Berlin/Hamburg, Administration), 12 Lab-Benutzer mit Postfach, Adresse `@<k>.<zone>`, Vorgesetzten und fiktiven Rufnummern der Bundesnetzagentur (030 23125, 040 66969, 0171 39200), AD-Papierkorb aktiv |
 | Beispielempfänger | Verteiler `geschaeftsleitung`, `marketing-berlin`, `marketing-hamburg`, `alle`; freigegebene Postfächer `info`, `buchhaltung` (Vollzugriff mit Automapping, Senden als); Räume `raum-berlin`, `raum-hamburg`; zwei externe Kontakte. Definiert in `scripts/LabUsers.psd1` |
-| Verwaltung | DNS-Konsole und GPMC zusätzlich auf dem Exchange-Server (Jump-Host); GPO `LAB - Outlook klassisch` an `LEARN-<k>` blendet das neue Outlook aus (unterstützt kein Exchange on Premises) |
+| Verwaltung | Remote Desktop Manager auf dem Client als Einstieg zu allen Servern; DNS-Konsole und GPMC zusätzlich auf dem Exchange-Server; GPO `LAB - Outlook klassisch` an `LEARN-<k>` blendet das neue Outlook aus (unterstützt kein Exchange on Premises) |
 
 ## Voraussetzungen
 
@@ -55,6 +55,7 @@ flowchart LR
 - **Kontingent:** 8 vCPU in der Region (4 × BS-Familie für DC und Client, 4 × ESv5-Familie), mit zweitem DC 10 vCPU (6 × BS-Familie). Ohne Client 2 vCPU weniger. Der Fileserver braucht während der Erzeugung der Beispieldaten zusätzlich 4 × DSv5-Familie, danach 2 × BSv2-Familie: insgesamt also 12 vCPU, mit zweitem DC 14. Reicht das Kontingent nicht, `fileServerVmSize = Standard_B2s_v2` setzen; die Beispieldaten entstehen dann über viele Stunden im Hintergrund.
 - **Windows-11-Lizenz (Client):** Windows 11 auf Azure braucht Multitenant Hosting Rights, laut Microsoft z. B. Windows Enterprise E3/E5 oder VDA pro Benutzer (Lizenzgrundlage u. a. auch M365 E3/E5/F3 und Business Premium), alternativ ein Dev/Test-Angebot der Subscription. Ohne passende Lizenz `deployClient = false` setzen.
 - **Office-Lizenz (Client):** Microsoft 365 Apps aktiviert der Azubi mit seinem Firmenkonto (eine von fünf Installationen). `officeProductId` muss zur Lizenz passen: `O365ProPlusRetail` für Apps for enterprise (M365 E3/E5), `O365BusinessRetail` für Apps for business (Business Standard/Premium).
+- **Remote Desktop Manager (Client):** Devolutions RDM Free ist laut Devolutions für eine Einzelperson lizenziert, auch beruflich. Der Lab-Client hat mehrere Benutzer und eine gemeinsame Verbindungsliste. Wer das nicht möchte, setzt `clientRemoteDesktopManager = false`.
 
 ## Bereitstellen
 
@@ -76,6 +77,7 @@ flowchart LR
    | `deployClient` | nein | Windows-11-Client `<K>-CL01` bereitstellen, Standard `true` |
    | `officeProductId` | nein | `O365ProPlusRetail` (Standard, Apps for enterprise) oder `O365BusinessRetail` (Apps for business) |
    | `clientImageSku` / `clientVmSize` | nein | Windows-11-Image (Standard `win11-25h2-ent`) und VM-Größe des Clients |
+   | `clientRemoteDesktopManager` | nein | Remote Desktop Manager mit Verbindungen zu allen Lab-Servern auf dem Client, Standard `true`. Achtung: Jeder Benutzer am Client kann dann das Passwort von `azadmin` auslesen |
    | `deployFileServer` | nein | Fileserver `<K>-FS01` bereitstellen, Standard `true` |
    | `fileServerDataSizeGB` | nein | Umfang der Beispieldokumente in GB, Standard `60`, `0` = keine |
    | `fileServerVmSize` / `fileServerFinalVmSize` | nein | Größe während der Erzeugung (Standard `Standard_D4s_v5`) und Dauergröße danach (Standard `Standard_B2s_v2`, leer = bleibt). Bei einem erneuten Deployment `fileServerVmSize = Standard_B2s_v2` übergeben, sonst wird der Fileserver kurz wieder vergrößert |
@@ -92,8 +94,9 @@ flowchart LR
 | Warten auf DC01, Heraufstufung (optional) | DC02 | `C:\ExchangeLab\Logs\Wait-DomainController.log`, `Install-DomainController-*.log` |
 | Heraufstufung nach Neustart (nur wenn Windows-Wartung einen Neustart vorgemerkt hat) | DC | `C:\ExchangeLab\Logs\Install-DomainController-Promote.log` |
 | Voraussetzungen, ISO, Zertifikat (parallel) | Exchange | `C:\ExchangeLab\Logs\Initialize-ExchangeServer.log` |
-| Sprachpaket, Microsoft 365 Apps (parallel) | Client | `C:\ExchangeLab\Logs\Initialize-LabClient-Prepare.log` |
-| Warten auf DC, Domänenbeitritt, RDP für Lab-Benutzer | Client | `C:\ExchangeLab\Logs\Wait-DomainController.log`, `Initialize-LabClient-Complete.log` |
+| Sprachpaket, Microsoft 365 Apps, Remote Desktop Manager (parallel) | Client | `C:\ExchangeLab\Logs\Initialize-LabClient-Prepare.log` |
+| Warten auf DC, Domänenbeitritt, RDP für Lab-Benutzer, Verbindungen im Remote Desktop Manager | Client | `C:\ExchangeLab\Logs\Wait-DomainController.log`, `Initialize-LabClient-Complete.log` |
+| Arbeitsbereich „Lab-Server“ einbinden (Active Setup, erste Anmeldung jedes Benutzers) | Client | `%LOCALAPPDATA%\TraineeLab\Register-LabWorkspace.log` |
 | Warten auf DC, Domänenbeitritt | Exchange | `C:\ExchangeLab\Logs\Wait-DomainController.log` |
 | Exchange-Setup und Konfiguration | Exchange | `C:\ExchangeLab\Logs\Install-ExchangeServer-*.log`, `C:\ExchangeSetupLogs\` |
 | Datendisk, Regionaleinstellungen, Ordnergerüst (parallel) | Fileserver | `C:\ExchangeLab\Logs\Initialize-FileServer-Prepare.log` |
@@ -107,10 +110,11 @@ Status von außen: `az vm run-command show -g <rg> --vm-name vm-<k>-ex01 --name 
 
 ## Nach dem Deployment
 
-- **RDP:** auf den Exchange-Server (Ausgabe `rdpHost`) als `<K>\azadmin`. Den DC erreichst du per RDP vom Exchange-Server aus (`<K>-DC01`). DNS-Konsole, GPMC und AD-Verwaltung sind auch direkt auf dem Exchange-Server installiert.
-- **Client:** RDP auf `clientRdpHost` als Lab-Benutzer, z. B. `<K>\mmustermann`. Beim ersten Start von Word oder Outlook mit dem eigenen Firmenkonto anmelden, damit sich Office aktiviert. Die Registrierung des Lab-Clients im Entra ID der Firma ist per Richtlinie (`BlockAADWorkplaceJoin`) blockiert. Outlook (klassisch) legt das Profil per Autodiscover selbst an. Meldet Office eine fehlende Lizenz, passt `officeProductId` nicht zur Lizenz.
+- **Einstieg über den Client:** RDP auf `clientRdpHost`, z. B. als `<K>\mmustermann`. Von dort geht es per **Remote Desktop Manager** (Desktop oder Startmenü, Arbeitsbereich „Lab-Server“) ohne Passworteingabe als `<K>\azadmin` auf `<K>-DC01`, `<K>-EX01`, `<K>-FS01` und, falls bereitgestellt, `<K>-DC02`. Den Arbeitsbereich bindet Active Setup bei der ersten Anmeldung jedes Benutzers ein. **Sicherheitshinweis:** RDM verschlüsselt die gespeicherten Passwörter mit einem eingebauten Schlüssel, deshalb kann jeder Benutzer des Clients das Passwort von `azadmin` auslesen. Am Client ist die Trennung von `labUserPassword` und `adminPassword` damit aufgehoben. Das ist eine bewusste Entscheidung für den Lab-Komfort; abschalten mit `clientRemoteDesktopManager = false`.
+- **RDP direkt:** Der Exchange-Server ist auch direkt per Public IP erreichbar (Ausgabe `rdpHost`, als `<K>\azadmin`). DNS-Konsole, GPMC und AD-Verwaltung sind dort installiert.
+- **Client:** Beim ersten Start von Word oder Outlook mit dem eigenen Firmenkonto anmelden, damit sich Office aktiviert. Die Registrierung des Lab-Clients im Entra ID der Firma ist per Richtlinie (`BlockAADWorkplaceJoin`) blockiert. Outlook (klassisch) legt das Profil per Autodiscover selbst an. Meldet Office eine fehlende Lizenz, passt `officeProductId` nicht zur Lizenz.
 - **Lab-Info:** Auf dem Desktop des Exchange-Servers liegen `Lab-Info.txt` (Domain, URLs, alle Benutzer und Beispielempfänger, Zertifikat, Logs) und Verknüpfungen zu OWA, ECP und den Logs.
-- **Fileserver:** RDP vom Exchange-Server aus auf `<K>-FS01` (keine Public IP). Dort zeigt `Lab-Info.txt` Freigaben, Gruppen und den Stand der Beispieldaten. Auf dem Client sind die Freigaben unter `\\<K>-FS01\Abteilungen`, `\Projekte`, `\Archiv` und `\Scans` erreichbar, der Basisordner als `H:`. Ob die Beispieldaten fertig sind, steht in `C:\ExchangeLab\sample-documents.json` (`State` = `fertig`), siehe auch [Betrieb](docs/betrieb.md#fileserver-beispieldaten-und-vm-größe).
+- **Fileserver:** RDP vom Client aus auf `<K>-FS01` (keine Public IP). Dort zeigt `Lab-Info.txt` Freigaben, Gruppen und den Stand der Beispieldaten. Auf dem Client sind die Freigaben unter `\\<K>-FS01\Abteilungen`, `\Projekte`, `\Archiv` und `\Scans` erreichbar, der Basisordner als `H:`. Ob die Beispieldaten fertig sind, steht in `C:\ExchangeLab\sample-documents.json` (`State` = `fertig`), siehe auch [Betrieb](docs/betrieb.md#fileserver-beispieldaten-und-vm-größe).
 - **OWA/ECP:** `https://mail.<k>.<zone>/owa` bzw. `/ecp`, z. B. als `mmustermann@<k>.<zone>`.
 - **Diagnose:** In `C:\ExchangeLab\Tools` liegen `HealthChecker.ps1`, `SetupAssist.ps1` und `SetupLogReviewer.ps1` aus [CSS-Exchange](https://github.com/microsoft/CSS-Exchange) (festes Release, SHA256-geprüft). Aufruf in der Exchange Management Shell als Administrator.
 - **Eingehende Mails aus dem Internet:** erst wenn `Update-LabServer.log` fertig ist, die NSG-Regel `Allow-Exchange-SMTP` auf Quelle `Internet` stellen.
@@ -140,7 +144,8 @@ Status von außen: `az vm run-command show -g <rg> --vm-name vm-<k>-ex01 --name 
 | Updates | Patch-Modus `Manual`: Nach dem ersten automatischen Lauf sind Updates Aufgabe der Administratoren (Exchange-SUs über Microsoft Update) |
 | Lizenz | Exchange SE braucht eine Subscription-Lizenz oder Software Assurance. Ohne Product Key läuft der Server 180 Tage als Testversion |
 | Sizing | 32 GB RAM liegen unter der Microsoft-Empfehlung von 128 GB. Das reicht fürs Lab, nicht für Produktion |
-| PowerShell 7 | Wird auf dem Exchange-Server als Laufzeit für winget installiert, weil die winget-CLI im SYSTEM-Kontext nicht supportet ist und `Microsoft.WinGet.Client` nur unter PowerShell 7 läuft. Exchange nutzt weiterhin ausschließlich Windows PowerShell 5.1; ein Parallelbetrieb ist laut Microsoft zulässig |
+| PowerShell 7 | Wird auf dem Exchange-Server als Laufzeit für winget installiert, weil die winget-CLI im SYSTEM-Kontext nicht supportet ist und `Microsoft.WinGet.Client` nur unter PowerShell 7 läuft. Exchange nutzt weiterhin ausschließlich Windows PowerShell 5.1; ein Parallelbetrieb ist laut Microsoft zulässig. Auf dem Client ist PowerShell 7 die Laufzeit für das RDM-Modul `Devolutions.PowerShell` |
+| Remote Desktop Manager | Devolutions RDM Free mit .NET Desktop Runtime 10 auf dem Client, feste Versionen mit Hash-Prüfung (`scripts/Initialize-LabClient.ps1`). Free ist laut Devolutions für eine Einzelperson lizenziert. Updates sind per Richtlinie ausgeblendet, die Version pflegt das Repository |
 
 ## Zertifikat
 

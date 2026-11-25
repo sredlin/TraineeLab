@@ -2,7 +2,7 @@
 
 Der Fileserver `<K>-FS01` gehört der fiktiven Mustermann Medien GmbH, einer Werbeagentur mit Zentrale in Berlin und Niederlassung in Hamburg. Auf `F:\Shares` liegen rund 60 GB Dokumente aus zwölf Jahren: Kundenprojekte, Buchhaltung, Personal, Richtlinien, Vorlagen. Die Berechtigungen folgen AGDLP, ein paar Stellen sind aber absichtlich verbaut, wie auf echten Servern nach Jahren im Betrieb.
 
-**Zugang:** RDP vom Exchange-Server auf `<K>-FS01` als `<K>\azadmin`. Auf dem Desktop liegt `Lab-Info.txt` mit Freigaben und Gruppen. Werkzeuge auf dem Fileserver: *Server-Manager*, *Ressourcen-Manager für Dateiserver* (`fsrm.msc`), PowerShell mit den Modulen `SmbShare`, `FileServerResourceManager` und `ActiveDirectory`. Benutzer und Gruppen verwaltest du wie gewohnt auf dem Exchange-Server.
+**Zugang:** RDP vom Client aus auf `<K>-FS01` als `<K>\azadmin` (Remote Desktop Manager, Arbeitsbereich „Lab-Server“). Auf dem Desktop liegt `Lab-Info.txt` mit Freigaben und Gruppen. Werkzeuge auf dem Fileserver: *Server-Manager*, *Ressourcen-Manager für Dateiserver* (`fsrm.msc`), PowerShell mit den Modulen `SmbShare`, `FileServerResourceManager` und `ActiveDirectory`. Benutzer und Gruppen verwaltest du wie gewohnt auf dem Exchange-Server.
 
 | Freigabe | Inhalt | Wer ändern darf |
 | --- | --- | --- |
