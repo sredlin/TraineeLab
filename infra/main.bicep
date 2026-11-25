@@ -88,6 +88,35 @@ param clientImageSku string = 'win11-25h2-ent'
 ])
 param officeProductId string = 'O365ProPlusRetail'
 
+@description('Fileserver <K>-FS01 bereitstellen: Freigaben mit AGDLP-Berechtigungen, Basisordner, FSRM und absichtliche Altlasten fuer Uebungen. Keine Public IP.')
+param deployFileServer bool = true
+
+@description('VM-Groesse des Fileservers. Mehr vCPUs erzeugen die Beispieldokumente schneller (siehe readme). Startet er mit einer B-Groesse, bleibt sie.')
+@allowed([
+  'Standard_B2s_v2'
+  'Standard_B2ms'
+  'Standard_D2s_v5'
+  'Standard_D4s_v5'
+  'Standard_D8s_v5'
+])
+param fileServerVmSize string = 'Standard_D4s_v5'
+
+// B2s_v2 statt B2ms: Die VM verkleinert sich im laufenden Betrieb, also nur auf Groessen ihres Hardware-Clusters.
+// Die Dsv5-Cluster fuehren Bsv2, aber nicht die alte B-Serie (Testdeployment: B2ms nicht verfuegbar).
+@description('Dauergroesse des Fileservers: Nach Beispieldokumenten und Updates verkleinert sich die VM selbst darauf. Leer = fileServerVmSize bleibt.')
+@allowed([
+  ''
+  'Standard_B2s_v2'
+  'Standard_D2s_v5'
+  'Standard_D4s_v5'
+])
+param fileServerFinalVmSize string = 'Standard_B2s_v2'
+
+@description('Umfang der Beispieldokumente auf dem Fileserver in GB (Word, Excel, PowerPoint, PDF), 0 = keine. Was im Deployment nicht fertig wird, entsteht danach im Hintergrund.')
+@minValue(0)
+@maxValue(120)
+param fileServerDataSizeGB int = 60
+
 @description('VM-Groesse des Exchange-Servers (Microsoft empfiehlt fuer Produktion 128 GB RAM; 32 GB reichen fuer das Lab).')
 @allowed([
   'Standard_E4s_v5'
@@ -112,6 +141,8 @@ var addressPrefix = '10.0.0.0/16'
 var dcPrivateIp = '10.0.1.4'
 var exchangePrivateIp = '10.0.1.5'
 var dc2PrivateIp = '10.0.1.6'
+var fileServerPrivateIp = '10.0.1.7'
+var fileServerResizeTo = fileServerFinalVmSize == fileServerVmSize || startsWith(fileServerVmSize, 'Standard_B') ? '' : fileServerFinalVmSize
 var clientPrivateIp = '10.0.1.10'
 
 var names = {
@@ -128,6 +159,8 @@ var names = {
   clientVm: 'vm-${traineeLower}-cl01'
   clientComputer: '${traineeUpper}-CL01'
   clientPublicIp: 'pip-${traineeLower}-cl01'
+  fsVm: 'vm-${traineeLower}-fs01'
+  fsComputer: '${traineeUpper}-FS01'
 }
 
 // Einzige Quelle der Subnet-Definition: wird bei Erstanlage und DNS-Umstellung identisch verwendet.
@@ -302,6 +335,7 @@ module exchangeInstall 'modules/exchange-install.bicep' = {
     dcComputerName: names.dcComputer
     secondDcComputerName: deploySecondDc ? names.dc2Computer : ''
     clientComputerName: deployClient ? names.clientComputer : ''
+    fileServerComputerName: deployFileServer ? names.fsComputer : ''
     dcIp: dcPrivateIp
     exchangeIp: exchangePrivateIp
   }
@@ -343,9 +377,54 @@ module clientJoin 'modules/client-join.bicep' = if (deployClient) {
     publicDomainName: publicDomainName
     dcIp: dcPrivateIp
     exchangeIp: exchangePrivateIp
+    fileServerComputerName: deployFileServer ? names.fsComputer : ''
   }
   dependsOn: [
     client
+    vnetDns
+  ]
+}
+
+// Vorbereitung (Disk, Ordnergeruest) und Beispieldokumente parallel zum DC-Aufbau und zur Exchange-Installation,
+// Beitritt erst danach und nach der DNS-Umstellung.
+module fileServer 'modules/file-server.bicep' = if (deployFileServer) {
+  name: 'file-server'
+  params: {
+    location: location
+    tags: allTags
+    vmName: names.fsVm
+    computerName: names.fsComputer
+    vmSize: fileServerVmSize
+    subnetId: network.outputs.subnetId
+    privateIp: fileServerPrivateIp
+    adminUsername: adminUsername
+    adminPassword: adminPassword
+    sampleDataSizeGB: fileServerDataSizeGB
+    finalVmSize: fileServerResizeTo
+  }
+}
+
+// Gruppen und Basisordner brauchen die Lab-Benutzer, die Phase Complete wartet selbst auf die Exchange-Installation.
+module fileServerJoin 'modules/file-server-join.bicep' = if (deployFileServer) {
+  name: 'file-server-join'
+  params: {
+    location: location
+    tags: allTags
+    vmName: names.fsVm
+    adminUsername: adminUsername
+    adminPassword: adminPassword
+    domainName: adDomainName
+    netbiosName: traineeUpper
+    publicDomainName: publicDomainName
+    companyOu: companyOu
+    dcComputerName: names.dcComputer
+    dcIp: dcPrivateIp
+    exchangeIp: exchangePrivateIp
+    finalVmSize: fileServerResizeTo
+    waitForSampleDocuments: fileServerDataSizeGB > 0
+  }
+  dependsOn: [
+    fileServer
     vnetDns
   ]
 }
@@ -393,6 +472,20 @@ module clientShutdown 'modules/auto-shutdown.bicep' = if (deployClient && !empty
   ]
 }
 
+module fileServerShutdown 'modules/auto-shutdown.bicep' = if (deployFileServer && !empty(autoShutdownTime)) {
+  name: 'auto-shutdown-${names.fsVm}'
+  params: {
+    location: location
+    tags: allTags
+    vmName: names.fsVm
+    shutdownTime: autoShutdownTime
+  }
+  dependsOn: [
+    exchangeInstall
+    fileServerJoin
+  ]
+}
+
 // ---------------------------------------------------------------------------------------------
 // Ausgaben
 // ---------------------------------------------------------------------------------------------
@@ -402,3 +495,4 @@ output rdpHost string = network.outputs.publicIpFqdn
 output adDomain string = adDomainName
 output publicDomain string = publicDomainName
 output clientRdpHost string = deployClient ? network.outputs.clientPublicIpFqdn : ''
+output fileServerUnc string = deployFileServer ? '\\\\${names.fsComputer}' : ''

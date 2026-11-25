@@ -33,6 +33,9 @@ param dcIp string
 @description('Private IP des Exchange-Servers.')
 param exchangeIp string
 
+@description('Computername des optionalen Fileservers, nur fuer Lab-Info.txt. Leer = kein Fileserver.')
+param fileServerComputerName string = ''
+
 resource vm 'Microsoft.Compute/virtualMachines@2025-04-01' existing = {
   name: vmName
 }
@@ -110,6 +113,26 @@ resource joinDomain 'Microsoft.Compute/virtualMachines/extensions@2025-04-01' = 
   ]
 }
 
+// Die Extension startet die VM erst nach ihrer Erfolgsmeldung neu. Dieser Run Command darf vom Neustart
+// abgebrochen werden (kein Deployment-Fehler), damit der naechste Run Command sicher erst danach startet.
+resource waitJoinReboot 'Microsoft.Compute/virtualMachines/runCommands@2025-04-01' = {
+  parent: vm
+  name: 'Wait-DomainJoinReboot'
+  location: location
+  tags: tags
+  properties: {
+    source: {
+      script: loadTextContent('../../scripts/Wait-DomainJoinReboot.ps1')
+    }
+    asyncExecution: false
+    timeoutInSeconds: 1200
+    treatFailureAsDeploymentFailure: false
+  }
+  dependsOn: [
+    joinDomain
+  ]
+}
+
 resource completeClient 'Microsoft.Compute/virtualMachines/runCommands@2025-04-01' = {
   parent: vm
   name: 'Complete-LabClient'
@@ -119,7 +142,8 @@ resource completeClient 'Microsoft.Compute/virtualMachines/runCommands@2025-04-0
     source: {
       script: loadTextContent('../../scripts/Initialize-LabClient.ps1')
     }
-    parameters: [
+    // Leere Werte wuerden als Parameter ohne Argument uebergeben, daher optionale Werte nur bei Bedarf.
+    parameters: concat([
       {
         name: 'Phase'
         value: 'Complete'
@@ -136,12 +160,17 @@ resource completeClient 'Microsoft.Compute/virtualMachines/runCommands@2025-04-0
         name: 'PublicDomainName'
         value: publicDomainName
       }
-    ]
+    ], empty(fileServerComputerName) ? [] : [
+      {
+        name: 'FileServerComputerName'
+        value: fileServerComputerName
+      }
+    ])
     asyncExecution: false
     timeoutInSeconds: 3600
     treatFailureAsDeploymentFailure: true
   }
   dependsOn: [
-    joinDomain
+    waitJoinReboot
   ]
 }
