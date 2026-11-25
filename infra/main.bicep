@@ -122,10 +122,10 @@ param fileServerVmSize string = 'Standard_D4s_v5'
 ])
 param fileServerFinalVmSize string = 'Standard_B2s_v2'
 
-@description('Umfang der Beispieldokumente auf dem Fileserver in GB (Word, Excel, PowerPoint, PDF), 0 = keine. Was im Deployment nicht fertig wird, entsteht danach im Hintergrund.')
+@description('Umfang der Beispieldokumente (Word, Excel, PowerPoint, PDF) in Prozent der Datendisk des Fileservers (256 GB), 0 = keine. Was im Deployment nicht fertig wird, entsteht danach im Hintergrund.')
 @minValue(0)
-@maxValue(120)
-param fileServerDataSizeGB int = 60
+@maxValue(90)
+param fileServerDataPercent int = 90
 
 @description('VM-Groesse des Exchange-Servers (Microsoft empfiehlt fuer Produktion 128 GB RAM; 32 GB reichen fuer das Lab).')
 @allowed([
@@ -419,7 +419,7 @@ module fileServer 'modules/file-server.bicep' = if (deployFileServer) {
     privateIp: fileServerPrivateIp
     adminUsername: adminUsername
     adminPassword: adminPassword
-    sampleDataSizeGB: fileServerDataSizeGB
+    sampleDataPercent: fileServerDataPercent
     finalVmSize: fileServerResizeTo
     labLanguage: labLanguage
   }
@@ -442,7 +442,7 @@ module fileServerJoin 'modules/file-server-join.bicep' = if (deployFileServer) {
     dcIp: dcPrivateIp
     exchangeIp: exchangePrivateIp
     finalVmSize: fileServerResizeTo
-    waitForSampleDocuments: fileServerDataSizeGB > 0
+    waitForSampleDocuments: fileServerDataPercent > 0
     labLanguage: labLanguage
   }
   dependsOn: [

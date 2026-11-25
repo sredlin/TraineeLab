@@ -35,8 +35,8 @@ param adminPassword string
 @description('Groesse der Datendisk in GB.')
 param dataDiskSizeGB int = 256
 
-@description('Umfang der Beispieldokumente in GB, 0 = keine.')
-param sampleDataSizeGB int = 60
+@description('Umfang der Beispieldokumente in Prozent der Datendisk, 0 = keine.')
+param sampleDataPercent int = 90
 
 @description('Zeitbudget des Generators im Deployment in Minuten. Danach setzt ein Task im Hintergrund fort.')
 param sampleTimeBudgetMinutes int = 60
@@ -190,7 +190,7 @@ resource prepareFileServer 'Microsoft.Compute/virtualMachines/runCommands@2025-0
 
 // Beispieldokumente vor dem Domaenenbeitritt (dessen Neustart wuerde die Erzeugung abbrechen).
 // Nach dem Zeitbudget endet der Run Command erfolgreich, der Task TraineeLab-SampleDocuments setzt fort.
-resource sampleDocuments 'Microsoft.Compute/virtualMachines/runCommands@2025-04-01' = if (sampleDataSizeGB > 0) {
+resource sampleDocuments 'Microsoft.Compute/virtualMachines/runCommands@2025-04-01' = if (sampleDataPercent > 0) {
   parent: vm
   name: 'New-SampleDocuments'
   location: location
@@ -204,8 +204,8 @@ resource sampleDocuments 'Microsoft.Compute/virtualMachines/runCommands@2025-04-
     }
     parameters: [
       {
-        name: 'TargetSizeGB'
-        value: string(sampleDataSizeGB)
+        name: 'TargetPercent'
+        value: string(sampleDataPercent)
       }
       {
         name: 'TimeBudgetMinutes'

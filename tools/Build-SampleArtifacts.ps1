@@ -67,6 +67,8 @@ $lines = @(
     '[CmdletBinding()]'
     'param('
     '    [double] $TargetSizeGB = 60,'
+    '    # Anteil am Datenvolume in Prozent, ueberschreibt TargetSizeGB.'
+    '    [int] $TargetPercent = 0,'
     '    [int] $TimeBudgetMinutes = 60'
     ')'
     ''
@@ -81,7 +83,7 @@ $lines = @(
     '$gzip.Dispose()'
     '$generator = Join-Path $scriptDir ''New-SampleDocuments.ps1'''
     '[IO.File]::WriteAllBytes($generator, $plain.ToArray())'
-    '& $generator -TargetSizeGB $TargetSizeGB -TimeBudgetMinutes $TimeBudgetMinutes'
+    '& $generator -TargetSizeGB $TargetSizeGB -TargetPercent $TargetPercent -TimeBudgetMinutes $TimeBudgetMinutes'
     'if ($LASTEXITCODE -eq 0) { exit 0 }'
     'exit $LASTEXITCODE'
 )

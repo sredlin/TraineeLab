@@ -411,9 +411,12 @@ Describe 'azuredeploy.json' {
     }
 
     It 'erzeugt die Beispieldokumente vor dem Domaenenbeitritt, mit Korpus in der userData' {
-        $template.parameters.fileServerDataSizeGB.defaultValue | Should -Be 60
-        $template.parameters.fileServerDataSizeGB.maxValue | Should -Be 120
+        # 90 % der Datendisk; der Generator haelt zusaetzlich 8 % frei (Test-VolumeFull).
+        $template.parameters.fileServerDataPercent.defaultValue | Should -Be 90
+        $template.parameters.fileServerDataPercent.maxValue | Should -Be 90
         $fileServerModule = ($template.resources | Where-Object name -EQ 'file-server').properties.template
+        $sampleRun = $fileServerModule.resources | Where-Object { $_.type -eq 'Microsoft.Compute/virtualMachines/runCommands' -and $_.name -match 'New-SampleDocuments' }
+        $sampleRun.properties.parameters.name | Should -Contain 'TargetPercent'
         $vm = $fileServerModule.resources | Where-Object type -EQ 'Microsoft.Compute/virtualMachines'
         $vm.properties.userData | Should -Not -BeNullOrEmpty
         $vm.properties.userData.Length | Should -BeLessOrEqual 65536

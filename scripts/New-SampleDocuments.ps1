@@ -32,7 +32,11 @@ param(
 
     [double] $TargetSizeGB = 60,
 
-    # Ueberschreibt TargetSizeGB (Tests).
+    # Anteil an der Groesse des Volumes von TargetPath in Prozent, ueberschreibt TargetSizeGB (Deployment: 90).
+    [ValidateRange(0, 95)]
+    [int] $TargetPercent = 0,
+
+    # Ueberschreibt TargetPercent und TargetSizeGB (Tests).
     [int] $TargetSizeMB = 0,
 
     [string] $LabRoot = 'C:\ExchangeLab',
@@ -77,6 +81,9 @@ $PlanFile = Join-Path $LabRoot 'sample-plan.json'
 $TaskName = 'TraineeLab-SampleDocuments'
 $TempSuffix = '.tmp-sample'
 $DuplicateShare = 0.33
+# Kapazitaet der einfachen Einheitenliste in GB (vorsichtig unter dem Messwert) und freier Mindestanteil des Volumes.
+$UnitCapacityGB = 60
+$MinFreeShare = 0.08
 $ArchiveYears = 6
 $MaxYears = 12
 $SelfText = $MyInvocation.MyCommand.ScriptBlock.ToString()
@@ -5038,8 +5045,33 @@ function Build-BrandingSpec {
 #endregion
 #region Ablauf: Einheiten, Export, Worker, Kopien, Zeitstempel, Hauptablauf
 
+function Get-ProjectScale {
+    # Projekte je Kunde und Jahr vervielfachen, wenn das Ziel ueber der Kapazitaet einer einfachen Einheitenliste liegt
+    # (gemessen 2026-11-25: rund 68 GB eigene Dokumente mit Rastergrafik). Sonst fuellten nur Kopien das Ziel.
+    param([long] $UniqueTarget)
+    [Math]::Max(1, [int][Math]::Ceiling(($UniqueTarget / 1GB) / $UnitCapacityGB))
+}
+
+function Get-TargetByte {
+    # Ziel in Byte: TargetSizeMB (Tests) vor TargetPercent (Anteil am Volume von TargetPath) vor TargetSizeGB.
+    if ($TargetSizeMB -gt 0) { return [long]$TargetSizeMB * 1MB }
+    if ($TargetPercent -gt 0) { return [long]((Get-TargetVolume).TotalSize * $TargetPercent / 100) }
+    [long]($TargetSizeGB * 1GB)
+}
+
+function Get-TargetVolume {
+    New-Object -TypeName System.IO.DriveInfo -ArgumentList ([IO.Path]::GetPathRoot([IO.Path]::GetFullPath($TargetPath)))
+}
+
+function Test-VolumeFull {
+    # Schutz vor voller Disk: Cluster-Verschnitt und MFT zaehlen nicht zum Ziel, belegen aber Platz.
+    $volume = Get-TargetVolume
+    $volume.AvailableFreeSpace -lt $volume.TotalSize * $MinFreeShare
+}
+
 function Get-WorkUnit {
     # Deterministische Einheitenliste. Kernbausteine zuerst, der Rest gemischt, damit jeder Anfang alle Jahre abdeckt.
+    param([int] $Scale = 1)
     $core = [System.Collections.Generic.List[object]]::new()
     $rest = [System.Collections.Generic.List[object]]::new()
     $unitSeed = 1
@@ -5055,7 +5087,7 @@ function Get-WorkUnit {
             if (-not (Test-CustomerActive $customer $y)) { continue }
             $rng = Get-Rng -Index ($unitSeed * 13) -Salt 9
             $names = @($customer.Projects)
-            $count = 4 + $rng.Next(0, 3)
+            $count = (4 + $rng.Next(0, 3)) * $Scale
             for ($n = 0; $n -lt $count; $n++) {
                 $name = if ($n -eq 0 -and $customer.Yearly) { $customer.Yearly } else { $names[($n + $y) % $names.Count] }
                 if ($n -ge $names.Count + 1) { $name = '{0} {1}' -f $name, ($n - $names.Count + 1) }
@@ -5234,11 +5266,12 @@ function Write-WorkerProgress {
 
 function Invoke-WorkerLoop {
     param([int] $WorkerIndex, [int] $Count, [long] $UniqueTarget)
-    $units = Get-WorkUnit
+    $units = Get-WorkUnit -Scale (Get-ProjectScale $UniqueTarget)
     $progressFile = Join-Path $ProgressDir ('worker-{0}.txt' -f $WorkerIndex)
     $bytes = 0L; $files = 0; $failed = 0
     for ($i = $WorkerIndex; $i -lt $units.Count; $i += $Count) {
         if ((Get-UniqueProgress) -ge $UniqueTarget) { break }
+        if (Test-VolumeFull) { Write-LabLog ('Volume fast voll (unter {0:P0} frei), Worker {1} stoppt.' -f $MinFreeShare, $WorkerIndex); break }
         try { $specs = Build-Unit $units[$i] }
         catch { $failed++; Write-LabLog "WARNUNG: Einheit $i ($($units[$i].Type)) nicht gebaut: $($_.Exception.Message) $($_.ScriptStackTrace)"; continue }
         foreach ($spec in $specs) {
@@ -5275,6 +5308,7 @@ function Invoke-DuplicatePass {
     $attempts = 0
     while ($total -lt $TargetBytes -and $attempts -lt 400000 -and $sources) {
         $attempts++
+        if (($attempts % 500) -eq 0 -and (Test-VolumeFull)) { Write-LabLog ('Volume fast voll (unter {0:P0} frei), keine weiteren Kopien.' -f $MinFreeShare); break }
         $src = $sources[$rng.Next(0, $sources.Count)]
         $relative = $src.FullName.Substring($TargetPath.Length).TrimStart('\', '/')
         $kind = $rng.Next(0, 10)
@@ -5342,7 +5376,7 @@ function Get-ScriptCopy {
 }
 
 function Invoke-MainPhase {
-    $targetBytes = if ($TargetSizeMB -gt 0) { [long]$TargetSizeMB * 1MB } else { [long]($TargetSizeGB * 1GB) }
+    $targetBytes = Get-TargetByte
     $uniqueTarget = [long]($targetBytes * (1 - $DuplicateShare))
     $count = if ($WorkerCount -gt 0) { $WorkerCount } else { [Environment]::ProcessorCount }
     Write-LabLog ("Start: Ziel {0:N1} GB ({1:N1} GB eigene Dokumente), Stichtag {2:yyyy-MM-dd}, {3} Worker, Raster {4}." -f ($targetBytes / 1GB), ($uniqueTarget / 1GB), $Reference, $count, $UseRaster)
@@ -5410,7 +5444,7 @@ function Register-ContinuationTask {
 try {
     Initialize-Generator
     if ($Worker -ge 0) {
-        $targetBytes = if ($TargetSizeMB -gt 0) { [long]$TargetSizeMB * 1MB } else { [long]($TargetSizeGB * 1GB) }
+        $targetBytes = Get-TargetByte
         Invoke-WorkerLoop $Worker $WorkerCount ([long]($targetBytes * (1 - $DuplicateShare)))
     }
     else { Invoke-MainPhase }
