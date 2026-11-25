@@ -153,7 +153,8 @@ Describe 'FileServer.psd1' {
         $seen = @()
         foreach ($path in $folderPaths) {
             if ($path -match '\\') {
-                $seen | Should -Contain (Split-Path -Path $path -Parent) -Because "$path braucht zuerst den uebergeordneten Ordner"
+                # Nicht Split-Path: Unter Linux (CI) ist der Backslash kein Pfadtrenner.
+                $seen | Should -Contain $path.Substring(0, $path.LastIndexOf('\')) -Because "$path braucht zuerst den uebergeordneten Ordner"
             }
             $seen += $path
         }
