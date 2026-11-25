@@ -41,6 +41,23 @@
         @{ SamAccountName = 'SHarz'; GivenName = 'Sascha'; Surname = 'Harz'; OrganizationalUnit = 'OU=Users,OU=Hamburg,OU=Branch'; StreetAddress = 'Ring 1'; City = 'Hamburg'; PostalCode = '20257'; Office = '15'; Title = 'Artist'; Department = 'Marketing'; OfficePhone = '+49 40 66969-511'; MobilePhone = '+49 171 3920009'; Fax = '+49 40 66969-099' }
         @{ SamAccountName = 'WLonska'; GivenName = 'Wioletta'; Surname = 'Lonska'; OrganizationalUnit = 'OU=Users,OU=Hamburg,OU=Branch'; StreetAddress = 'Ring 1'; City = 'Hamburg'; PostalCode = '20257'; Office = '15'; Title = 'Artist'; Department = 'Marketing'; OfficePhone = '+49 40 66969-512'; MobilePhone = '+49 171 3920010'; Fax = '+49 40 66969-099' }
         @{ SamAccountName = 'RJung'; GivenName = 'Robert'; Surname = 'Jung'; OrganizationalUnit = 'OU=Users,OU=Hamburg,OU=Branch'; StreetAddress = 'Ring 1'; City = 'Hamburg'; PostalCode = '20257'; Office = '15'; Title = 'Artist'; Department = 'Marketing'; OfficePhone = '+49 40 66969-513'; MobilePhone = '+49 171 3920011'; Fax = '+49 40 66969-099' }
+        # Microsoft-Demo-Personas (gleiche Namen und Konten wie in M365-Demo-Tenants, z. B. fuer das Mapping bei einer Migration).
+        @{ SamAccountName = 'PattiF'; GivenName = 'Patti'; Surname = 'Fernandez'; OrganizationalUnit = 'OU=Users,OU=Berlin,OU=Branch'; StreetAddress = 'Weg 1'; City = 'Berlin'; PostalCode = '10117'; Office = '20'; Title = 'Leiterin Vertrieb'; Department = 'Vertrieb'; OfficePhone = '+49 30 23125-400'; MobilePhone = '+49 171 3920012'; Fax = '+49 30 23125-099' }
+        @{ SamAccountName = 'IsaiahL'; GivenName = 'Isaiah'; Surname = 'Langer'; OrganizationalUnit = 'OU=Users,OU=Berlin,OU=Branch'; StreetAddress = 'Weg 1'; City = 'Berlin'; PostalCode = '10117'; Office = '20'; Title = 'Kundenberater'; Department = 'Vertrieb'; OfficePhone = '+49 30 23125-410'; MobilePhone = '+49 171 3920013'; Fax = '+49 30 23125-099' }
+        @{ SamAccountName = 'LidiaH'; GivenName = 'Lidia'; Surname = 'Holloway'; OrganizationalUnit = 'OU=Users,OU=Berlin,OU=Branch'; StreetAddress = 'Weg 1'; City = 'Berlin'; PostalCode = '10117'; Office = '20'; Title = 'Projektmanagerin'; Department = 'Vertrieb'; OfficePhone = '+49 30 23125-411'; MobilePhone = '+49 171 3920014'; Fax = '+49 30 23125-099' }
+        @{ SamAccountName = 'MiriamG'; GivenName = 'Miriam'; Surname = 'Graham'; OrganizationalUnit = 'OU=Users,OU=Berlin,OU=Branch'; StreetAddress = 'Weg 1'; City = 'Berlin'; PostalCode = '10117'; Office = '15'; Title = 'Kreativdirektorin'; Department = 'Marketing'; OfficePhone = '+49 30 23125-520'; MobilePhone = '+49 171 3920015'; Fax = '+49 30 23125-099' }
+        @{ SamAccountName = 'MeganB'; GivenName = 'Megan'; Surname = 'Bowen'; OrganizationalUnit = 'OU=Users,OU=Berlin,OU=Branch'; StreetAddress = 'Weg 1'; City = 'Berlin'; PostalCode = '10117'; Office = '15'; Title = 'Marketingmanagerin'; Department = 'Marketing'; OfficePhone = '+49 30 23125-514'; MobilePhone = '+49 171 3920016'; Fax = '+49 30 23125-099' }
+        @{ SamAccountName = 'AlexW'; GivenName = 'Alex'; Surname = 'Wilber'; OrganizationalUnit = 'OU=Users,OU=Berlin,OU=Branch'; StreetAddress = 'Weg 1'; City = 'Berlin'; PostalCode = '10117'; Office = '15'; Title = 'Marketing-Assistent'; Department = 'Marketing'; OfficePhone = '+49 30 23125-515'; MobilePhone = '+49 171 3920017'; Fax = '+49 30 23125-099' }
+        @{ SamAccountName = 'HenriettaM'; GivenName = 'Henrietta'; Surname = 'Mueller'; OrganizationalUnit = 'OU=Users,OU=Berlin,OU=Branch'; StreetAddress = 'Weg 1'; City = 'Berlin'; PostalCode = '10117'; Office = '15'; Title = 'Webentwicklerin'; Department = 'Marketing'; OfficePhone = '+49 30 23125-516'; MobilePhone = '+49 171 3920018'; Fax = '+49 30 23125-099' }
+        @{ SamAccountName = 'NestorW'; GivenName = 'Nestor'; Surname = 'Wilke'; OrganizationalUnit = 'OU=Users,OU=Berlin,OU=Branch'; StreetAddress = 'Weg 1'; City = 'Berlin'; PostalCode = '10117'; Office = '15'; Title = 'Leiter Produktion'; Department = 'Marketing'; OfficePhone = '+49 30 23125-517'; MobilePhone = '+49 171 3920019'; Fax = '+49 30 23125-099' }
+        @{ SamAccountName = 'DiegoS'; GivenName = 'Diego'; Surname = 'Siciliani'; OrganizationalUnit = 'OU=Users,OU=Berlin,OU=Branch'; StreetAddress = 'Weg 1'; City = 'Berlin'; PostalCode = '10117'; Office = '12'; Title = 'Personalleiter'; Department = 'Personal'; OfficePhone = '+49 30 23125-300'; MobilePhone = '+49 171 3920020'; Fax = '+49 30 23125-099' }
+        @{ SamAccountName = 'JoniS'; GivenName = 'Joni'; Surname = 'Sherman'; OrganizationalUnit = 'OU=Users,OU=Berlin,OU=Branch'; StreetAddress = 'Weg 1'; City = 'Berlin'; PostalCode = '10117'; Office = '10'; Title = 'Assistenz der Geschäftsführung'; Department = 'Personal'; OfficePhone = '+49 30 23125-110'; MobilePhone = '+49 171 3920021'; Fax = '+49 30 23125-099' }
+        @{ SamAccountName = 'PradeepG'; GivenName = 'Pradeep'; Surname = 'Gupta'; OrganizationalUnit = 'OU=Users,OU=Berlin,OU=Branch'; StreetAddress = 'Weg 1'; City = 'Berlin'; PostalCode = '10117'; Office = '12'; Title = 'Buchhalter'; Department = 'Buchhaltung'; OfficePhone = '+49 30 23125-310'; MobilePhone = '+49 171 3920022'; Fax = '+49 30 23125-099' }
+        @{ SamAccountName = 'AdeleV'; GivenName = 'Adele'; Surname = 'Vance'; OrganizationalUnit = 'OU=Users,OU=Hamburg,OU=Branch'; StreetAddress = 'Ring 1'; City = 'Hamburg'; PostalCode = '20257'; Office = '20'; Title = 'Kundenberaterin'; Department = 'Vertrieb'; OfficePhone = '+49 40 66969-410'; MobilePhone = '+49 171 3920023'; Fax = '+49 40 66969-099' }
+        @{ SamAccountName = 'LeeG'; GivenName = 'Lee'; Surname = 'Gu'; OrganizationalUnit = 'OU=Users,OU=Hamburg,OU=Branch'; StreetAddress = 'Ring 1'; City = 'Hamburg'; PostalCode = '20257'; Office = '15'; Title = 'Leiter Digital'; Department = 'Marketing'; OfficePhone = '+49 40 66969-520'; MobilePhone = '+49 171 3920024'; Fax = '+49 40 66969-099' }
+        @{ SamAccountName = 'GradyA'; GivenName = 'Grady'; Surname = 'Archie'; OrganizationalUnit = 'OU=Users,OU=Hamburg,OU=Branch'; StreetAddress = 'Ring 1'; City = 'Hamburg'; PostalCode = '20257'; Office = '15'; Title = 'Grafiker'; Department = 'Marketing'; OfficePhone = '+49 40 66969-514'; MobilePhone = '+49 171 3920025'; Fax = '+49 40 66969-099' }
+        @{ SamAccountName = 'LynneR'; GivenName = 'Lynne'; Surname = 'Robbins'; OrganizationalUnit = 'OU=Users,OU=Hamburg,OU=Branch'; StreetAddress = 'Ring 1'; City = 'Hamburg'; PostalCode = '20257'; Office = '15'; Title = 'Mediaplanerin'; Department = 'Marketing'; OfficePhone = '+49 40 66969-515'; MobilePhone = '+49 171 3920026'; Fax = '+49 40 66969-099' }
+        @{ SamAccountName = 'JohannaL'; GivenName = 'Johanna'; Surname = 'Lorenz'; OrganizationalUnit = 'OU=Users,OU=Hamburg,OU=Branch'; StreetAddress = 'Ring 1'; City = 'Hamburg'; PostalCode = '20257'; Office = '15'; Title = 'Texterin'; Department = 'Marketing'; OfficePhone = '+49 40 66969-516'; MobilePhone = '+49 171 3920027'; Fax = '+49 40 66969-099' }
     )
 
     # Ziel-OU fuer den optionalen Windows-11-Client (tritt zunaechst in den Standardcontainer bei).
@@ -59,18 +76,35 @@
         SHarz       = 'CHerz'
         WLonska     = 'CHerz'
         RJung       = 'CHerz'
+        PattiF      = 'MMustermann'
+        IsaiahL     = 'PattiF'
+        LidiaH      = 'PattiF'
+        AdeleV      = 'PattiF'
+        MiriamG     = 'EMustermann'
+        MeganB      = 'JDoe'
+        AlexW       = 'MeganB'
+        HenriettaM  = 'MiriamG'
+        NestorW     = 'MiriamG'
+        LeeG        = 'CHerz'
+        GradyA      = 'CHerz'
+        LynneR      = 'CHerz'
+        JohannaL    = 'CHerz'
+        DiegoS      = 'EMustermann'
+        JoniS       = 'MMustermann'
+        PradeepG    = 'MMustermann'
     }
 
     DistributionGroups  = @(
         @{ Name = 'Geschäftsleitung'; Alias = 'geschaeftsleitung'; OrganizationalUnit = 'OU=DistributionLists,OU=Administration'; Members = @('MMustermann', 'EMustermann', 'CHerz') }
-        @{ Name = 'Marketing Berlin'; Alias = 'marketing-berlin'; OrganizationalUnit = 'OU=DistributionLists,OU=Administration'; Members = @('EMustermann', 'JDoe', 'KAnders', 'VSpula', 'LMayer') }
-        @{ Name = 'Marketing Hamburg'; Alias = 'marketing-hamburg'; OrganizationalUnit = 'OU=DistributionLists,OU=Administration'; Members = @('WErnst', 'JFrick', 'SHarz', 'WLonska', 'RJung') }
-        @{ Name = 'Alle Mitarbeiter'; Alias = 'alle'; OrganizationalUnit = 'OU=DistributionLists,OU=Administration'; Members = @('MMustermann', 'EMustermann', 'JDoe', 'KAnders', 'VSpula', 'LMayer', 'CHerz', 'WErnst', 'JFrick', 'SHarz', 'WLonska', 'RJung') }
+        @{ Name = 'Marketing Berlin'; Alias = 'marketing-berlin'; OrganizationalUnit = 'OU=DistributionLists,OU=Administration'; Members = @('EMustermann', 'JDoe', 'KAnders', 'VSpula', 'LMayer', 'MiriamG', 'MeganB', 'AlexW', 'HenriettaM', 'NestorW') }
+        @{ Name = 'Marketing Hamburg'; Alias = 'marketing-hamburg'; OrganizationalUnit = 'OU=DistributionLists,OU=Administration'; Members = @('WErnst', 'JFrick', 'SHarz', 'WLonska', 'RJung', 'LeeG', 'GradyA', 'LynneR', 'JohannaL') }
+        @{ Name = 'Vertrieb'; Alias = 'vertrieb'; OrganizationalUnit = 'OU=DistributionLists,OU=Administration'; Members = @('PattiF', 'IsaiahL', 'LidiaH', 'AdeleV') }
+        @{ Name = 'Alle Mitarbeiter'; Alias = 'alle'; OrganizationalUnit = 'OU=DistributionLists,OU=Administration'; Members = @('MMustermann', 'EMustermann', 'JDoe', 'KAnders', 'VSpula', 'LMayer', 'CHerz', 'WErnst', 'JFrick', 'SHarz', 'WLonska', 'RJung', 'PattiF', 'IsaiahL', 'LidiaH', 'MiriamG', 'MeganB', 'AlexW', 'HenriettaM', 'NestorW', 'DiegoS', 'JoniS', 'PradeepG', 'AdeleV', 'LeeG', 'GradyA', 'LynneR', 'JohannaL') }
     )
 
     SharedMailboxes     = @(
-        @{ Name = 'Info'; Alias = 'info'; OrganizationalUnit = 'OU=Resources,OU=Administration'; FullAccess = @('EMustermann', 'CHerz'); SendAs = @('EMustermann') }
-        @{ Name = 'Buchhaltung'; Alias = 'buchhaltung'; OrganizationalUnit = 'OU=Resources,OU=Administration'; FullAccess = @('MMustermann'); SendAs = @('MMustermann') }
+        @{ Name = 'Info'; Alias = 'info'; OrganizationalUnit = 'OU=Resources,OU=Administration'; FullAccess = @('EMustermann', 'CHerz', 'JoniS'); SendAs = @('EMustermann', 'JoniS') }
+        @{ Name = 'Buchhaltung'; Alias = 'buchhaltung'; OrganizationalUnit = 'OU=Resources,OU=Administration'; FullAccess = @('MMustermann', 'PradeepG'); SendAs = @('MMustermann', 'PradeepG') }
     )
 
     RoomMailboxes       = @(

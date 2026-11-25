@@ -10,11 +10,11 @@
 
     GlobalGroups         = @(
         @{ Name = 'GG-Geschaeftsleitung'; OrganizationalUnit = 'OU=Groups,OU=Berlin,OU=Branch'; Description = 'Geschaeftsleitung'; Members = @('MMustermann', 'EMustermann', 'CHerz') }
-        @{ Name = 'GG-Marketing-Berlin'; OrganizationalUnit = 'OU=Groups,OU=Berlin,OU=Branch'; Description = 'Marketing Standort Berlin'; Members = @('EMustermann', 'JDoe', 'KAnders', 'VSpula', 'LMayer') }
-        @{ Name = 'GG-Marketing-Hamburg'; OrganizationalUnit = 'OU=Groups,OU=Hamburg,OU=Branch'; Description = 'Marketing Standort Hamburg'; Members = @('CHerz', 'WErnst', 'JFrick', 'SHarz', 'WLonska', 'RJung') }
-        @{ Name = 'GG-Buchhaltung'; OrganizationalUnit = 'OU=Groups,OU=Berlin,OU=Branch'; Description = 'Buchhaltung'; Members = @('MMustermann') }
-        @{ Name = 'GG-Personal'; OrganizationalUnit = 'OU=Groups,OU=Berlin,OU=Branch'; Description = 'Personalabteilung'; Members = @('EMustermann') }
-        @{ Name = 'GG-Vertrieb'; OrganizationalUnit = 'OU=Groups,OU=Berlin,OU=Branch'; Description = 'Vertrieb und Kundenberatung'; Members = @('JDoe', 'CHerz') }
+        @{ Name = 'GG-Marketing-Berlin'; OrganizationalUnit = 'OU=Groups,OU=Berlin,OU=Branch'; Description = 'Marketing Standort Berlin'; Members = @('EMustermann', 'JDoe', 'KAnders', 'VSpula', 'LMayer', 'MiriamG', 'MeganB', 'AlexW', 'HenriettaM', 'NestorW') }
+        @{ Name = 'GG-Marketing-Hamburg'; OrganizationalUnit = 'OU=Groups,OU=Hamburg,OU=Branch'; Description = 'Marketing Standort Hamburg'; Members = @('CHerz', 'WErnst', 'JFrick', 'SHarz', 'WLonska', 'RJung', 'LeeG', 'GradyA', 'LynneR', 'JohannaL') }
+        @{ Name = 'GG-Buchhaltung'; OrganizationalUnit = 'OU=Groups,OU=Berlin,OU=Branch'; Description = 'Buchhaltung'; Members = @('MMustermann', 'PradeepG') }
+        @{ Name = 'GG-Personal'; OrganizationalUnit = 'OU=Groups,OU=Berlin,OU=Branch'; Description = 'Personalabteilung'; Members = @('EMustermann', 'DiegoS', 'JoniS') }
+        @{ Name = 'GG-Vertrieb'; OrganizationalUnit = 'OU=Groups,OU=Berlin,OU=Branch'; Description = 'Vertrieb und Kundenberatung'; Members = @('JDoe', 'CHerz', 'PattiF', 'IsaiahL', 'LidiaH', 'AdeleV') }
         @{ Name = 'GG-IT'; OrganizationalUnit = 'OU=Groups,OU=Berlin,OU=Branch'; Description = 'IT (noch ohne Mitglieder)'; Members = @() }
     )
 

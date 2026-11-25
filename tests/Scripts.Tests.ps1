@@ -40,8 +40,17 @@ Describe 'Skript <Name>' -ForEach $scriptFiles {
 }
 
 Describe 'LabUsers.psd1' {
-    It 'enthaelt 12 Lab-Benutzer' {
-        $labUsers.Users.Count | Should -Be 12
+    It 'enthaelt 28 Lab-Benutzer, davon die 16 Microsoft-Demo-Personas mit ihren Demo-Tenant-Konten' {
+        $labUsers.Users.Count | Should -Be 28
+        $personas = 'Adele Vance', 'Alex Wilber', 'Diego Siciliani', 'Grady Archie', 'Henrietta Mueller', 'Isaiah Langer', 'Johanna Lorenz', 'Joni Sherman',
+        'Lee Gu', 'Lidia Holloway', 'Lynne Robbins', 'Megan Bowen', 'Miriam Graham', 'Nestor Wilke', 'Patti Fernandez', 'Pradeep Gupta'
+        foreach ($persona in $personas) {
+            $given, $surname = $persona -split ' ', 2
+            $user = $labUsers.Users | Where-Object { $_.GivenName -eq $given -and $_.Surname -eq $surname }
+            $user | Should -Not -BeNullOrEmpty -Because "$persona fehlt"
+            # Konto wie im M365-Demo-Tenant: Vorname plus Initiale des Nachnamens.
+            $user.SamAccountName | Should -BeExactly ($given + $surname.Substring(0, 1))
+        }
     }
 
     It 'hat eindeutige SamAccountNames mit hoechstens 20 Zeichen' {
