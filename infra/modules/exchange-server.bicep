@@ -49,6 +49,9 @@ param letsEncryptStaging bool
 @description('Optionale winget-Pakete.')
 param wingetPackages array
 
+@description('Sprache der Lab-Daten (de, en): Gebietsschema der VM.')
+param labLanguage string
+
 // Integrierte Rolle "DNS Zone Contributor"
 var dnsZoneContributorRoleId = 'befefa01-2a29-4197-83a8-272ff33ce314'
 
@@ -203,6 +206,10 @@ resource initializeExchangeServer 'Microsoft.Compute/virtualMachines/runCommands
       {
         name: 'LetsEncryptStaging'
         value: toLower(string(letsEncryptStaging))
+      }
+      {
+        name: 'LabLanguage'
+        value: labLanguage
       }
     ], empty(wingetPackages) ? [] : [
       {

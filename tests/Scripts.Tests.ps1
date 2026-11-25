@@ -51,12 +51,19 @@ Describe 'LabUsers.psd1' {
     }
 
     It 'hat fuer jeden Benutzer alle Pflichtattribute' {
-        $required = 'SamAccountName', 'GivenName', 'Surname', 'OrganizationalUnit', 'StreetAddress', 'City', 'PostalCode', 'Office', 'Title', 'OfficePhone', 'MobilePhone'
+        $required = 'SamAccountName', 'GivenName', 'Surname', 'OrganizationalUnit', 'StreetAddress', 'City', 'PostalCode', 'Office', 'Title', 'OfficePhone', 'MobilePhone', 'Fax'
         foreach ($user in $labUsers.Users) {
             foreach ($key in $required) {
                 $user[$key] | Should -Not -BeNullOrEmpty -Because "$($user.SamAccountName) braucht $key"
             }
         }
+    }
+
+    It 'nennt Firma und Land fuer die AD-Attribute company, c, co und countryCode' {
+        $labUsers.Company | Should -Not -BeNullOrEmpty
+        $labUsers.Country.Code | Should -Match '^[A-Z]{2}$'
+        $labUsers.Country.Name | Should -Not -BeNullOrEmpty
+        $labUsers.Country.Number | Should -BeOfType [int]
     }
 
     It 'nutzt nur fiktive Rufnummern der Bundesnetzagentur (Medienproduktionen, Mitteilung 148/2021)' {
@@ -66,6 +73,12 @@ Describe 'LabUsers.psd1' {
         foreach ($user in $labUsers.Users) {
             $user.OfficePhone | Should -Match '^\+49 (30 23125|40 66969)-\d{3}$' -Because "$($user.SamAccountName) braucht eine Festnetznummer aus Berlin 030 23125 oder Hamburg 040 66969"
             $user.MobilePhone | Should -Match '^\+49 171 39200\d{2}$' -Because "$($user.SamAccountName) braucht eine Mobilnummer aus 0171 39200-00..99"
+            $user.Fax | Should -Match '^\+49 (30 23125|40 66969)-\d{3}$' -Because "$($user.SamAccountName) braucht eine Faxnummer des Standorts"
+        }
+        foreach ($contact in $labUsers.Contacts) {
+            foreach ($number in $contact.Phone, $contact.Fax) {
+                $number | Should -Match '^\+49 (30 23125|40 66969)-\d{3}$' -Because "Kontakt $($contact.Alias) braucht Telefon und Fax aus den fiktiven Bereichen"
+            }
         }
     }
 
@@ -185,6 +198,14 @@ Describe 'FileServer.psd1' {
         ($fileServer.Shares | Where-Object Name -EQ $fileServer.HomeFolders.Share).Path | Should -Be $fileServer.HomeFolders.Path
     }
 
+    It 'beschriftet Datenlaufwerk und domaenenlokale Gruppen' {
+        $fileServer.VolumeLabel | Should -Not -BeNullOrEmpty
+        foreach ($suffix in 'M', 'R') {
+            # {0} = Server, {1} = Ordnerpfad (Initialize-LabGroup).
+            $fileServer.DomainLocalGroupDescription[$suffix] | Should -Match '\{0\}.*\{1\}'
+        }
+    }
+
     It 'definiert Altlasten mit gueltigen Zielen' {
         $fileServer.Legacy | Should -Not -BeNullOrEmpty
         foreach ($item in $fileServer.Legacy) {
@@ -200,6 +221,8 @@ Describe 'FileServer.psd1' {
             if ($item.Type -eq 'OrphanedSid') {
                 $labUsers.Users.SamAccountName | Should -Not -Contain $item.SamAccountName -Because 'der Praktikant wird geloescht und darf kein Lab-Benutzer sein'
                 $labUsers.OrganizationalUnits | Should -Contain $item.OrganizationalUnit
+                $item.Description | Should -Not -BeNullOrEmpty
+                $item.DocumentsFolder | Should -Not -BeNullOrEmpty
             }
             if ($item.Type -eq 'EveryoneFull') {
                 $fileServer.Shares.Name | Should -Contain $item.Share
@@ -284,6 +307,27 @@ Describe 'azuredeploy.json' {
         ($complete.properties.parameters | ConvertTo-Json -Depth 20) | Should -Not -Match 'adminPassword'
     }
 
+    It 'waehlt die Sprache der Lab-Daten (Standard Deutsch)' {
+        $template.parameters.labLanguage.allowedValues | Should -Be @('de', 'en')
+        $template.parameters.labLanguage.defaultValue | Should -Be 'de'
+    }
+
+    It 'uebergibt die Lab-Sprache an <Script> im Modul <Module>' -ForEach @(
+        @{ Module = 'domain-controller'; Script = 'Install-DomainController' }
+        @{ Module = 'exchange-server'; Script = 'Initialize-ExchangeServer' }
+        @{ Module = 'exchange-install'; Script = 'Install-ExchangeServer' }
+        @{ Module = 'client'; Script = 'Initialize-LabClient' }
+        @{ Module = 'client-join'; Script = 'Complete-LabClient' }
+        @{ Module = 'file-server'; Script = 'Initialize-FileServer' }
+        @{ Module = 'file-server-join'; Script = 'Complete-FileServer' }
+    ) {
+        $deployment = $template.resources | Where-Object name -EQ $Module
+        $deployment.properties.parameters.labLanguage.value | Should -Be "[parameters('labLanguage')]"
+        $runCommand = $deployment.properties.template.resources | Where-Object { $_.type -eq 'Microsoft.Compute/virtualMachines/runCommands' -and $_.name -match "'$Script'" }
+        $runCommand | Should -Not -BeNullOrEmpty
+        ($runCommand.properties.parameters | ConvertTo-Json -Depth 20) | Should -Match '["'']LabLanguage["'']'
+    }
+
     It 'erlaubt nur Office-Produkte mit Benutzeraktivierung' {
         $template.parameters.officeProductId.allowedValues | Should -Be @('O365ProPlusRetail', 'O365BusinessRetail')
     }
@@ -351,6 +395,28 @@ Describe 'azuredeploy.json' {
         $afterJoin[0].name | Should -Match 'Wait-DomainJoinReboot'
         $afterJoin[0].properties.treatFailureAsDeploymentFailure | Should -BeFalse
         @($runCommands | Where-Object { ($_.dependsOn -join ' ') -match "'Wait-DomainJoinReboot'" }).Count | Should -Be 1
+    }
+}
+
+Describe 'Lab-Sprache in den Skripten' {
+    BeforeAll {
+        $dcScript = Get-Content -Path (Join-Path $repoRoot 'scripts/Install-DomainController.ps1') -Raw
+        $exchangeInstallScript = Get-Content -Path (Join-Path $repoRoot 'scripts/Install-ExchangeServer.ps1') -Raw
+    }
+
+    It 'reicht LabLanguage an die Folgephasen weiter (geplante Tasks)' {
+        # Fehlt der Parameter im Argumentstring, laeuft die naechste Phase mit dem Standard 'de'.
+        [regex]::Match($dcScript, '(?s)function Register-PhaseTask \{.*?\n\}').Value | Should -Match '-LabLanguage \{\d+\}'
+        [regex]::Match($exchangeInstallScript, '(?s)function Invoke-InstallTask \{.*?\n\}').Value | Should -Match '-LabLanguage \{\d+\}'
+    }
+
+    It 'benennt die AD-Standorte wie die Standort-OUs in LabUsers.psd1 (<_>)' -ForEach 'de' {
+        $data = Import-PowerShellDataFile -Path (Join-Path $repoRoot "scripts/data/$_/LabUsers.psd1")
+        $block = [regex]::Match($dcScript, "(?m)^\s+$_ = @\{ Headquarters = '([^']+)'; Branch = '([^']+)'")
+        $block.Success | Should -BeTrue
+        foreach ($site in $block.Groups[1].Value, $block.Groups[2].Value) {
+            $data.OrganizationalUnits | Should -Contain "OU=$site,OU=Branch"
+        }
     }
 }
 

@@ -35,6 +35,10 @@ param(
     [ValidateSet('Prepare', 'Complete')]
     [string] $Phase = 'Prepare',
 
+    # Sprache der Lab-Daten: Gebietsschema der VM (de = de-DE, en = en-GB mit deutscher Tastatur) und Lab-Info.
+    [ValidateSet('de', 'en')]
+    [string] $LabLanguage = 'de',
+
     # Nur Phase 'Prepare':
     [string] $LabUsersB64,
     [string] $FileServerB64,
@@ -167,13 +171,23 @@ function Initialize-DataDisk {
 }
 
 function Initialize-RegionalSetting {
-    Write-LabLog 'Setze deutsche Regionaleinstellungen (Zeitzone, Gebietsschema, Tastatur).'
+    # Gebietsschema der Lab-Sprache. Zeitzone immer W. Europe (Auto-Shutdown, Wartung). Englisch mit deutschem
+    # Tastaturlayout, weil die Azubis an deutschen Tastaturen sitzen.
+    $setting = @{
+        de = @{ Culture = 'de-DE'; GeoId = 94; InputMethod = '0407:00000407' }
+        en = @{ Culture = 'en-GB'; GeoId = 242; InputMethod = '0809:00000407' }
+    }[$LabLanguage]
+    Write-LabLog "Setze Regionaleinstellungen $($setting.Culture) (Zeitzone, Gebietsschema, Tastatur)."
     Set-TimeZone -Id 'W. Europe Standard Time'
-    Set-WinSystemLocale -SystemLocale de-DE
-    Set-WinHomeLocation -GeoId 94
-    Set-Culture -CultureInfo de-DE
-    Set-WinUserLanguageList -LanguageList de-DE -Force
+    Set-WinSystemLocale -SystemLocale $setting.Culture
+    Set-WinHomeLocation -GeoId $setting.GeoId
+    Set-Culture -CultureInfo $setting.Culture
+    $languageList = New-WinUserLanguageList -Language $setting.Culture
+    $languageList[0].InputMethodTips.Clear()
+    $languageList[0].InputMethodTips.Add($setting.InputMethod)
+    Set-WinUserLanguageList -LanguageList $languageList -Force
     if (Get-Command -Name Copy-UserInternationalSettingsToSystem -ErrorAction SilentlyContinue) {
+        # Uebernimmt die Einstellungen fuer Anmeldebildschirm und neue Benutzerprofile.
         Copy-UserInternationalSettingsToSystem -WelcomeScreen $true -NewUser $true
     }
 }
@@ -200,7 +214,7 @@ function Invoke-PreparePhase {
     Write-Utf8File -Path $FileServerFile -Content (ConvertFrom-Base64String $FileServerB64)
     $config = Import-PowerShellDataFile -Path $FileServerFile
 
-    Initialize-DataDisk -DriveLetter $config.DriveLetter -Label 'Daten'
+    Initialize-DataDisk -DriveLetter $config.DriveLetter -Label $config.VolumeLabel
     Initialize-RegionalSetting
     Initialize-ShareFolder -Config $config
 }
@@ -357,9 +371,9 @@ function Initialize-LabGroup {
 
     $dlPath = "$($Config.DomainLocalGroupOrganizationalUnit),$script:CompanyDn"
     foreach ($folder in @($Config.Folders | Where-Object { $_.Stem })) {
-        foreach ($variant in @(@{ Suffix = 'M'; Members = $folder.Modify; Text = 'Aendern' }, @{ Suffix = 'R'; Members = $folder.Read; Text = 'Lesen' })) {
+        foreach ($variant in @(@{ Suffix = 'M'; Members = $folder.Modify }, @{ Suffix = 'R'; Members = $folder.Read })) {
             $name = 'DL-FS-{0}-{1}' -f $folder.Stem, $variant.Suffix
-            $group = Add-LabGroup -Name $name -Scope DomainLocal -Path $dlPath -Description ('{0} auf \\{1}\...\{2}' -f $variant.Text, $env:COMPUTERNAME, $folder.Path)
+            $group = Add-LabGroup -Name $name -Scope DomainLocal -Path $dlPath -Description ($Config.DomainLocalGroupDescription[$variant.Suffix] -f $env:COMPUTERNAME, $folder.Path)
             $script:Groups[$name] = $group
             Add-LabGroupMember -Group $group -Member @($variant.Members | Where-Object { $_ } | ForEach-Object { Resolve-LabPrincipal -Name $_ })
         }
@@ -473,7 +487,7 @@ function Add-OrphanedSid {
     }
     $user = Get-ADUser -Filter "SamAccountName -eq '$($Item.SamAccountName)'" @AdParams
     if (-not $user) {
-        New-ADUser -Name "$($Item.GivenName) $($Item.Surname)" -SamAccountName $Item.SamAccountName -GivenName $Item.GivenName -Surname $Item.Surname -DisplayName "$($Item.GivenName) $($Item.Surname)" -Description 'Praktikum Marketing, ausgeschieden' -Path "$($Item.OrganizationalUnit),$script:CompanyDn" -Enabled $false @AdParams
+        New-ADUser -Name "$($Item.GivenName) $($Item.Surname)" -SamAccountName $Item.SamAccountName -GivenName $Item.GivenName -Surname $Item.Surname -DisplayName "$($Item.GivenName) $($Item.Surname)" -Description $Item.Description -Path "$($Item.OrganizationalUnit),$script:CompanyDn" -Enabled $false @AdParams
         $user = Get-ADUser -Identity $Item.SamAccountName @AdParams
     }
     $sid = $user.SID.Value
@@ -482,7 +496,7 @@ function Add-OrphanedSid {
         $path = Get-SharePath -Config $Config -RelativePath $relative
         if ($relative -like "$($Config.HomeFolders.Path)\*") {
             if ($Item.SampleSource) {
-                Copy-SampleFile -Source (Get-SharePath -Config $Config -RelativePath $Item.SampleSource) -Destination (Join-Path $path 'Dokumente')
+                Copy-SampleFile -Source (Get-SharePath -Config $Config -RelativePath $Item.SampleSource) -Destination (Join-Path $path $Item.DocumentsFolder)
             }
             & icacls.exe $path /setowner "*$sid" /T /C /Q 2>&1 | Out-Null
         }
@@ -590,16 +604,50 @@ function Register-ResizeTask {
     Write-LabLog "Task $ResizeTaskName registriert: Verkleinerung auf $FinalVmSize nach Beispieldokumenten und Updates."
 }
 
+# Texte der Lab-Info je Sprache. Der Generator schreibt seinen Status auf Deutsch (Resize-FileServer.ps1 wertet ihn aus).
+$LabInfoText = @{
+    de = @{
+        NoStatus = 'keine (Generator nicht gelaufen)'; Status = '{0}: {1:N1} von {2} GB, {3} Dateien (Stand {4})'; StatusError = 'Status nicht lesbar: {0}'
+        States = @{}; DataDrive = 'Datenlaufwerk'; Samples = 'Beispieldaten'; VmSize = 'VM-Groesse:    nach Beispieldaten und Updates automatisch {0} (Resize-FileServer.log)'
+        Shares = 'FREIGABEN (zugriffsbasierte Aufzaehlung aktiv)'; Agdlp = 'BERECHTIGUNGEN NACH AGDLP'
+        AgdlpLine = '  Benutzer -> globale Gruppe GG-* -> domaenenlokale Gruppe DL-FS-<Bereich>-M (Aendern) / -R (Lesen) -> NTFS'; Empty = '(leer)'
+        Home = 'BASISORDNER: {0} = \\{1}\{2}\<Benutzer> (AD-Attribute HomeDrive/HomeDirectory)'
+        Tail = @(
+            'ROLLEN: Dateiserver, Ressourcen-Manager fuer Dateiserver (FSRM).'
+            'Deduplizierung, Schattenkopien, Laufwerkszuordnung per GPO und DFS sind Uebungen.'
+            'Einige Berechtigungen sind absichtlich falsch gesetzt (Altlasten fuer Uebungen).'
+            ''
+            'LOGS: C:\ExchangeLab\Logs (Initialize-FileServer-*.log, New-SampleDocuments.log)'
+        )
+    }
+    en = @{
+        NoStatus = 'none (generator has not run)'; Status = '{0}: {1:N1} of {2} GB, {3} files (as of {4})'; StatusError = 'status not readable: {0}'
+        States = @{ 'laeuft' = 'running'; 'wird im Hintergrund fortgesetzt' = 'continuing in the background'; 'fertig' = 'done' }
+        DataDrive = 'Data drive'; Samples = 'Sample data'; VmSize = 'VM size:      after sample data and updates automatically {0} (Resize-FileServer.log)'
+        Shares = 'SHARES (access-based enumeration enabled)'; Agdlp = 'PERMISSIONS (AGDLP)'
+        AgdlpLine = '  user -> global group GG-* -> domain local group DL-FS-<area>-M (modify) / -R (read) -> NTFS'; Empty = '(empty)'
+        Home = 'HOME FOLDERS: {0} = \\{1}\{2}\<user> (AD attributes HomeDrive/HomeDirectory)'
+        Tail = @(
+            'ROLES: File Server, File Server Resource Manager (FSRM).'
+            'Deduplication, shadow copies, drive mapping by GPO and DFS are exercises.'
+            'Some permissions are deliberately wrong (legacy issues for exercises).'
+            ''
+            'LOGS: C:\ExchangeLab\Logs (Initialize-FileServer-*.log, New-SampleDocuments.log)'
+        )
+    }
+}[$LabLanguage]
+
 function Get-SampleStatusText {
     if (-not (Test-Path -Path $SampleStatusFile)) {
-        return 'keine (Generator nicht gelaufen)'
+        return $LabInfoText.NoStatus
     }
     try {
         $status = Get-Content -Path $SampleStatusFile -Raw | ConvertFrom-Json
-        return '{0}: {1:N1} von {2} GB, {3} Dateien (Stand {4})' -f $status.State, $status.WrittenGB, $status.TargetGB, $status.Files, $status.Updated
+        $state = if ($LabInfoText.States.ContainsKey([string]$status.State)) { $LabInfoText.States[[string]$status.State] } else { $status.State }
+        return $LabInfoText.Status -f $state, $status.WrittenGB, $status.TargetGB, $status.Files, $status.Updated
     }
     catch {
-        return "Status nicht lesbar: $($_.Exception.Message)"
+        return $LabInfoText.StatusError -f $_.Exception.Message
     }
 }
 
@@ -611,33 +659,27 @@ function Publish-FileServerDesktop {
         $lines = @(
             "FILESERVER $env:COMPUTERNAME"
             ''
-            "Domain:        $DomainName (NetBIOS $NetbiosName)"
-            "Datenlaufwerk: $($Config.Root)"
-            "Beispieldaten: $(Get-SampleStatusText)"
-            $(if ($FinalVmSize) { "VM-Groesse:    nach Beispieldaten und Updates automatisch $FinalVmSize (Resize-FileServer.log)" } else { '' })
+            '{0,-15}{1}' -f 'Domain:', "$DomainName (NetBIOS $NetbiosName)"
+            '{0,-15}{1}' -f "$($LabInfoText.DataDrive):", $Config.Root
+            '{0,-15}{1}' -f "$($LabInfoText.Samples):", (Get-SampleStatusText)
+            $(if ($FinalVmSize) { $LabInfoText.VmSize -f $FinalVmSize } else { '' })
             ''
-            'FREIGABEN (zugriffsbasierte Aufzaehlung aktiv)'
+            $LabInfoText.Shares
         )
         foreach ($share in $Config.Shares) {
             $lines += '  {0,-40} {1}' -f "\\$env:COMPUTERNAME\$($share.Name)", $share.Description
         }
         $lines += ''
-        $lines += 'BERECHTIGUNGEN NACH AGDLP'
-        $lines += '  Benutzer -> globale Gruppe GG-* -> domaenenlokale Gruppe DL-FS-<Bereich>-M (Aendern) / -R (Lesen) -> NTFS'
+        $lines += $LabInfoText.Agdlp
+        $lines += $LabInfoText.AgdlpLine
         foreach ($group in $Config.GlobalGroups) {
-            $members = if ($group.Members) { $group.Members -join ', ' } else { '(leer)' }
+            $members = if ($group.Members) { $group.Members -join ', ' } else { $LabInfoText.Empty }
             $lines += '  {0,-24} {1}' -f $group.Name, $members
         }
-        $lines += @(
-            ''
-            "BASISORDNER: $($Config.HomeFolders.DriveLetter) = \\$env:COMPUTERNAME\$($Config.HomeFolders.Share)\<Benutzer> (AD-Attribute HomeDrive/HomeDirectory)"
-            ''
-            'ROLLEN: Dateiserver, Ressourcen-Manager fuer Dateiserver (FSRM).'
-            'Deduplizierung, Schattenkopien, Laufwerkszuordnung per GPO und DFS sind Uebungen (Kapitel 8).'
-            'Einige Berechtigungen sind absichtlich falsch gesetzt (Altlasten, Uebung 8.3).'
-            ''
-            'LOGS: C:\ExchangeLab\Logs (Initialize-FileServer-*.log, New-SampleDocuments.log)'
-        )
+        $lines += ''
+        $lines += $LabInfoText.Home -f $Config.HomeFolders.DriveLetter, $env:COMPUTERNAME, $Config.HomeFolders.Share
+        $lines += ''
+        $lines += $LabInfoText.Tail
         Write-Utf8File -Path (Join-Path $desktop 'Lab-Info.txt') -Content ($lines -join "`r`n")
         Write-LabLog "Lab-Info auf $desktop abgelegt."
     }

@@ -45,6 +45,9 @@ param clientComputerName string = ''
 @description('Computername des optionalen Fileservers, nur fuer Lab-Info.txt. Leer = kein Fileserver.')
 param fileServerComputerName string = ''
 
+@description('Sprache der Lab-Daten (de, en): Benutzer und Empfaenger, Postfachsprache, Lab-Info.txt.')
+param labLanguage string
+
 @description('Private IP des Domain Controllers.')
 param dcIp string
 
@@ -213,6 +216,11 @@ resource installExchangeServer 'Microsoft.Compute/virtualMachines/runCommands@20
       {
         name: 'FileServerComputerName'
         value: fileServerComputerName
+      }
+    ], [
+      {
+        name: 'LabLanguage'
+        value: labLanguage
       }
     ])
     protectedParameters: [

@@ -12,6 +12,13 @@ targetScope = 'resourceGroup'
 @maxLength(3)
 param trainee string
 
+@description('Sprache der Lab-Daten: de = Mustermann Medien GmbH (Berlin, Hamburg), en = Contoso Ltd (London, Manchester). Bestimmt Benutzer, Gruppen, Freigaben, Beispieldokumente, Gebietsschema der VMs und Postfachsprache.')
+@allowed([
+  'de'
+  'en'
+])
+param labLanguage string = 'de'
+
 @description('Azure-Region. Standard: Region der Ressourcengruppe.')
 param location string = resourceGroup().location
 
@@ -22,7 +29,7 @@ param adminUsername string = 'azadmin'
 @secure()
 param adminPassword string
 
-@description('Passwort der 12 Lab-Benutzer. Bewusst getrennt vom Administrator-Passwort, damit Testkonten nicht das Domain-Admin-Passwort verraten. Ausnahme: Mit clientRemoteDesktopManager kann jeder Benutzer am Client das Admin-Passwort auslesen.')
+@description('Passwort der Lab-Benutzer. Bewusst getrennt vom Administrator-Passwort, damit Testkonten nicht das Domain-Admin-Passwort verraten. Ausnahme: Mit clientRemoteDesktopManager kann jeder Benutzer am Client das Admin-Passwort auslesen.')
 @secure()
 param labUserPassword string
 
@@ -250,6 +257,7 @@ module domainController 'modules/domain-controller.bicep' = {
     netbiosName: traineeUpper
     publicDomainName: publicDomainName
     exchangeIp: exchangePrivateIp
+    labLanguage: labLanguage
   }
 }
 
@@ -271,6 +279,7 @@ module exchangeServer 'modules/exchange-server.bicep' = {
     enableLetsEncrypt: enableLetsEncrypt
     letsEncryptStaging: letsEncryptStaging
     wingetPackages: wingetPackages
+    labLanguage: labLanguage
   }
   // Zertifikat braucht Zone (Rollenzuweisung) und funktionierende Delegation.
   dependsOn: [
@@ -298,6 +307,7 @@ module secondDomainController 'modules/domain-controller.bicep' = if (deploySeco
     exchangeIp: exchangePrivateIp
     mode: 'Replica'
     firstDcIp: dcPrivateIp
+    labLanguage: labLanguage
   }
 }
 
@@ -341,6 +351,7 @@ module exchangeInstall 'modules/exchange-install.bicep' = {
     fileServerComputerName: deployFileServer ? names.fsComputer : ''
     dcIp: dcPrivateIp
     exchangeIp: exchangePrivateIp
+    labLanguage: labLanguage
   }
   // Exchange-Setup erst, wenn alle DCs stehen, damit es keinen halb replizierten DC erwischt.
   dependsOn: [
@@ -365,6 +376,7 @@ module client 'modules/client.bicep' = if (deployClient) {
     imageSku: clientImageSku
     officeProductId: officeProductId
     installRemoteDesktopManager: clientRemoteDesktopManager
+    labLanguage: labLanguage
   }
 }
 
@@ -385,6 +397,7 @@ module clientJoin 'modules/client-join.bicep' = if (deployClient) {
     secondDcComputerName: deploySecondDc ? names.dc2Computer : ''
     exchangeComputerName: names.exchangeComputer
     fileServerComputerName: deployFileServer ? names.fsComputer : ''
+    labLanguage: labLanguage
   }
   dependsOn: [
     client
@@ -408,6 +421,7 @@ module fileServer 'modules/file-server.bicep' = if (deployFileServer) {
     adminPassword: adminPassword
     sampleDataSizeGB: fileServerDataSizeGB
     finalVmSize: fileServerResizeTo
+    labLanguage: labLanguage
   }
 }
 
@@ -429,6 +443,7 @@ module fileServerJoin 'modules/file-server-join.bicep' = if (deployFileServer) {
     exchangeIp: exchangePrivateIp
     finalVmSize: fileServerResizeTo
     waitForSampleDocuments: fileServerDataSizeGB > 0
+    labLanguage: labLanguage
   }
   dependsOn: [
     fileServer

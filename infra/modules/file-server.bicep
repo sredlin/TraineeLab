@@ -44,6 +44,9 @@ param sampleTimeBudgetMinutes int = 60
 @description('Dauergroesse nach den Beispieldokumenten, leer = Groesse bleibt. Die VM verkleinert sich selbst (Resize-FileServer.ps1).')
 param finalVmSize string = ''
 
+@description('Sprache der Lab-Daten (de, en): Gebietsschema, Lab-Daten und Textkorpus der Beispieldokumente.')
+param labLanguage string
+
 // Virtual Machine Contributor: Groessenaenderung inklusive der verknuepften NIC und Disks.
 var vmContributorRoleId = '9980e02c-c2be-4d73-94e8-173b1dc7cf3c'
 
@@ -165,6 +168,10 @@ resource prepareFileServer 'Microsoft.Compute/virtualMachines/runCommands@2025-0
       {
         name: 'Phase'
         value: 'Prepare'
+      }
+      {
+        name: 'LabLanguage'
+        value: labLanguage
       }
       {
         name: 'LabUsersB64'

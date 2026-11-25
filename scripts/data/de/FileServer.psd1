@@ -5,6 +5,7 @@
 # Rechte: 'M' = Aendern, 'RX' = Lesen und Ausfuehren, 'F' = Vollzugriff.
 @{
     DriveLetter          = 'F'
+    VolumeLabel          = 'Daten'
     Root                 = 'F:\Shares'
 
     GlobalGroups         = @(
@@ -17,8 +18,9 @@
         @{ Name = 'GG-IT'; OrganizationalUnit = 'OU=Groups,OU=Berlin,OU=Branch'; Description = 'IT (noch ohne Mitglieder)'; Members = @() }
     )
 
-    # OU der domaenenlokalen Ressourcengruppen DL-FS-*.
+    # OU und Beschreibung der domaenenlokalen Ressourcengruppen DL-FS-* ({0} = Server, {1} = Ordnerpfad).
     DomainLocalGroupOrganizationalUnit = 'OU=Groups,OU=Administration'
+    DomainLocalGroupDescription        = @{ M = 'Aendern auf \\{0}\...\{1}'; R = 'Lesen auf \\{0}\...\{1}' }
 
     # Protected = Vererbung von F:\ entfernen (Administratoren und SYSTEM erhalten immer Vollzugriff).
     # List      = nur "Ordner auflisten" auf genau diesem Ordner (keine Vererbung), fuer den Einstieg in die Freigabe.
@@ -60,8 +62,8 @@
         # Vererbung unterbrochen und Jeder darf Bewerbungen lesen (ABE zeigt den Ordner allen).
         @{ Type = 'BrokenInheritance'; Path = 'Abteilungen\Personal\Bewerbungen'; Principal = '@Everyone'; Rights = 'RX' }
         # Ehemaliger Praktikant: Konto geloescht (AD-Papierkorb), seine SID bleibt in den ACLs stehen.
-        # SampleSource: aus diesem Ordner landen einige Dokumente in seinem Basisordner.
-        @{ Type = 'OrphanedSid'; SamAccountName = 'PPraktikant'; GivenName = 'Paul'; Surname = 'Praktikant'; OrganizationalUnit = 'OU=Users,OU=Berlin,OU=Branch'; Paths = @('Projekte\Praktikum', 'Home\PPraktikant'); SampleSource = 'Abteilungen\Marketing\Berlin'; Rights = 'M' }
+        # SampleSource: aus diesem Ordner landen einige Dokumente in seinem Basisordner (Unterordner DocumentsFolder).
+        @{ Type = 'OrphanedSid'; SamAccountName = 'PPraktikant'; GivenName = 'Paul'; Surname = 'Praktikant'; Description = 'Praktikum Marketing, ausgeschieden'; OrganizationalUnit = 'OU=Users,OU=Berlin,OU=Branch'; Paths = @('Projekte\Praktikum', 'Home\PPraktikant'); SampleSource = 'Abteilungen\Marketing\Berlin'; DocumentsFolder = 'Dokumente'; Rights = 'M' }
         # Privater Ordner ohne Administratoren (nur Benutzer und SYSTEM): "Zugriff verweigert" fuer Domain-Admins.
         @{ Type = 'OwnerOnly'; Path = 'Home\JFrick\Privat'; Principal = 'JFrick' }
         # Scanner-Freigabe: Jeder Vollzugriff auf Freigabe und NTFS.
