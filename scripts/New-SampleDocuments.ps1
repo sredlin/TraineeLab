@@ -2623,13 +2623,20 @@ function ConvertTo-PngByte {
     , $bytes
 }
 
+# Signet der neuen CI: Anfangsbuchstabe von Company.Short aus zwei Flaechen (Einheitsquadrat, y nach unten).
+$SignetShapes = @{
+    M = @(@(0, 1, 0, 0, 0.5, 0.52, 0.5, 0.82, 0.2, 0.5, 0.2, 1), @(1, 1, 1, 0, 0.5, 0.52, 0.5, 0.82, 0.8, 0.5, 0.8, 1))
+    C = @(@(1, 0, 0.25, 0, 0, 0.25, 0, 0.55, 0.22, 0.55, 0.22, 0.33, 0.33, 0.22, 1, 0.22), @(0, 0.55, 0, 0.75, 0.25, 1, 1, 1, 1, 0.78, 0.33, 0.78, 0.22, 0.67, 0.22, 0.55))
+}
+
 function Get-SignetPolygon {
-    # Signet der neuen CI: ein "M" aus zwei Flaechen. Liefert @(links, rechts) als Punktlisten @(x,y,...).
+    # Liefert die beiden Flaechen des Signets als Punktlisten @(x,y,...); unbekannte Buchstaben zeigen das "M".
     param([double] $X, [double] $Y, [double] $Size)
-    $left = @(0, 1, 0, 0, 0.5, 0.52, 0.5, 0.82, 0.2, 0.5, 0.2, 1)
-    $right = @(1, 1, 1, 0, 0.5, 0.52, 0.5, 0.82, 0.8, 0.5, 0.8, 1)
+    # $script:, weil Aufrufer lokale Variablen wie $c haben (PowerShell unterscheidet Gross-/Kleinschreibung nicht).
+    $letter = [string]$script:C.Company.Short.Substring(0, 1).ToUpperInvariant()
+    $shape = if ($SignetShapes.ContainsKey($letter)) { $SignetShapes[$letter] } else { $SignetShapes['M'] }
     $map = { param($p) $o = New-Object double[] $p.Count; for ($i = 0; $i -lt $p.Count; $i += 2) { $o[$i] = $X + $p[$i] * $Size; $o[$i + 1] = $Y + $p[$i + 1] * $Size }; , $o }
-    @((& $map $left), (& $map $right))
+    @((& $map $shape[0]), (& $map $shape[1]))
 }
 
 function Get-LogoItem {
@@ -3267,6 +3274,49 @@ function Get-DeIban {
     ($iban -replace '(.{4})', '$1 ').Trim()
 }
 
+function Get-GbTaxReference {
+    # Unique Taxpayer Reference (HMRC): 10 Ziffern, die erste ist die Pruefziffer ueber die Ziffern 2-10
+    # (Gewichte 6,7,8,9,10,5,4,3,2, Rest MOD 11 ueber Tabelle).
+    param([Parameter(Mandatory)] $Rng)
+    $digits = @(1..9 | ForEach-Object { $Rng.Next(0, 10) })
+    $weights = 6, 7, 8, 9, 10, 5, 4, 3, 2
+    $sum = 0
+    for ($i = 0; $i -lt 9; $i++) { $sum += $digits[$i] * $weights[$i] }
+    $check = @(2, 1, 9, 8, 7, 6, 5, 4, 3, 2, 1)[$sum % 11]
+    $id = '{0}{1}' -f $check, (-join $digits)
+    '{0} {1}' -f $id.Substring(0, 5), $id.Substring(5, 5)
+}
+
+function Get-GbInsuranceNumber {
+    # National Insurance number: zwei Buchstaben (ohne D, F, I, Q, U, V; zweiter auch ohne O; nicht BG, GB, NK, KN,
+    # TN, NT, ZZ), sechs Ziffern, Endbuchstabe A-D.
+    param([Parameter(Mandatory)] $Rng)
+    $first = 'ABCEGHJKLMNOPRSTWXYZ'
+    $second = 'ABCEGHJKLMNPRSTWXYZ'
+    do { $prefix = '{0}{1}' -f $first[$Rng.Next(0, $first.Length)], $second[$Rng.Next(0, $second.Length)] } while ($prefix -in 'BG', 'GB', 'NK', 'KN', 'TN', 'NT', 'ZZ')
+    '{0} {1:D2} {2:D2} {3:D2} {4}' -f $prefix, $Rng.Next(0, 100), $Rng.Next(0, 100), $Rng.Next(0, 100), 'ABCD'[$Rng.Next(0, 4)]
+}
+
+function Get-GbPassportNumber {
+    # Britischer Reisepass: neun Ziffern; fuer die Musterperson eine feste Nummer.
+    param([Parameter(Mandatory)] $Rng, [switch] $Specimen)
+    if ($Specimen) { return '123456789' }
+    '{0}{1}' -f (1 + $Rng.Next(0, 9)), (-join (1..8 | ForEach-Object { $Rng.Next(0, 10) }))
+}
+
+function Get-GbIban {
+    # Britische IBAN: Bankkuerzel XMPL (fiktiv), Sort Code, Kontonummer, Pruefziffer MOD 97 (Buchstaben A=10 bis Z=35).
+    param([Parameter(Mandatory)] $Rng)
+    $bank = 'XMPL'
+    $sortCode = '{0}{1}' -f (10 + $Rng.Next(0, 90)), (-join (1..4 | ForEach-Object { $Rng.Next(0, 10) }))
+    $account = -join (1..8 | ForEach-Object { $Rng.Next(0, 10) })
+    $numeric = -join (($bank + $sortCode + $account + 'GB00').ToCharArray() | ForEach-Object { if ([char]::IsDigit($_)) { [string]$_ } else { [string]([int]$_ - 55) } })
+    $remainder = 0
+    foreach ($ch in $numeric.ToCharArray()) { $remainder = ($remainder * 10 + [int][string]$ch) % 97 }
+    $iban = 'GB{0:D2}{1}{2}{3}' -f (98 - $remainder), $bank, $sortCode, $account
+    ($iban -replace '(.{4})', '$1 ').Trim()
+}
+
 function Get-NationalId {
     # Landesspezifische Kennung nach Locale.Country: TaxId, Social, IdCard oder Iban.
     # Ein weiteres Land braucht hier einen eigenen Zweig (gleiche Reihenfolge der Zufallszahlen ist nicht noetig).
@@ -3285,6 +3335,14 @@ function Get-NationalId {
                 'Social' { return Get-DeSocialNumber $Rng $BirthDate $Surname $Female }
                 'IdCard' { return Get-DeIdCardNumber $Rng -Specimen:$Specimen }
                 'Iban' { return Get-DeIban $Rng }
+            }
+        }
+        'GB' {
+            switch ($Kind) {
+                'TaxId' { return Get-GbTaxReference $Rng }
+                'Social' { return Get-GbInsuranceNumber $Rng }
+                'IdCard' { return Get-GbPassportNumber $Rng -Specimen:$Specimen }
+                'Iban' { return Get-GbIban $Rng }
             }
         }
         default { throw "Locale.Country '$($Locale.Country)' wird nicht unterstuetzt (Get-NationalId)." }
