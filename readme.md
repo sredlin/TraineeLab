@@ -166,9 +166,8 @@ $new = Import-ExchangeCertificate -FileData ([IO.File]::ReadAllBytes($pfx)) -Pas
 Enable-ExchangeCertificate -Thumbprint $new.Thumbprint -Services IIS,SMTP -Force
 ```
 
-## Übungen und Betrieb
+## Betrieb
 
-- [Übungen](docs/uebungen/README.md): zehn Kapitel von Empfängerverwaltung über Mailfluss, Zertifikate, Backup, Active Directory und Updates bis zu Fileserver, Migration nach SharePoint Online und Datenklassifizierung, jede Übung mit Prüfbefehl.
 - [Betrieb](docs/betrieb.md): Starten und Stoppen, neue eigene IP, Status, Beispieldaten und Größe des Fileservers, Kosten, Abbau.
 - [Troubleshooting](docs/troubleshooting.md): fehlgeschlagenes Deployment, Zertifikat, SYSVOL-Reparatur, Warteschlangen, Outlook und Office, Beispieldaten und Fileserver.
 

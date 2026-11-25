@@ -75,7 +75,7 @@ Get-Queue
 Get-Message -Queue "<K>-EX01\<Queue-Identität>" | Format-List FromAddress, Recipients, LastError
 ```
 
-- **Externe Empfänger** (Warteschlange mit `DeliveryType` `Unreachable`): Es gibt keinen Send Connector, außerdem blockiert Azure ausgehend Port 25. Das ist so gewollt. Siehe Übung 3.6 in [Kapitel 3](uebungen/03-mailfluss.md).
+- **Externe Empfänger** (Warteschlange mit `DeliveryType` `Unreachable`): Es gibt keinen Send Connector, außerdem blockiert Azure ausgehend Port 25. Das ist so gewollt.
 - **Interne Empfänger:** `Test-ServiceHealth` und `Get-ServerComponentState <K>-EX01` prüfen. Steht `HubTransport` auf `Inactive`, mit `Set-ServerComponentState <K>-EX01 -Component HubTransport -State Active -Requester Maintenance` aktivieren.
 
 ## Outlook auf dem Client verbindet nicht
@@ -156,7 +156,7 @@ az vm start -g rg-exlab-<k> -n vm-<k>-fs01
 
 ## Zugriff verweigert auf `Home\JFrick\Privat`
 
-Das ist gewollt: Der Ordner ist eine der Altlasten aus [Kapitel 8](uebungen/08-fileserver.md). Nur Johann Frick und SYSTEM haben Rechte, Domain-Admins nicht. Wie man damit umgeht, ohne die Rechte zu zerstören, ist Übung 8.3.
+Das ist gewollt: Der Ordner ist eine der absichtlichen Altlasten des Fileservers. Nur Johann Frick und SYSTEM haben Rechte, Domain-Admins nicht.
 
 ## Kennwort eines Lab-Benutzers vergessen
 
