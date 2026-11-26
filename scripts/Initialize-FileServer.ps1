@@ -146,12 +146,19 @@ function Invoke-IcaclsCommand {
     # Exit 1332 (ERROR_NONE_MAPPED): Die SID einer eben auf DC01 angelegten Gruppe ist auf dem DC, den der
     # Fileserver fragt (z. B. DC02), noch nicht repliziert. Dann warten und wiederholen (Testdeployment 2026-11-26).
     # AllowFileErrors: Bei /T /C (Besitz rekursiv) sind Fehler einzelner Dateien hinnehmbar, z. B. weil der Generator
-    # parallel Dateien umbenennt; sie werden protokolliert. Erkannt wird das sprachneutral am Exit-Code
+    # parallel Dateien umbenennt; sie werden protokolliert. Mit /C endet icacls dann trotzdem mit Exit 0, nur die
+    # Zusammenfassung nennt die Fehler (zweite Zahl, in jeder Sprache). Ohne /C sprachneutral am Exit-Code
     # (2/3 Datei/Pfad fehlt, 5 Zugriff verweigert, 32 Datei in Verwendung).
     param([Parameter(Mandatory)][string[]] $Arguments, [switch] $AllowFileErrors)
     for ($attempt = 1; ; $attempt++) {
         $result = Invoke-NativeCommand -FilePath 'icacls.exe' -ArgumentList $Arguments -NoThrow
-        if ($result.ExitCode -eq 0) { return }
+        if ($result.ExitCode -eq 0) {
+            $summary = [regex]::Matches("$($result.Output | Select-Object -Last 1)", '\d+')
+            if ($AllowFileErrors -and $summary.Count -ge 2 -and [int]$summary[1].Value -gt 0) {
+                Write-LabLog "icacls $($Arguments[0]): $($summary[1].Value) Datei(en) nicht bearbeitet ($(($result.Output | Select-Object -Last 1)))."
+            }
+            return
+        }
         $text = $result.Output -join ' '
         $unmapped = $result.ExitCode -eq 1332 -or $text -match 'No mapping between account names'
         $fileErrors = @(2, 3, 5, 32) -contains $result.ExitCode -or $text -match 'Failed processing [1-9]'
