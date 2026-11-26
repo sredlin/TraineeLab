@@ -6,7 +6,7 @@ BeforeDiscovery {
     $scriptFiles = Get-ChildItem -Path (Join-Path $repoRoot 'scripts') -Filter '*.ps1' | ForEach-Object {
         @{ Name = $_.Name; Path = $_.FullName }
     }
-    $toolFiles = Get-ChildItem -Path (Join-Path $repoRoot 'tools') -Filter '*.ps1' | ForEach-Object {
+    $toolFiles = Get-ChildItem -Path (Join-Path $repoRoot 'tools') -Filter '*.ps1' -Recurse | ForEach-Object {
         @{ Name = $_.Name; Path = $_.FullName }
     }
     # Lab-Daten je Sprache unter scripts/data/<Sprache>.
@@ -56,6 +56,10 @@ Describe 'Skript <Name>' -ForEach $scriptFiles {
 }
 
 Describe 'Werkzeug <Name>' -ForEach $toolFiles {
+    It 'enthaelt nur ASCII-Zeichen (Pruefskripte laufen per Run Command unter Windows PowerShell 5.1)' {
+        ([IO.File]::ReadAllBytes($Path) | Where-Object { $_ -gt 127 }) | Should -BeNullOrEmpty
+    }
+
     It 'laesst sich fehlerfrei parsen' {
         $errors = $null
         [System.Management.Automation.Language.Parser]::ParseFile($Path, [ref]$null, [ref]$errors) | Out-Null

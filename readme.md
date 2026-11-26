@@ -85,7 +85,11 @@ flowchart LR
    | `enableLetsEncrypt` / `letsEncryptStaging` | nein | Zertifikat an/aus, Test-CA für Testdeployments |
    | `wingetPackages` | nein | zusätzliche Tools per winget, Standard `Microsoft.VisualStudioCode` |
 
-3. Das Deployment dauert **ca. 1–1,5 Stunden**. Im Test waren es rund 65 Minuten, davon allein 31 Minuten Exchange-Setup. Danach startet der Exchange-Server neu und installiert im Hintergrund alle Updates, inklusive Exchange-Sicherheitsupdate über Microsoft Update. DC und Fileserver machen das parallel. Rechne mit weiteren 30–60 Minuten. Die Beispieldaten des Fileservers entstehen höchstens 60 Minuten lang im Deployment, der Rest im Hintergrund: Mit `Standard_D4s_v5` waren 60 GB im Test nach gut 30 Minuten fertig, für rund 230 GB sind etwa zwei Stunden zu erwarten. Danach verkleinert sich der Fileserver selbst auf `Standard_B2s_v2` und startet dafür einmal neu.
+3. Das Deployment dauert **ca. 1–1,5 Stunden**, mit zweitem DC etwas länger: Exchange beginnt erst, wenn DC02 vollständig bereit ist (SYSVOL, DNS, Replikation in beide Richtungen). Im Test waren es rund 65 Minuten, davon allein 31 Minuten Exchange-Setup. Danach startet der Exchange-Server neu und installiert im Hintergrund alle Updates, inklusive Exchange-Sicherheitsupdate über Microsoft Update. Die DCs starten ihren Update-Lauf erst ganz am Ende des Deployments, wenn Exchange, Client und Fileserver fertig sind; so trifft kein DC-Neustart eine VM, die gerade beitritt. Rechne mit weiteren 30–60 Minuten. Die Beispieldaten des Fileservers entstehen höchstens 60 Minuten lang im Deployment, der Rest im Hintergrund: Mit `Standard_D4s_v5` waren 60 GB im Test nach gut 30 Minuten fertig, für rund 230 GB sind etwa zwei Stunden zu erwarten. Danach verkleinert sich der Fileserver selbst auf `Standard_B2s_v2` und startet dafür einmal neu.
+
+   **Startzeit:** Mit der Standard-Abschaltzeit 19:00 das Deployment bis etwa **17:30** starten. Die Abschaltung unterbricht kein Deployment-Modul, aber laufende Hintergrundarbeiten (Updates, Beispieldaten). Diese setzen nach dem nächsten Start fort, fertig ist das Lab dann erst am nächsten Tag.
+
+4. **Prüfen:** `./tools/Test-LabDeployment.ps1 -ResourceGroup rg-exlab-<k> -Wait` prüft Deployment, DNS-Delegation, alle VMs und die Hintergrundarbeiten und wartet, bis diese fertig sind. Exit-Code 0 heißt: Lab vollständig und fehlerfrei. Details in [docs/betrieb.md](docs/betrieb.md#lab-prüfen).
 
 ### Ablauf und Logs
 
@@ -93,7 +97,8 @@ flowchart LR
 | --- | --- | --- |
 | Forest anlegen, Neustart, Split DNS | DC | `C:\ExchangeLab\Logs\Install-DomainController-*.log` |
 | Warten auf DC01, Heraufstufung (optional) | DC02 | `C:\ExchangeLab\Logs\Wait-DomainController.log`, `Install-DomainController-*.log` |
-| Heraufstufung nach Neustart (nur wenn Windows-Wartung einen Neustart vorgemerkt hat) | DC | `C:\ExchangeLab\Logs\Install-DomainController-Promote.log` |
+| Heraufstufung nach Neustart (Windows-Wartung hat einen Neustart vorgemerkt oder ein Versuch ist gescheitert, höchstens 3 Neustarts) | DC | `C:\ExchangeLab\Logs\Install-DomainController-Promote.log` |
+| Schranke: DC02 vollständig bereit, erst dann VNet-DNS und Exchange (optional) | DC01 | `C:\ExchangeLab\Logs\Wait-SecondDomainController.log` |
 | Voraussetzungen, ISO, Zertifikat (parallel) | Exchange | `C:\ExchangeLab\Logs\Initialize-ExchangeServer.log` |
 | Sprachpaket, Microsoft 365 Apps, Remote Desktop Manager (parallel) | Client | `C:\ExchangeLab\Logs\Initialize-LabClient-Prepare.log` |
 | Warten auf DC, Domänenbeitritt, RDP für Lab-Benutzer, Verbindungen im Remote Desktop Manager | Client | `C:\ExchangeLab\Logs\Wait-DomainController.log`, `Initialize-LabClient-Complete.log` |
@@ -104,7 +109,7 @@ flowchart LR
 | Beispieldokumente (höchstens 60 Minuten, Rest per Task `TraineeLab-SampleDocuments`) | Fileserver | `C:\ExchangeLab\Logs\New-SampleDocuments*.log`, Stand in `C:\ExchangeLab\sample-documents.json` |
 | Warten auf DC, Domänenbeitritt, Rollen, Gruppen, Berechtigungen, Freigaben, Altlasten | Fileserver | `C:\ExchangeLab\Logs\Wait-DomainController.log`, `Initialize-FileServer-Complete.log` |
 | Verkleinerung nach Beispieldaten und Updates (Task `TraineeLab-FileServerResize`) | Fileserver | `C:\ExchangeLab\Logs\Resize-FileServer.log` |
-| Updates nach der Installation | alle Server | `C:\ExchangeLab\Logs\Update-LabServer.log` |
+| Updates nach der Installation (DCs erst am Ende des Deployments, Run Command `Start-LabUpdate`) | alle Server | `C:\ExchangeLab\Logs\Update-LabServer.log`, auf den DCs auch `Start-LabUpdate.log` |
 | tägliche Wartung (Log-Bereinigung, Zertifikat) | Exchange | `C:\ExchangeLab\Logs\Invoke-LabMaintenance.log` |
 
 Status von außen: `az vm run-command show -g <rg> --vm-name vm-<k>-ex01 --name Install-ExchangeServer --instance-view`.
@@ -204,12 +209,15 @@ az bicep build --file infra/main.bicep --outfile azuredeploy.json
     -CorpusPath .\scripts\data\de\corpus -LabUsersPath .\scripts\data\de\LabUsers.psd1 -ReferenceDate 2026-11-24
 ```
 
-- Prüfungen (laufen auch in der CI):
+- Prüfungen (laufen auch in der CI, unter Linux mit pwsh 7 und unter Windows PowerShell 5.1). `tests/Haertung.Tests.ps1` prüft die Fehlerklassen der Testdeployments: Run-Command-Parameter gegen die Skripte, Argumente geplanter Tasks, Formatstrings der Lab-Info, stderr nativer Befehle unter 5.1, Zeitlimits, DPAPI:
 
 ```powershell
-Invoke-ScriptAnalyzer -Path scripts -Recurse -Settings ./PSScriptAnalyzerSettings.psd1
+Invoke-ScriptAnalyzer -Path scripts, tools -Recurse -Settings ./PSScriptAnalyzerSettings.psd1
 Invoke-Pester -Path tests
 ```
+
+- Vor jeder Abnahme und nach jeder Versionsänderung prüft `./tools/Test-Downloads.ps1` alle festgelegten Downloads (Hash, Größe) und Modulversionen. Blockiert das eigene Netz GitHub-Downloads, mit `-ResourceGroup <rg> -VmName <vm>` von einer Lab-VM aus.
+- Abnahme einer Änderung: DE- und EN-Lab parallel bereitstellen (beide mit DC02, Client, Fileserver), ohne Eingriff, danach `./tools/Test-LabDeployment.ps1 -ResourceGroup <rg> -Wait` mit Exit-Code 0 auf beiden.
 
 ## Hinweis für Betreiber
 
