@@ -20,14 +20,22 @@ function Write-Check {
 
 function Invoke-Check {
     # Die Pruefung liefert @(Status, Detail). Ein Fehler darin ergibt FAIL, die weiteren Pruefungen laufen weiter.
-    param([Parameter(Mandatory)][string] $Id, [Parameter(Mandatory)][scriptblock] $ScriptBlock)
+    # PendingReason: Hintergrundarbeit laeuft (z. B. Update-Lauf mit gestoppten Diensten), ein FAIL zaehlt dann als PENDING.
+    param([Parameter(Mandatory)][string] $Id, [Parameter(Mandatory)][scriptblock] $ScriptBlock, [string] $PendingReason = '')
     try {
         $result = @(& $ScriptBlock)
-        Write-Check -Id $Id -State $result[0] -Detail "$($result[1])"
+        $state = $result[0]
+        $detail = "$($result[1])"
     }
     catch {
-        Write-Check -Id $Id -State 'FAIL' -Detail $_.Exception.Message
+        $state = 'FAIL'
+        $detail = $_.Exception.Message
     }
+    if ($state -eq 'FAIL' -and $PendingReason) {
+        $state = 'PENDING'
+        $detail = "${PendingReason}: $detail"
+    }
+    Write-Check -Id $Id -State $state -Detail $detail
 }
 
 function Test-RebootPending {

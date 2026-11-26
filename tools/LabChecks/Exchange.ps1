@@ -1,6 +1,8 @@
 # Pruefungen auf dem Exchange-Server (laeuft nach Common.ps1, siehe dort).
 
 $updateRunning = [bool](Get-ScheduledTask -TaskName 'ExchangeLab-InitialUpdates' -ErrorAction SilentlyContinue)
+# Waehrend des Update-Laufs (Exchange-SU deaktiviert die Dienste zeitweise) zaehlen Fehler als PENDING.
+$pendingReason = if ($updateRunning) { 'Update-Lauf' } else { '' }
 
 Invoke-Check 'ex.installed' {
     if (Test-Path -Path (Join-Path $LabRoot 'exchange-install.done')) { 'OK', 'exchange-install.done' } else { 'FAIL', 'exchange-install.done fehlt' }
@@ -26,7 +28,7 @@ catch {
 }
 
 if ($snapin) {
-    Invoke-Check 'ex.mailboxes' {
+    Invoke-Check 'ex.mailboxes' -PendingReason $pendingReason -ScriptBlock {
         $users = @(Get-Mailbox -RecipientTypeDetails UserMailbox -ResultSize Unlimited | Where-Object { "$($_.OrganizationalUnit)" -like "*LEARN-$($Lab.Trainee)*" })
         $shared = @(Get-Mailbox -RecipientTypeDetails SharedMailbox -ResultSize Unlimited)
         $rooms = @(Get-Mailbox -RecipientTypeDetails RoomMailbox -ResultSize Unlimited)
@@ -37,7 +39,7 @@ if ($snapin) {
         'OK', $detail
     }
 
-    Invoke-Check 'ex.language' {
+    Invoke-Check 'ex.language' -PendingReason $pendingReason -ScriptBlock {
         $expected = @{ de = 'de-DE'; en = 'en-GB' }[$Lab.Language]
         # Nur die Lab-Postfaecher in der Firmen-OU, nicht das Admin-Konto.
         $boxes = @(Get-Mailbox -RecipientTypeDetails UserMailbox, SharedMailbox, RoomMailbox -ResultSize Unlimited | Where-Object { "$($_.OrganizationalUnit)" -like "*LEARN-$($Lab.Trainee)*" })
@@ -46,7 +48,7 @@ if ($snapin) {
         'OK', "$($boxes.Count) Postfaecher $expected"
     }
 
-    Invoke-Check 'ex.certificate' {
+    Invoke-Check 'ex.certificate' -PendingReason $pendingReason -ScriptBlock {
         # Massgeblich ist die tatsaechliche Bindung auf 443 (Default Web Site), nicht die Services-Liste.
         $binding = (& netsh.exe http show sslcert ipport=0.0.0.0:443) -join ' '
         $bound = [regex]::Match($binding, '\b[0-9a-fA-F]{40}\b').Value
@@ -62,7 +64,7 @@ if ($snapin) {
         'OK', $detail
     }
 
-    Invoke-Check 'ex.urls' {
+    Invoke-Check 'ex.urls' -PendingReason $pendingReason -ScriptBlock {
         $owa = Get-OwaVirtualDirectory -Server $env:COMPUTERNAME
         $expected = "https://mail.$($Lab.Public)/owa"
         if ("$($owa.ExternalUrl)" -ne $expected) { return 'FAIL', "OWA ExternalUrl $($owa.ExternalUrl)" }
