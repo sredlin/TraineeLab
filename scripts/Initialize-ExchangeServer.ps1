@@ -18,7 +18,8 @@
       - winget: VC++ 2012/2013, IIS URL Rewrite und optionale Tools,
         Fallback fuer die Exchange-Voraussetzungen: Microsoft-Download mit SHA256-Pruefung
       - CSS-Exchange-Diagnose (HealthChecker, SetupAssist, SetupLogReviewer) nach C:\ExchangeLab\Tools
-      - Exchange-SE-ISO laden und entpacken, UCMA 4.0 aus \UCMARedist installieren
+      - Exchange-SE-ISO laden (SHA256-Pruefung, Neudownload bei Abweichung) und entpacken,
+        UCMA 4.0 aus \UCMARedist installieren
       - optional Let's-Encrypt-Wildcard-Zertifikat ueber die Managed Identity der VM
 
     Das Skript ist idempotent und enthaelt bewusst nur ASCII-Zeichen (Windows PowerShell 5.1).
@@ -30,6 +31,9 @@ param(
 
     [Parameter(Mandatory)]
     [string] $IsoUri,
+
+    # SHA256 des ISO; leer = keine Pruefung (eigenes ISO ohne bekannten Hash).
+    [string] $IsoSha256 = '',
 
     [Parameter(Mandatory)]
     [string] $SubscriptionId,
@@ -60,6 +64,9 @@ $CertDir = 'C:\Certificates'
 $ToolsDir = Join-Path $LabRoot 'Tools'
 $PoshAcmeHome = 'C:\ProgramData\Posh-ACME'
 $PwshExe = Join-Path $env:ProgramFiles 'PowerShell\7\pwsh.exe'
+# Feste Modulversionen aus der PowerShell Gallery (getestet), damit eine neue Version kein Deployment bricht.
+$PoshAcmeVersion = '4.35.0'
+$WinGetClientVersion = '1.29.380'
 
 # Diagnose-Skripte aus microsoft/CSS-Exchange, festes Release (SHA256 aus den Release-Assets,
 # Dateien von Microsoft signiert). Beim Aktualisieren Tag und Hashes gemeinsam aendern.
@@ -83,14 +90,14 @@ $PowerShell7 = @{
 
 # Laeuft unter PowerShell 7 als SYSTEM und installiert die uebergebenen winget-Pakete maschinenweit.
 $WinGetHelperScript = @'
-param([Parameter(Mandatory)][string] $Ids)
+param([Parameter(Mandatory)][string] $Ids, [Parameter(Mandatory)][string] $ModuleVersion)
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
-if (-not (Get-Module -ListAvailable -Name Microsoft.WinGet.Client)) {
-    Install-Module -Name Microsoft.WinGet.Client -Scope AllUsers -Force
+if (-not (Get-Module -ListAvailable -Name Microsoft.WinGet.Client | Where-Object { $_.Version -eq [version]$ModuleVersion })) {
+    Install-Module -Name Microsoft.WinGet.Client -RequiredVersion $ModuleVersion -Scope AllUsers -Force
 }
-Import-Module -Name Microsoft.WinGet.Client
+Import-Module -Name Microsoft.WinGet.Client -RequiredVersion $ModuleVersion
 foreach ($id in $Ids.Split(',')) {
     try {
         $result = Install-WinGetPackage -Id $id -Source winget -MatchOption Equals -Mode Silent -Scope SystemOrUnknown -Force
@@ -361,7 +368,7 @@ function Invoke-WinGetInstall {
 
     $helper = Join-Path $InstallDir 'Install-WinGetPackage.ps1'
     Set-Content -Path $helper -Value $WinGetHelperScript -Encoding ASCII
-    $output = (Invoke-NativeCommand -FilePath $PwshExe -ArgumentList @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', $helper, '-Ids', ($Ids -join ',')) -NoThrow).Output
+    $output = (Invoke-NativeCommand -FilePath $PwshExe -ArgumentList @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', $helper, '-Ids', ($Ids -join ','), '-ModuleVersion', $WinGetClientVersion) -NoThrow).Output
 
     $status = @{}
     foreach ($line in $output) {
@@ -404,17 +411,32 @@ function Install-LabSoftware {
     }
 }
 
+function Test-IsoHash {
+    param([Parameter(Mandatory)][string] $Path)
+    if (-not $IsoSha256) { return $true }
+    $hash = (Get-FileHash -Path $Path -Algorithm SHA256).Hash
+    if ($hash -eq $IsoSha256) { return $true }
+    Write-LabLog "SHA256 des Exchange-ISO passt nicht (erwartet $IsoSha256, erhalten $hash)."
+    return $false
+}
+
 function Get-ExchangeMedium {
+    # Fertig-Marke statt "Setup.exe vorhanden": Eine abgebrochene Kopie wird beim naechsten Lauf vervollstaendigt.
     $setupExe = Join-Path $MediaDir 'Setup.exe'
-    if (Test-Path -Path $setupExe) {
+    $completeMarker = Join-Path $MediaDir 'lab-media-complete.txt'
+    if (Test-Path -Path $completeMarker) {
         Write-LabLog "Exchange-Medium bereits vorhanden: $setupExe"
         return
     }
 
     $isoPath = Join-Path $InstallDir (Split-Path -Path $IsoUri -Leaf)
+    if ((Test-Path -Path $isoPath) -and -not (Test-IsoHash -Path $isoPath)) {
+        Remove-Item -Path $isoPath -Force
+    }
     if (-not (Test-Path -Path $isoPath)) {
         Write-LabLog "Lade Exchange-ISO von $IsoUri."
         Invoke-WithRetry -Activity 'Download Exchange-ISO' -Attempts 3 -DelaySeconds 60 -ScriptBlock {
+            Remove-Item -Path $isoPath -Force -ErrorAction SilentlyContinue
             try {
                 Start-BitsTransfer -Source $IsoUri -Destination $isoPath -Priority Foreground
             }
@@ -424,22 +446,33 @@ function Get-ExchangeMedium {
                 $client = New-Object -TypeName System.Net.WebClient
                 try { $client.DownloadFile($IsoUri, $isoPath) } finally { $client.Dispose() }
             }
+            if (-not (Test-IsoHash -Path $isoPath)) {
+                Remove-Item -Path $isoPath -Force
+                throw 'Exchange-ISO unvollstaendig oder veraendert.'
+            }
         }
+        Write-LabLog 'Exchange-ISO geladen.'
     }
 
     Write-LabLog 'Entpacke Exchange-ISO.'
-    $image = Mount-DiskImage -ImagePath $isoPath -PassThru
+    # Aus einem abgebrochenen Lauf kann das ISO noch eingebunden sein.
+    $image = Get-DiskImage -ImagePath $isoPath
+    if (-not $image.Attached) {
+        $image = Mount-DiskImage -ImagePath $isoPath -PassThru
+    }
     try {
         $driveLetter = ($image | Get-Volume).DriveLetter
         New-Item -Path $MediaDir -ItemType Directory -Force | Out-Null
-        & robocopy.exe "${driveLetter}:\" $MediaDir /E /NFL /NDL /NJH /NJS /NP | Out-Null
-        if ($LASTEXITCODE -ge 8) {
-            throw "robocopy meldet Exit-Code $LASTEXITCODE."
-        }
+        # robocopy: Exit 0-7 = Erfolg (Bits fuer kopiert/zusaetzlich/abweichend), ab 8 Fehler.
+        Invoke-NativeCommand -FilePath 'robocopy.exe' -ArgumentList @("${driveLetter}:\", $MediaDir, '/E', '/NFL', '/NDL', '/NJH', '/NJS', '/NP') -SuccessExitCodes (0..7) | Out-Null
     }
     finally {
         Dismount-DiskImage -ImagePath $isoPath | Out-Null
     }
+    if (-not (Test-Path -Path $setupExe)) {
+        throw "Setup.exe fehlt nach dem Entpacken ($MediaDir)."
+    }
+    Set-Content -Path $completeMarker -Value (Get-Date -Format o) -Encoding ASCII
     Remove-Item -Path $isoPath -Force
 
     $version = (Get-Item -Path $setupExe).VersionInfo.ProductVersion
@@ -474,12 +507,12 @@ function Request-LabCertificate {
         New-Item -Path $PoshAcmeHome, $CertDir -ItemType Directory -Force | Out-Null
 
         Initialize-PowerShellGallery
-        if (-not (Get-Module -ListAvailable -Name Posh-ACME)) {
-            Invoke-WithRetry -Activity 'Install-Module Posh-ACME' -ScriptBlock {
-                Install-Module -Name Posh-ACME -Scope AllUsers -Force
+        if (-not (Get-Module -ListAvailable -Name Posh-ACME | Where-Object { $_.Version -eq [version]$PoshAcmeVersion })) {
+            Invoke-WithRetry -Activity "Install-Module Posh-ACME $PoshAcmeVersion" -ScriptBlock {
+                Install-Module -Name Posh-ACME -RequiredVersion $PoshAcmeVersion -Scope AllUsers -Force
             }
         }
-        Import-Module -Name Posh-ACME
+        Import-Module -Name Posh-ACME -RequiredVersion $PoshAcmeVersion
 
         if ($LetsEncryptStaging -eq 'true') { Set-PAServer -DirectoryUrl LE_STAGE } else { Set-PAServer -DirectoryUrl LE_PROD }
         # Ohne Konto wirft Get-PACertificate einen terminierenden Fehler.

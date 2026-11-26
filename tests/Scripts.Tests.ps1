@@ -71,13 +71,22 @@ Describe 'LabUsers.psd1 (<Language>)' -ForEach $languages {
         $names | ForEach-Object { $_.Length | Should -BeLessOrEqual 20 }
     }
 
-    It 'hat fuer jeden Benutzer alle Pflichtattribute' {
-        $required = 'SamAccountName', 'GivenName', 'Surname', 'OrganizationalUnit', 'StreetAddress', 'City', 'PostalCode', 'Office', 'Title', 'OfficePhone', 'MobilePhone', 'Fax'
+    It 'hat fuer jeden Benutzer alle Pflichtattribute und einen Standort mit Anschrift' {
+        $required = 'SamAccountName', 'GivenName', 'Surname', 'Site', 'Office', 'Title', 'OfficePhone', 'MobilePhone'
         foreach ($user in $labUsers.Users) {
             foreach ($key in $required) {
                 $user[$key] | Should -Not -BeNullOrEmpty -Because "$($user.SamAccountName) braucht $key"
             }
+            $labUsers.Sites.Keys | Should -Contain $user.Site -Because "$($user.SamAccountName) verweist auf Standort $($user.Site)"
         }
+        @($labUsers.Sites.Keys | Sort-Object) | Should -Be @('Branch', 'HQ')
+        foreach ($site in $labUsers.Sites.GetEnumerator()) {
+            foreach ($key in 'OrganizationalUnit', 'StreetAddress', 'City', 'PostalCode', 'Fax') {
+                $site.Value[$key] | Should -Not -BeNullOrEmpty -Because "Standort $($site.Key) braucht $key"
+            }
+        }
+        # Die Client-OU liegt beim Hauptstandort (Initialize-LabClient, Move-LabClientComputer).
+        $labUsers.ClientOrganizationalUnit | Should -Be ($labUsers.Sites.HQ.OrganizationalUnit -replace '^OU=Users,', 'OU=Computers,')
     }
 
     It 'nennt Firma und Land fuer die AD-Attribute company, c, co und countryCode' {
@@ -94,7 +103,9 @@ Describe 'LabUsers.psd1 (<Language>)' -ForEach $languages {
         foreach ($user in $labUsers.Users) {
             $user.OfficePhone | Should -Match $pattern.Fixed -Because "$($user.SamAccountName) braucht eine Festnetznummer ($($pattern.Source))"
             $user.MobilePhone | Should -Match $pattern.Mobile -Because "$($user.SamAccountName) braucht eine Mobilnummer ($($pattern.Source))"
-            $user.Fax | Should -Match $pattern.Fixed -Because "$($user.SamAccountName) braucht eine Faxnummer des Standorts"
+        }
+        foreach ($site in $labUsers.Sites.GetEnumerator()) {
+            $site.Value.Fax | Should -Match $pattern.Fixed -Because "Standort $($site.Key) braucht eine Faxnummer"
         }
         foreach ($contact in $labUsers.Contacts) {
             foreach ($number in $contact.Phone, $contact.Fax) {
@@ -104,8 +115,8 @@ Describe 'LabUsers.psd1 (<Language>)' -ForEach $languages {
     }
 
     It 'legt jede Benutzer-OU in der OU-Liste an' {
-        foreach ($user in $labUsers.Users) {
-            $labUsers.OrganizationalUnits | Should -Contain $user.OrganizationalUnit
+        foreach ($site in $labUsers.Sites.Values) {
+            $labUsers.OrganizationalUnits | Should -Contain $site.OrganizationalUnit
         }
     }
 
@@ -393,7 +404,7 @@ Describe 'azuredeploy.json' {
         $b64 = { param([string[]] $Files) ($Files | ForEach-Object { [Convert]::ToBase64String([IO.File]::ReadAllBytes((Join-Path $repoRoot $_))).Length } | Measure-Object -Sum).Sum }
         $largest = { param([string] $Name) @('de', 'en' | ForEach-Object { & $b64 "scripts/data/$_/$Name" }) | Sort-Object -Descending | Select-Object -First 1 }
         (& $b64 'scripts/Update-LabServer.ps1', 'scripts/Invoke-LabMaintenance.ps1') | Should -BeLessThan 31000 -Because 'Install-ExchangeServer'
-        ((& $largest 'LabUsers.psd1') + (& $largest 'FileServer.psd1')) | Should -BeLessThan 31000 -Because 'Initialize-FileServer (Prepare), im Testdeployment mit 30.076 noch gelaufen'
+        ((& $largest 'LabUsers.psd1') + (& $largest 'FileServer.psd1')) | Should -BeLessThan 28000 -Because 'Initialize-FileServer (Prepare); Reserve fuer weiteres Wachstum (Sites statt Anschrift je Benutzer)'
         (& $b64 'scripts/Update-LabServer.ps1', 'scripts/Resize-FileServer.ps1') | Should -BeLessThan 31000 -Because 'Complete-FileServer'
         # LabUsers.psd1 erreicht Exchange deshalb ueber die userData der VM.
         $exchangeModule = ($template.resources | Where-Object name -EQ 'exchange-server').properties.template

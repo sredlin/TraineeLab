@@ -430,22 +430,24 @@ function Initialize-LabDirectory {
     }
 
     foreach ($user in $data.Users) {
+        # OU, Anschrift und Fax kommen vom Standort des Benutzers (Sites in LabUsers.psd1).
+        $site = $data.Sites[$user.Site]
         $displayName = "$($user.GivenName) $($user.Surname)"
         $attributes = @{
             GivenName         = $user.GivenName
             Surname           = $user.Surname
             DisplayName       = $displayName
             UserPrincipalName = '{0}@{1}' -f $user.SamAccountName.ToLowerInvariant(), $PublicDomainName
-            StreetAddress     = $user.StreetAddress
-            City              = $user.City
-            PostalCode        = $user.PostalCode
+            StreetAddress     = $site.StreetAddress
+            City              = $site.City
+            PostalCode        = $site.PostalCode
             Country           = $data.Country.Code
             Company           = $data.Company
             Office            = $user.Office
             Title             = $user.Title
             OfficePhone       = $user.OfficePhone
             MobilePhone       = $user.MobilePhone
-            Fax               = $user.Fax
+            Fax               = $site.Fax
             # Lab-Kompromiss: Ohne das laeuft das Kennwort nach 42 Tagen (Default Domain Policy) ab.
             PasswordNeverExpires = $true
         }
@@ -456,7 +458,7 @@ function Initialize-LabDirectory {
             Set-ADUser -Identity $existing @attributes
         }
         else {
-            New-ADUser -Name $displayName -SamAccountName $user.SamAccountName -Path "$($user.OrganizationalUnit),$companyDn" -AccountPassword $LabUserPassword -Enabled $true @attributes
+            New-ADUser -Name $displayName -SamAccountName $user.SamAccountName -Path "$($site.OrganizationalUnit),$companyDn" -AccountPassword $LabUserPassword -Enabled $true @attributes
             Write-LabLog "Benutzer $($user.SamAccountName) angelegt."
         }
         # -Country setzt nur c; Name (co) und Laendercode (countryCode) zeigen ADUC und das Adressbuch an.
@@ -886,7 +888,7 @@ function Publish-LabDesktop {
         )
         foreach ($user in $LabData.Users) {
             $address = '{0}@{1}' -f $user.SamAccountName.ToLowerInvariant(), $PublicDomainName
-            $lines += '  {0,-40} {1} {2}, {3}, {4}' -f $address, $user.GivenName, $user.Surname, $user.Title, $user.City
+            $lines += '  {0,-40} {1} {2}, {3}, {4}' -f $address, $user.GivenName, $user.Surname, $user.Title, $LabData.Sites[$user.Site].City
         }
         $lines += ''
         $lines += $text.Groups
