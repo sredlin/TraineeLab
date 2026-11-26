@@ -149,7 +149,7 @@ Der Fileserver verkleinert sich erst, wenn Beispieldaten, Einrichtung und Update
 Get-Content C:\ExchangeLab\Logs\Resize-FileServer.log -Tail 10
 ```
 
-Steht dort, dass die Größe im aktuellen Cluster nicht verfügbar ist, von Hand verkleinern (Cloud Shell):
+Bietet der Cluster `fileServerFinalVmSize` nicht an, wählt das Skript selbst die 2-vCPU-Größe der Familie (z. B. `Standard_D2s_v5`, Hinweis im Log). Steht dort, dass auch diese nicht verfügbar ist, von Hand verkleinern (Cloud Shell):
 
 ```bash
 az vm deallocate -g rg-exlab-<k> -n vm-<k>-fs01

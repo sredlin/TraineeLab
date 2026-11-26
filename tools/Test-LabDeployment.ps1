@@ -98,6 +98,8 @@ function Get-LabContext {
         LetsEncrypt          = [bool]$p.enableLetsEncrypt.value
         FileServerPercent    = [int]$p.fileServerDataPercent.value
         FileServerResizeTo   = $resizeTo
+        # Ersatz, wenn der Cluster die Dauergroesse nicht anbietet (siehe Resize-FileServer.ps1).
+        FileServerFallback   = $vmSize -replace '^(Standard_[A-Za-z]+)\d+', '${1}2'
     }
 }
 
@@ -133,7 +135,8 @@ function Get-AzureResult {
         }
         if ($vm.name -eq "vm-$($Lab.Trainee)-fs01" -and $Lab.FileServerResizeTo) {
             $size = $vm.hardwareProfile.vmSize
-            $results += ConvertTo-CheckResult $vm.name 'size' $(if ($size -eq $Lab.FileServerResizeTo) { 'OK' } else { 'PENDING' }) "$size (Ziel $($Lab.FileServerResizeTo))"
+            $state = if ($size -eq $Lab.FileServerResizeTo -or $size -eq $Lab.FileServerFallback) { 'OK' } else { 'PENDING' }
+            $results += ConvertTo-CheckResult $vm.name 'size' $state "$size (Ziel $($Lab.FileServerResizeTo), Ersatz $($Lab.FileServerFallback))"
         }
     }
     $results
