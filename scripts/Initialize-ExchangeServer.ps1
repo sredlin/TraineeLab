@@ -170,13 +170,16 @@ function Invoke-NativeCommand {
     $null = Get-Command -Name $FilePath -CommandType Application -ErrorAction Stop  # sonst bliebe ein alter Exit-Code stehen
     $previousPreference = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
-    try { $output = @(& $FilePath @ArgumentList 2>&1 | ForEach-Object { "$_" }) }
+    try { $raw = @(& $FilePath @ArgumentList 2>&1) }
     finally { $ErrorActionPreference = $previousPreference }
     $exitCode = $LASTEXITCODE
+    $output = @($raw | ForEach-Object { "$_" })
+    # stdout allein (z. B. Zusammenfassungen): Die Reihenfolge gegenueber stderr ist bei 2>&1 nicht garantiert.
+    $stdOut = @($raw | Where-Object { $_ -isnot [System.Management.Automation.ErrorRecord] } | ForEach-Object { "$_" })
     if ($SuccessExitCodes -notcontains $exitCode -and -not $NoThrow) {
         throw ('{0} endete mit Exit-Code {1}: {2}' -f (Split-Path -Path $FilePath -Leaf), $exitCode, (($output | Select-Object -Last 5) -join ' '))
     }
-    [pscustomobject]@{ ExitCode = $exitCode; Output = $output }
+    [pscustomobject]@{ ExitCode = $exitCode; Output = $output; StdOut = $stdOut }
 }
 
 function Invoke-WithRetry {

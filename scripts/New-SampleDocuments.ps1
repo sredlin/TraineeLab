@@ -5423,7 +5423,7 @@ function Invoke-MainPhase {
                 $workers | Where-Object { -not $_.HasExited } | ForEach-Object { Stop-Process -Id $_.Id -Force }
                 Register-ContinuationTask $copy $targetBytes
                 Write-SampleStatus 'wird im Hintergrund fortgesetzt' $written 0 $targetBytes
-                Write-LabLog ('WARNUNG: Zeitbudget von {0} Minuten erreicht ({1:N1} GB). Der Task {2} setzt nach dem Start fort.' -f $TimeBudgetMinutes, ($written / 1GB), $TaskName)
+                Write-LabLog ('Hinweis: Zeitbudget von {0} Minuten erreicht ({1:N1} GB). Der Task {2} setzt nach dem Start fort.' -f $TimeBudgetMinutes, ($written / 1GB), $TaskName)
                 return
             }
         }
