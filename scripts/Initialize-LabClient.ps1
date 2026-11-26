@@ -177,6 +177,27 @@ function Write-LabLog {
     Write-Information -MessageData $line -InformationAction Continue
 }
 
+function Invoke-NativeCommand {
+    # Externes Programm mit Ausgabe und Exit-Code. Windows PowerShell 5.1 wirft bei "2>&1" unter ErrorActionPreference
+    # Stop schon die erste stderr-Zeile als Fehler, bevor der Exit-Code pruefbar ist (Testdeployment 2026-11-26).
+    param(
+        [Parameter(Mandatory)][string] $FilePath,
+        [string[]] $ArgumentList = @(),
+        [int[]] $SuccessExitCodes = @(0),
+        [switch] $NoThrow
+    )
+    $null = Get-Command -Name $FilePath -CommandType Application -ErrorAction Stop  # sonst bliebe ein alter Exit-Code stehen
+    $previousPreference = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try { $output = @(& $FilePath @ArgumentList 2>&1 | ForEach-Object { "$_" }) }
+    finally { $ErrorActionPreference = $previousPreference }
+    $exitCode = $LASTEXITCODE
+    if ($SuccessExitCodes -notcontains $exitCode -and -not $NoThrow) {
+        throw ('{0} endete mit Exit-Code {1}: {2}' -f (Split-Path -Path $FilePath -Leaf), $exitCode, (($output | Select-Object -Last 5) -join ' '))
+    }
+    [pscustomobject]@{ ExitCode = $exitCode; Output = $output }
+}
+
 function Invoke-WithRetry {
     param(
         [Parameter(Mandatory)][scriptblock] $ScriptBlock,
@@ -394,10 +415,7 @@ function Install-RdmModule {
     "if (-not (Get-Module -ListAvailable -Name '$($RdmModule.Name)' | Where-Object { `$_.Version -eq [version]'$($RdmModule.Version)' })) { " +
     "Install-PSResource -Name '$($RdmModule.Name)' -Version '$($RdmModule.Version)' -Scope AllUsers -TrustRepository -ErrorAction Stop }"
     Invoke-WithRetry -Activity "Install-PSResource $($RdmModule.Name)" -ScriptBlock {
-        $output = & $PwshExe -NoProfile -NonInteractive -Command $command 2>&1
-        if ($LASTEXITCODE -ne 0) {
-            throw "pwsh endete mit Exit-Code ${LASTEXITCODE}: $($output -join ' ')"
-        }
+        Invoke-NativeCommand -FilePath $PwshExe -ArgumentList @('-NoProfile', '-NonInteractive', '-Command', $command) | Out-Null
     }
     Write-LabLog "Modul $($RdmModule.Name) $($RdmModule.Version) fuer alle Benutzer installiert."
 }
@@ -535,8 +553,9 @@ function Publish-RemoteConnection {
         $env:TRAINEELAB_RDM_SERVERS = ConvertTo-Json -InputObject $servers -Compress
         $env:TRAINEELAB_RDM_PASSWORD = ConvertFrom-Base64String $AdminPasswordB64
         try {
-            $output = & $PwshExe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $helper 2>&1
-            $exitCode = $LASTEXITCODE
+            $result = Invoke-NativeCommand -FilePath $PwshExe -ArgumentList @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', $helper) -NoThrow
+            $output = $result.Output
+            $exitCode = $result.ExitCode
         }
         finally {
             Remove-Item -Path Env:TRAINEELAB_RDM_PASSWORD, Env:TRAINEELAB_RDM_SERVERS, Env:TRAINEELAB_RDM_FILE -ErrorAction SilentlyContinue

@@ -124,6 +124,27 @@ function Initialize-DataDisk {
     Format-Volume -DriveLetter $DriveLetter -FileSystem $FileSystem -NewFileSystemLabel $Label -Confirm:$false | Out-Null
 }
 
+function Invoke-NativeCommand {
+    # Externes Programm mit Ausgabe und Exit-Code. Windows PowerShell 5.1 wirft bei "2>&1" unter ErrorActionPreference
+    # Stop schon die erste stderr-Zeile als Fehler, bevor der Exit-Code pruefbar ist (Testdeployment 2026-11-26).
+    param(
+        [Parameter(Mandatory)][string] $FilePath,
+        [string[]] $ArgumentList = @(),
+        [int[]] $SuccessExitCodes = @(0),
+        [switch] $NoThrow
+    )
+    $null = Get-Command -Name $FilePath -CommandType Application -ErrorAction Stop  # sonst bliebe ein alter Exit-Code stehen
+    $previousPreference = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try { $output = @(& $FilePath @ArgumentList 2>&1 | ForEach-Object { "$_" }) }
+    finally { $ErrorActionPreference = $previousPreference }
+    $exitCode = $LASTEXITCODE
+    if ($SuccessExitCodes -notcontains $exitCode -and -not $NoThrow) {
+        throw ('{0} endete mit Exit-Code {1}: {2}' -f (Split-Path -Path $FilePath -Leaf), $exitCode, (($output | Select-Object -Last 5) -join ' '))
+    }
+    [pscustomobject]@{ ExitCode = $exitCode; Output = $output }
+}
+
 function Test-CbsRebootPending {
     Test-Path -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending'
 }
@@ -277,7 +298,7 @@ function Save-PromotionSecret {
     # DPAPI (LocalMachine), Ordner nur fuer Administratoren und SYSTEM; wird nach der Heraufstufung geloescht.
     Add-Type -AssemblyName System.Security
     New-Item -Path $SecretDir -ItemType Directory -Force | Out-Null
-    & icacls.exe $SecretDir /inheritance:r /grant:r '*S-1-5-32-544:(OI)(CI)F' '*S-1-5-18:(OI)(CI)F' | Out-Null
+    Invoke-NativeCommand -FilePath 'icacls.exe' -ArgumentList @($SecretDir, '/inheritance:r', '/grant:r', '*S-1-5-32-544:(OI)(CI)F', '*S-1-5-18:(OI)(CI)F') | Out-Null
     $payload = @{ SafeModePasswordB64 = $SafeModePasswordB64; AdminPasswordB64 = $AdminPasswordB64 } | ConvertTo-Json -Compress
     $protected = [Security.Cryptography.ProtectedData]::Protect([Text.Encoding]::UTF8.GetBytes($payload), $null, [Security.Cryptography.DataProtectionScope]::LocalMachine)
     [IO.File]::WriteAllBytes($SecretFile, $protected)

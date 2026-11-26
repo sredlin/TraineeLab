@@ -151,6 +151,27 @@ function Write-LabLog {
     Write-Information -MessageData $line -InformationAction Continue
 }
 
+function Invoke-NativeCommand {
+    # Externes Programm mit Ausgabe und Exit-Code. Windows PowerShell 5.1 wirft bei "2>&1" unter ErrorActionPreference
+    # Stop schon die erste stderr-Zeile als Fehler, bevor der Exit-Code pruefbar ist (Testdeployment 2026-11-26).
+    param(
+        [Parameter(Mandatory)][string] $FilePath,
+        [string[]] $ArgumentList = @(),
+        [int[]] $SuccessExitCodes = @(0),
+        [switch] $NoThrow
+    )
+    $null = Get-Command -Name $FilePath -CommandType Application -ErrorAction Stop  # sonst bliebe ein alter Exit-Code stehen
+    $previousPreference = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try { $output = @(& $FilePath @ArgumentList 2>&1 | ForEach-Object { "$_" }) }
+    finally { $ErrorActionPreference = $previousPreference }
+    $exitCode = $LASTEXITCODE
+    if ($SuccessExitCodes -notcontains $exitCode -and -not $NoThrow) {
+        throw ('{0} endete mit Exit-Code {1}: {2}' -f (Split-Path -Path $FilePath -Leaf), $exitCode, (($output | Select-Object -Last 5) -join ' '))
+    }
+    [pscustomobject]@{ ExitCode = $exitCode; Output = $output }
+}
+
 function Invoke-WithRetry {
     param(
         [Parameter(Mandatory)][scriptblock] $ScriptBlock,
@@ -320,7 +341,7 @@ function Invoke-WinGetInstall {
 
     $helper = Join-Path $InstallDir 'Install-WinGetPackage.ps1'
     Set-Content -Path $helper -Value $WinGetHelperScript -Encoding ASCII
-    $output = & $PwshExe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $helper -Ids ($Ids -join ',') 2>&1
+    $output = (Invoke-NativeCommand -FilePath $PwshExe -ArgumentList @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', $helper, '-Ids', ($Ids -join ',')) -NoThrow).Output
 
     $status = @{}
     foreach ($line in $output) {
@@ -463,7 +484,7 @@ function Request-LabCertificate {
             }
         }
         # Privater Schluessel: nur Administratoren und SYSTEM.
-        & icacls.exe $CertDir /inheritance:r /grant:r '*S-1-5-32-544:(OI)(CI)F' '*S-1-5-18:(OI)(CI)F' | Out-Null
+        Invoke-NativeCommand -FilePath 'icacls.exe' -ArgumentList @($CertDir, '/inheritance:r', '/grant:r', '*S-1-5-32-544:(OI)(CI)F', '*S-1-5-18:(OI)(CI)F') | Out-Null
         Write-LabLog "Zertifikat $domain (gueltig bis $($certificate.NotAfter)) nach $CertDir kopiert."
     }
     catch {
