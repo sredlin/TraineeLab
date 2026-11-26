@@ -25,6 +25,7 @@
       - DNS-Forwarder 168.63.129.16, DNS-Registrierung des DC
       - nur Modus 'Forest': Reverse-Zone des Subnets und Split DNS (interne Zone <PublicDomainName>
         mit mail/autodiscover/MX auf die interne Exchange-IP); weitere DCs erhalten beides per Replikation
+      - Repl Perform Initial Synchronizations = 0 (kein DNS-Haenger nach gleichzeitigem Neustart beider DCs)
       - wiederholt die DNS-Schritte bis zu 30 Minuten; schreibt Marker und entfernt den Task
         (bei FEHLER bleibt der Task und laeuft beim naechsten Start erneut)
 
@@ -534,6 +535,11 @@ function Invoke-PostRebootPhase {
         Start-Sleep -Seconds 20
     }
     Write-LabLog 'AD DS und DNS laufen.'
+
+    # Nach einem Neustart wartet ein DC sonst auf die Erstsynchronisation mit einem Partner, bevor DNS antwortet
+    # (Ereignis 4013). Starten beide DCs gleichzeitig neu (Update-Lauf), haengt DNS dann minutenlang.
+    Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Services\NTDS\Parameters' -Name 'Repl Perform Initial Synchronizations' -Value 0 -Type DWord
+    Write-LabLog 'Erstsynchronisation nach dem Start abgeschaltet (Repl Perform Initial Synchronizations = 0).'
 
     # Alle Schritte sind idempotent. Bleiben sie 30 Minuten erfolglos, endet die Phase mit FEHLER; der Startup-Task
     # bleibt dann registriert und versucht es beim naechsten Start erneut.

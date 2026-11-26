@@ -741,6 +741,8 @@ function Invoke-CompletePhase {
     }
     $config = Import-PowerShellDataFile -Path $FileServerFile
     $labData = Import-PowerShellDataFile -Path $LabUsersFile
+    # Bei einem erneuten Lauf (Redeployment) darf die Verkleinerung nicht mitten in die Einrichtung fallen.
+    Remove-Item -Path $CompleteMarker -Force -ErrorAction SilentlyContinue
 
     Wait-DomainJoinComplete
     Install-FileServerRole

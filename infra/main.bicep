@@ -311,6 +311,29 @@ module secondDomainController 'modules/domain-controller.bicep' = if (deploySeco
   }
 }
 
+// Schranke: DC02 ist vollstaendig bereit (SYSVOL, DNS, Replikation), bevor er DNS-Server des VNets wird
+// und die Exchange-Installation beginnt.
+module dcReady 'modules/dc-ready.bicep' = if (deploySecondDc) {
+  name: 'dc-ready'
+  params: {
+    location: location
+    tags: allTags
+    vmName: names.dcVm
+    domainName: adDomainName
+    netbiosName: traineeUpper
+    adminUsername: adminUsername
+    adminPassword: adminPassword
+    secondDcComputerName: names.dc2Computer
+    secondDcIp: dc2PrivateIp
+    publicDomainName: publicDomainName
+    exchangeIp: exchangePrivateIp
+  }
+  dependsOn: [
+    domainController
+    secondDomainController
+  ]
+}
+
 module vnetDns 'modules/vnet-dns.bicep' = {
   name: 'vnet-dns'
   params: {
@@ -329,6 +352,7 @@ module vnetDns 'modules/vnet-dns.bicep' = {
   dependsOn: [
     domainController
     secondDomainController
+    dcReady
   ]
 }
 
@@ -448,6 +472,27 @@ module fileServerJoin 'modules/file-server-join.bicep' = if (deployFileServer) {
   dependsOn: [
     fileServer
     vnetDns
+  ]
+}
+
+// Update-Lauf der DCs erst ganz am Ende: Ihre Neustarts treffen keine VM mehr, die beitritt oder sich einrichtet.
+module labFinalize 'modules/lab-finalize.bicep' = {
+  name: 'lab-finalize'
+  params: {
+    location: location
+    tags: allTags
+    vmNames: deploySecondDc ? [
+      names.dcVm
+      names.dc2Vm
+    ] : [
+      names.dcVm
+    ]
+  }
+  dependsOn: [
+    exchangeInstall
+    clientJoin
+    fileServerJoin
+    dcReady
   ]
 }
 

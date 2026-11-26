@@ -242,6 +242,27 @@ function Initialize-ClientPolicy {
     Write-LabLog 'Entra-Registrierung des Clients (Workplace Join) blockiert.'
 }
 
+function Invoke-LanguageInstall {
+    # Eigener Prozess mit Zeitlimit: Install-Language laedt aus dem Store und kann bei Stoerungen haengen.
+    param([Parameter(Mandatory)][string] $Language, [int] $TimeoutMinutes = 35)
+    $job = Start-Job -ScriptBlock {
+        Install-Language -Language $using:Language -CopyToSettings -ErrorAction Stop | Out-Null
+    }
+    try {
+        if (-not (Wait-Job -Job $job -Timeout ($TimeoutMinutes * 60))) {
+            Stop-Job -Job $job
+            throw "Install-Language $Language nach $TimeoutMinutes Minuten abgebrochen."
+        }
+        Receive-Job -Job $job -ErrorAction Stop | Out-Null
+        if ($job.State -ne 'Completed') {
+            throw "Install-Language $Language endete mit Status $($job.State)."
+        }
+    }
+    finally {
+        Remove-Job -Job $job -Force
+    }
+}
+
 function Initialize-ClientLanguage {
     Set-TimeZone -Id 'W. Europe Standard Time'
     if ($ClientLanguage.LanguagePack) {
@@ -253,7 +274,7 @@ function Initialize-ClientLanguage {
             else {
                 Write-LabLog "Installiere Sprachpaket $pack (dauert einige Minuten)."
                 Invoke-WithRetry -Activity "Install-Language $pack" -Attempts 2 -DelaySeconds 60 -ScriptBlock {
-                    Install-Language -Language $pack -CopyToSettings | Out-Null
+                    Invoke-LanguageInstall -Language $pack
                 }
             }
             Set-SystemPreferredUILanguage -Language $pack
@@ -327,10 +348,23 @@ function Install-OfficeApp {
         Set-Content -Path $configFile -Value $configuration -Encoding UTF8
 
         Write-LabLog "Installiere Microsoft 365 Apps ($OfficeProductId, $($ClientLanguage.Office), Monthly Enterprise Channel)."
-        $setup = Start-Process -FilePath (Join-Path $OdtDir 'setup.exe') -ArgumentList '/configure', "`"$configFile`"" -Wait -PassThru
-        if ($setup.ExitCode -ne 0 -or -not (Test-Path -Path $OutlookExe)) {
-            throw "Office-Setup mit Exit-Code $($setup.ExitCode) beendet, Outlook nicht gefunden. Details: C:\Windows\Temp\*.log"
+        # Hoechstens 60 Minuten; ein schnell gescheitertes Setup (z. B. Download vom CDN) wird einmal wiederholt.
+        $deadline = (Get-Date).AddMinutes(60)
+        for ($attempt = 1; ; $attempt++) {
+            $setup = Start-Process -FilePath (Join-Path $OdtDir 'setup.exe') -ArgumentList '/configure', "`"$configFile`"" -PassThru
+            $null = $setup.Handle
+            $remaining = [int][Math]::Max(0, ($deadline - (Get-Date)).TotalMilliseconds)
+            if (-not $setup.WaitForExit($remaining)) {
+                throw 'Office-Setup nach 60 Minuten nicht beendet. Details: C:\Windows\Temp\*.log'
+            }
+            if ($setup.ExitCode -eq 0 -and (Test-Path -Path $OutlookExe)) { break }
+            if ($attempt -ge 2 -or (Get-Date) -gt $deadline.AddMinutes(-20)) {
+                throw "Office-Setup mit Exit-Code $($setup.ExitCode) beendet, Outlook nicht gefunden. Details: C:\Windows\Temp\*.log"
+            }
+            Write-LabLog "Office-Setup mit Exit-Code $($setup.ExitCode) beendet, zweiter Versuch in 2 Minuten."
+            Start-Sleep -Seconds 120
         }
+        Remove-Item -Path (Join-Path $LabRoot 'office-failed.txt') -Force -ErrorAction SilentlyContinue
         Write-LabLog 'Microsoft 365 Apps installiert.'
     }
     catch {

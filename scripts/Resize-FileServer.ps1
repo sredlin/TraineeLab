@@ -11,7 +11,8 @@
       - die Beispieldokumente fertig sind (C:\ExchangeLab\sample-documents.json, State 'fertig'),
       - die Einrichtung abgeschlossen ist (Marker fs-complete.done),
       - der Update-Task fertig ist und kein Neustart aussteht,
-      - die VM seit mindestens MinUptimeMinutes laeuft (kein Konflikt mit einem laufenden Deployment).
+      - die VM seit mindestens MinUptimeMinutes laeuft und kein Run Command auf ihr laeuft
+        (kein Konflikt mit einem laufenden Deployment).
 
     Die Groesse setzt die verwaltete Identitaet der VM (Rolle 'Virtual Machine Contributor' nur auf
     diese VM) ueber die ARM-API. Azure startet die VM dafuer einmal neu. Bietet der aktuelle Cluster
@@ -91,6 +92,18 @@ try {
 
     $vmUri = 'https://management.azure.com/subscriptions/{0}/resourceGroups/{1}/providers/Microsoft.Compute/virtualMachines/{2}' -f $compute.subscriptionId, $compute.resourceGroupName, $compute.name
     $headers = @{ Authorization = "Bearer $(Get-ArmToken)" }
+
+    # Der Neustart der Groessenaenderung wuerde einen laufenden Run Command (z. B. aus einem erneuten Deployment) abbrechen.
+    $runCommands = @((Invoke-RestMethod -Uri "$vmUri/runCommands?`$expand=instanceView&api-version=$ArmApiVersion" -Headers $headers -TimeoutSec 60).value)
+    $busy = @($runCommands | Where-Object {
+            $_.properties.provisioningState -notin 'Succeeded', 'Failed', 'Canceled' -or
+            "$($_.properties.instanceView.executionState)" -in 'Pending', 'Running'
+        } | ForEach-Object { $_.name })
+    if ($busy) {
+        Write-LabLog "Warte ($($compute.vmSize) -> $TargetSize): Run Command $($busy -join ', ') laeuft."
+        exit 0
+    }
+
     $available = @((Invoke-RestMethod -Uri "$vmUri/vmSizes?api-version=$ArmApiVersion" -Headers $headers -TimeoutSec 60).value.name)
     if ($available -notcontains $TargetSize) {
         Write-LabLog ('WARNUNG: {0} ist im aktuellen Cluster nicht verfuegbar, die VM bleibt {1}. Von Hand: az vm deallocate, az vm resize --size {0}, az vm start (-g {2} -n {3}).' -f $TargetSize, $compute.vmSize, $compute.resourceGroupName, $compute.name)

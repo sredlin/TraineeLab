@@ -20,8 +20,10 @@
         Raumpostfaecher, externe Kontakte; Vorgesetzte der Lab-Benutzer
       - GPO 'LAB - Outlook klassisch' (neues Outlook kann kein Exchange on Premises)
       - verschiebt den optionalen Windows-11-Client in die Client-OU
-      - registriert den einmaligen Update-Task auf Exchange-Server und DC(s) sowie den taeglichen
-        Wartungs-Task (Invoke-LabMaintenance.ps1)
+      - registriert den einmaligen Update-Task auf dem Exchange-Server sowie den taeglichen
+        Wartungs-Task (Invoke-LabMaintenance.ps1); die DCs starten ihren Update-Lauf erst am Ende
+        des Deployments (Modul lab-finalize, Start-LabUpdate.ps1)
+      - alle AD-Aufrufe laufen gegen den ersten DC, damit neu angelegte Objekte sofort lesbar sind
       - legt Lab-Info.txt und Verknuepfungen (OWA, ECP, Logs) auf dem oeffentlichen Desktop ab
 
     Das Skript ist idempotent und enthaelt bewusst nur ASCII-Zeichen (Windows PowerShell 5.1).
@@ -52,7 +54,7 @@ param(
 
     [string] $OrganizationName = 'ExchOrg',
 
-    # Optionaler zweiter DC, bekommt ebenfalls den einmaligen Update-Task.
+    # Optionaler zweiter DC: Wartezeit auf seine Erstreplikation und Lab-Info.txt.
     [string] $SecondDcComputerName = '',
 
     # Optionaler Windows-11-Client, wird in die Client-OU aus LabUsers.psd1 verschoben.
@@ -180,11 +182,9 @@ function Protect-Directory {
 }
 
 function Register-LabUpdateTask {
-    # Wird lokal und per Invoke-Command auf dem DC ausgefuehrt, daher ohne Abhaengigkeiten.
     param(
         [Parameter(Mandatory)][string] $ScriptContent,
-        [Parameter(Mandatory)][string] $TaskName,
-        [bool] $StartNow = $false
+        [Parameter(Mandatory)][string] $TaskName
     )
     $scriptFolder = 'C:\ExchangeLab\Scripts'
     New-Item -Path $scriptFolder -ItemType Directory -Force | Out-Null
@@ -197,9 +197,6 @@ function Register-LabUpdateTask {
     $principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
     $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Hours 4) -StartWhenAvailable
     Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Force | Out-Null
-    if ($StartNow) {
-        Start-ScheduledTask -TaskName $TaskName
-    }
 }
 
 #region Phase Orchestrate
@@ -379,6 +376,9 @@ function Invoke-OrchestratePhase {
     }
 
     Wait-DomainJoinComplete
+    # Die Anmeldung des Installationstasks fragt den naechstgelegenen DC; DC02 muss das Admin-Konto kennen.
+    Import-Module -Name ActiveDirectory
+    Wait-SecondDomainController
     $pending = Get-PendingRebootReason
     if ($pending) {
         Write-LabLog "WARNUNG: Neustart ausstehend ($($pending -join ', ')). Exchange-Setup prueft das selbst."
@@ -413,7 +413,7 @@ function Initialize-LabDirectory {
 
     $domainDn = (Get-ADDomain).DistinguishedName
     $companyDn = "OU=$CompanyOu,$domainDn"
-    if (-not [adsi]::Exists("LDAP://$companyDn")) {
+    if (-not [adsi]::Exists("LDAP://$DcComputerName.$DomainName/$companyDn")) {
         New-ADOrganizationalUnit -Name $CompanyOu -Path $domainDn
         Write-LabLog "OU $companyDn angelegt."
     }
@@ -421,7 +421,7 @@ function Initialize-LabDirectory {
     $data = Import-PowerShellDataFile -Path $LabUsersFile
     foreach ($relativeOu in $data.OrganizationalUnits) {
         $ouDn = "$relativeOu,$companyDn"
-        if ([adsi]::Exists("LDAP://$ouDn")) { continue }
+        if ([adsi]::Exists("LDAP://$DcComputerName.$DomainName/$ouDn")) { continue }
         $parts = $relativeOu -split ',', 2
         $name = $parts[0] -replace '^OU=', ''
         $parentDn = if ($parts.Count -gt 1) { "$($parts[1]),$companyDn" } else { $companyDn }
@@ -730,18 +730,7 @@ function Initialize-LabMailboxLanguage {
 function Register-InitialUpdate {
     $content = Get-Content -Path $UpdateScriptFile -Raw
     Register-LabUpdateTask -ScriptContent $content -TaskName $UpdateTaskName
-    Write-LabLog 'Update-Task auf dem Exchange-Server registriert (laeuft nach dem Neustart).'
-
-    foreach ($dcName in @($DcComputerName, $SecondDcComputerName) | Where-Object { $_ }) {
-        $dcFqdn = "$dcName.$DomainName"
-        try {
-            Invoke-Command -ComputerName $dcFqdn -ScriptBlock ${function:Register-LabUpdateTask} -ArgumentList $content, $UpdateTaskName, $true
-            Write-LabLog "Update-Task auf $dcFqdn registriert und gestartet."
-        }
-        catch {
-            Write-LabLog "WARNUNG: Update-Task auf $dcFqdn nicht registriert: $($_.Exception.Message)"
-        }
-    }
+    Write-LabLog 'Update-Task auf dem Exchange-Server registriert (laeuft nach dem Neustart). Die DCs folgen am Ende des Deployments.'
 }
 
 function Register-LabMaintenance {
@@ -963,7 +952,20 @@ function Register-LabPtrRecord {
     }
 }
 
+function Initialize-AdDefaultServer {
+    # Alle AD- und GPO-Aufrufe gegen den ersten DC: Ein zweiter DC kann ein eben angelegtes Objekt noch nicht kennen.
+    # Exchange-Cmdlets waehlen ihren DC selbst (Topologie) und haben keinen Parameter Server.
+    $server = "$DcComputerName.$DomainName"
+    foreach ($cmdlet in 'Get-ADForest', 'Set-ADForest', 'Get-ADDomain', 'Get-ADUser', 'Set-ADUser', 'New-ADUser',
+        'New-ADOrganizationalUnit', 'Get-ADOptionalFeature', 'Enable-ADOptionalFeature', 'Get-ADComputer', 'Move-ADObject',
+        'Get-GPO', 'New-GPO', 'Set-GPRegistryValue', 'Get-GPInheritance', 'New-GPLink') {
+        $global:PSDefaultParameterValues["${cmdlet}:Server"] = $server
+    }
+    Write-LabLog "AD- und GPO-Aufrufe laufen gegen $server."
+}
+
 function Invoke-InstallPhase {
+    Initialize-AdDefaultServer
     $secret = Get-InstallSecret
     $labUserPassword = ConvertTo-SecureString -String $secret.LabUserPassword -AsPlainText -Force
     # Beide Schritte sind idempotent und werden bei transienten AD- bzw. Exchange-Fehlern als Ganzes wiederholt.

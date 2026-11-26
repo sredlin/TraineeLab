@@ -103,6 +103,7 @@ try {
     & ipconfig.exe /renew | Out-Null
 
     $deadline = (Get-Date).AddMinutes($TimeoutMinutes)
+    $lastRenew = Get-Date
     while ($true) {
         Clear-DnsClientCache
         try {
@@ -114,6 +115,12 @@ try {
 
         if (-not $reason) {
             break
+        }
+        # Die VNet-DNS-Umstellung erreicht die VM erst mit einer neuen DHCP-Lease.
+        if ($reason -like 'DNS-Server der VM*' -and (Get-Date) -gt $lastRenew.AddMinutes(2)) {
+            Write-LabLog 'Erneuere DHCP-Lease erneut.'
+            & ipconfig.exe /renew | Out-Null
+            $lastRenew = Get-Date
         }
         if ((Get-Date) -gt $deadline) {
             throw "Domain Controller nach $TimeoutMinutes Minuten nicht bereit: $reason"

@@ -230,7 +230,8 @@ resource installExchangeServer 'Microsoft.Compute/virtualMachines/runCommands@20
       }
     ]
     asyncExecution: false
-    timeoutInSeconds: 9000
+    // Beitritt bis 30 min, Taskstart bis etwa 15 min, Installationsphase bis 140 min (TimeoutMinutes).
+    timeoutInSeconds: 12600
     treatFailureAsDeploymentFailure: true
   }
   dependsOn: [
