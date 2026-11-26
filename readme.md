@@ -1,6 +1,7 @@
 # Trainee Lab (Azure)
 
 [![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2Fsredlin%2FTraineeLab%2Fmaster%2Fazuredeploy.json)
+[![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-unterst%C3%BCtzen-FFDD00?logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/sredlin)
 
 Lab-Umgebung für die Ausbildung: ein **Domain Controller**, ein **Exchange Server SE** und ein **Fileserver** auf getrennten VMs mit Windows Server 2025, dazu ein **Windows-11-Client** mit Microsoft 365 Apps. Nach dem Deployment ist alles fertig eingerichtet: Split DNS, Let's-Encrypt-Zertifikat, URLs, Accepted Domain, Postfächer für 28 Lab-Benutzer (darunter die 16 Microsoft-Demo-Personas wie Adele Vance oder Megan Bowen) und Beispielempfänger (Verteiler, freigegebene Postfächer, Räume, Kontakte). Der Fileserver bringt Freigaben mit AGDLP-Berechtigungen und Word-, Excel-, PowerPoint- und PDF-Dateien einer fiktiven Werbeagentur bis 90 % seiner Datendisk (rund 230 GB) mit, samt absichtlicher Altlasten. Das Lab gibt es auf Deutsch (Mustermann Medien GmbH, Berlin und Hamburg) oder Englisch (Contoso Ltd, London und Manchester), Parameter `labLanguage`. Alles zusammen ist Ausgangspunkt für Übungen bis hin zur Migration nach SharePoint Online.
 
@@ -214,6 +215,10 @@ Invoke-Pester -Path tests
 ## Hinweis für Betreiber
 
 Ältere Versionen dieses Templates haben ein Service-Principal-Secret für Let's Encrypt im Klartext übergeben. Das Secret steht in der Deployment-Historie aller damit erstellten Ressourcengruppen. **Secret rotieren oder den Service Principal löschen**, falls noch nicht geschehen.
+
+## Unterstützen
+
+Das Lab ist kostenlos und quelloffen. Wer die Weiterentwicklung unterstützen möchte, kann das über [Buy Me a Coffee](https://buymeacoffee.com/sredlin) tun. Danke!
 
 ## Lizenz
 
