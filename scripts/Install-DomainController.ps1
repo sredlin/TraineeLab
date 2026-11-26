@@ -57,6 +57,10 @@ param(
     [string] $AdminPasswordB64,
     [string] $FirstDcIp,
 
+    # Sprache der Lab-Daten: Gebietsschema der VM (de = de-DE, en = en-GB mit deutscher Tastatur) und AD-Standorte.
+    [ValidateSet('de', 'en')]
+    [string] $LabLanguage = 'de',
+
     [ValidateSet('Install', 'Promote', 'PostReboot')]
     [string] $Phase = 'Install'
 )
@@ -125,12 +129,21 @@ function Test-CbsRebootPending {
 }
 
 function Initialize-RegionalSetting {
-    Write-LabLog 'Setze deutsche Regionaleinstellungen (Zeitzone, Gebietsschema, Tastatur).'
+    # Gebietsschema der Lab-Sprache. Zeitzone immer W. Europe (Auto-Shutdown, Wartung). Englisch mit deutschem
+    # Tastaturlayout, weil die Azubis an deutschen Tastaturen sitzen.
+    $setting = @{
+        de = @{ Culture = 'de-DE'; GeoId = 94; InputMethod = '0407:00000407' }
+        en = @{ Culture = 'en-GB'; GeoId = 242; InputMethod = '0809:00000407' }
+    }[$LabLanguage]
+    Write-LabLog "Setze Regionaleinstellungen $($setting.Culture) (Zeitzone, Gebietsschema, Tastatur)."
     Set-TimeZone -Id 'W. Europe Standard Time'
-    Set-WinSystemLocale -SystemLocale de-DE
-    Set-WinHomeLocation -GeoId 94
-    Set-Culture -CultureInfo de-DE
-    Set-WinUserLanguageList -LanguageList de-DE -Force
+    Set-WinSystemLocale -SystemLocale $setting.Culture
+    Set-WinHomeLocation -GeoId $setting.GeoId
+    Set-Culture -CultureInfo $setting.Culture
+    $languageList = New-WinUserLanguageList -Language $setting.Culture
+    $languageList[0].InputMethodTips.Clear()
+    $languageList[0].InputMethodTips.Add($setting.InputMethod)
+    Set-WinUserLanguageList -LanguageList $languageList -Force
     if (Get-Command -Name Copy-UserInternationalSettingsToSystem -ErrorAction SilentlyContinue) {
         # Uebernimmt die Einstellungen fuer Anmeldebildschirm und neue Benutzerprofile.
         Copy-UserInternationalSettingsToSystem -WelcomeScreen $true -NewUser $true
@@ -188,6 +201,58 @@ function Add-ReverseLookupZone {
     Write-LabLog "Reverse-Zone $zoneName ($networkId) angelegt."
 }
 
+# AD-Standorte je Sprache: Zentrale (alle Lab-Server) und Niederlassung (ohne DC). Gleiche Namen wie die
+# Standort-OUs in scripts/data/<Sprache>/LabUsers.psd1 (ein Test prueft das).
+$LabSites = @{
+    de = @{ Headquarters = 'Berlin'; Branch = 'Hamburg'; HeadquartersDescription = 'Zentrale'; BranchDescription = 'Niederlassung (ohne DC)' }
+    en = @{ Headquarters = 'London'; Branch = 'Manchester'; HeadquartersDescription = 'Head office'; BranchDescription = 'Branch office (no DC)' }
+}
+
+function Initialize-LabSite {
+    # Default-First-Site-Name wird zur Zentrale mit dem /24 der Lab-Server. Die Niederlassung bekommt das
+    # folgende /24 als nominelles Subnetz (kein Azure-Subnetz) und haengt an derselben Standortverknuepfung.
+    # Idempotent und nicht fatal: Standorte sind Uebungsmaterial, die Domain funktioniert auch ohne.
+    param([Parameter(Mandatory)][string] $IpAddress)
+
+    $site = $LabSites[$LabLanguage]
+    $octets = $IpAddress.Split('.')
+    $subnets = @(
+        @{ Name = '{0}.{1}.{2}.0/24' -f $octets[0], $octets[1], $octets[2]; Site = $site.Headquarters }
+        @{ Name = '{0}.{1}.{2}.0/24' -f $octets[0], $octets[1], ([int]$octets[2] + 1); Site = $site.Branch }
+    )
+    try {
+        $default = Get-ADReplicationSite -Filter "Name -eq 'Default-First-Site-Name'"
+        if ($default) {
+            Rename-ADObject -Identity $default.DistinguishedName -NewName $site.Headquarters
+            Write-LabLog "AD-Standort Default-First-Site-Name in $($site.Headquarters) umbenannt."
+        }
+        Set-ADReplicationSite -Identity $site.Headquarters -Description $site.HeadquartersDescription
+        if (-not (Get-ADReplicationSite -Filter "Name -eq '$($site.Branch)'")) {
+            New-ADReplicationSite -Name $site.Branch -Description $site.BranchDescription
+            Write-LabLog "AD-Standort $($site.Branch) angelegt."
+        }
+        foreach ($subnet in $subnets) {
+            if (-not (Get-ADReplicationSubnet -Filter "Name -eq '$($subnet.Name)'")) {
+                New-ADReplicationSubnet -Name $subnet.Name -Site $subnet.Site -Location $subnet.Site
+                Write-LabLog "Subnetz $($subnet.Name) dem Standort $($subnet.Site) zugeordnet."
+            }
+        }
+        $linkName = '{0}-{1}' -f $site.Headquarters, $site.Branch
+        $link = Get-ADReplicationSiteLink -Filter "Name -eq 'DEFAULTIPSITELINK'"
+        if ($link) {
+            Rename-ADObject -Identity $link.DistinguishedName -NewName $linkName
+            Write-LabLog "Standortverknuepfung DEFAULTIPSITELINK in $linkName umbenannt."
+        }
+        if (-not ((Get-ADReplicationSiteLink -Identity $linkName).SitesIncluded | Where-Object { $_ -like "CN=$($site.Branch),*" })) {
+            Set-ADReplicationSiteLink -Identity $linkName -SitesIncluded @{ Add = $site.Branch }
+            Write-LabLog "Standort $($site.Branch) in die Standortverknuepfung $linkName aufgenommen."
+        }
+    }
+    catch {
+        Write-LabLog "WARNUNG: AD-Standorte nicht vollstaendig eingerichtet: $($_.Exception.Message)"
+    }
+}
+
 function Register-PhaseTask {
     # Startup-Task fuer eine spaetere Phase. Keine Secrets in den Argumenten.
     param(
@@ -196,7 +261,7 @@ function Register-PhaseTask {
     )
     $scriptCopy = Join-Path $ScriptDir 'Install-DomainController.ps1'
     Save-OwnScript -Destination $scriptCopy
-    $arguments = '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "{0}" -Phase {1} -DomainName {2} -NetbiosName {3} -PublicDomainName {4} -ExchangeIp {5} -Mode {6}' -f $scriptCopy, $TargetPhase, $DomainName, $NetbiosName, $PublicDomainName, $ExchangeIp, $Mode
+    $arguments = '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "{0}" -Phase {1} -DomainName {2} -NetbiosName {3} -PublicDomainName {4} -ExchangeIp {5} -Mode {6} -LabLanguage {7}' -f $scriptCopy, $TargetPhase, $DomainName, $NetbiosName, $PublicDomainName, $ExchangeIp, $Mode, $LabLanguage
     if ($Mode -eq 'Replica') {
         $arguments += " -AdminUser $AdminUser -FirstDcIp $FirstDcIp"
     }
@@ -397,6 +462,8 @@ function Invoke-PostRebootPhase {
     if ($Mode -eq 'Forest') {
         # Vor der DNS-Registrierung und vor dem Domaenenbeitritt der Exchange-VM, damit PTR-Records dynamisch entstehen.
         Add-ReverseLookupZone -IpAddress $ExchangeIp
+        # Vor der DNS-Registrierung, damit die standortbezogenen SRV-Records gleich unter dem neuen Namen entstehen.
+        Initialize-LabSite -IpAddress $ExchangeIp
     }
 
     & ipconfig.exe /registerdns | Out-Null

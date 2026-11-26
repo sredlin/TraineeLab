@@ -1,7 +1,7 @@
 ﻿# Richtlinien, Handbücher, Verträge, IT-Dokumentation (siehe README.md)
 @{
     Policy = @(
-        @{ Title = 'IT-Richtlinie'; Folder = 'IT'; Classification = 'Intern'; Sections = @(
+        @{ Title = 'IT-Richtlinie'; Folder = 'IT'; Classification = 'Internal'; Sections = @(
                 @{ Title = '1 Geltungsbereich'; Text = 'Diese Richtlinie gilt für alle, die bei {Firma} ein Konto haben: Festangestellte, Auszubildende, Praktikantinnen und Praktikanten, Freie. Eine eigene IT-Abteilung haben wir nicht. Technisch betreut uns die IT-Service Nordost GmbH, Entscheidungen trifft die Geschäftsführung.' }
                 @{ Title = '2 Kennwörter'; Text = 'Ein Kennwort hat mindestens 12 Zeichen. Gut ist ein Satz, den nur Sie kennen, etwa vier Wörter und eine Zahl. Namen von Kindern, Haustieren und Fußballvereinen sind schlecht.
 Kennwörter stehen auf keinem Zettel, weder am Monitor noch unter der Tastatur, und in keiner Datei „Passwörter.xlsx“ auf H:. Auch die Urlaubsvertretung bekommt Ihr Kennwort nicht, dafür gibt es Gruppenrechte und Stellvertretungen im Postfach.
@@ -20,7 +20,7 @@ Meldet ein Lieferant per Mail eine neue Bankverbindung, rufen Sie ihn unter der 
                 @{ Title = '6 Verhalten bei Verdacht'; Text = 'Link angeklickt, Anhang verhält sich seltsam, Dateien heißen plötzlich anders, Notebook weg: Rufen Sie sofort die IT-Service Nordost (+49 30 23125-777) und die Geschäftsführung an. Bei Verdacht auf Schadsoftware Netzwerkkabel ziehen und WLAN ausschalten, das Gerät aber nicht herunterfahren.
 Ärger bekommt niemand, der hereingefallen ist und es gleich meldet. Ärger macht nur, was verschwiegen wird.' }
             ) }
-        @{ Title = 'Datenschutzrichtlinie'; Folder = 'Allgemein'; Classification = 'Intern'; Sections = @(
+        @{ Title = 'Datenschutzrichtlinie'; Folder = 'General'; Classification = 'Internal'; Sections = @(
                 @{ Title = '1 Grundsatz'; Text = 'Wir arbeiten täglich mit Daten anderer Menschen: Adresslisten für Mailings, Gewinnspielteilnehmer, Bewerbungen, Gehälter. Wir erheben nur, was der Auftrag braucht, behalten es nur so lange wie nötig und zeigen es nur denen, die damit arbeiten. Einen Datenschutzbeauftragten brauchen wir bei unserer Größe nicht; Ansprechpartnerin ist Erika Mustermann.' }
                 @{ Title = '2 Bewerbungen'; Text = 'Bewerbungen sehen nur Personal und Geschäftsleitung. Sie liegen in Abteilungen\Personal\Bewerbungen, nicht im Postfach und nicht auf H:. Wer im Team mitentscheiden soll, sieht die Mappe im Gespräch, bekommt sie aber nicht weitergeleitet.
 Sechs Monate nach einer Absage löschen wir Unterlagen und Mails, außer jemand hat schriftlich in unseren Bewerberpool eingewilligt.' }
@@ -33,7 +33,7 @@ Die Frist beginnt mit dem Ende des Kalenderjahres. Jeden Januar räumt die Gesch
                 @{ Title = '6 Auftragsverarbeitung'; Text = 'Wer für uns personenbezogene Daten verarbeitet, braucht vorher einen Vertrag zur Auftragsverarbeitung, vor allem die Nordlicht Druckerei (Adressen für Mailings) und die IT-Service Nordost. Adressen gehen nur über das Upload-Portal der Druckerei, nie als Excel-Anhang. Nach dem Versand bestätigt die Druckerei die Löschung; die Bestätigung kommt in den Projektordner unter 06_Abrechnung.' }
                 @{ Title = '7 Datenpannen'; Text = 'Mail an den falschen Verteiler, Notebook im Zug vergessen: Sagen Sie es sofort der Geschäftsführung. Für die Meldung an die Aufsichtsbehörde bleiben 72 Stunden, ab dem Moment, in dem wir davon wissen.' }
             ) }
-        @{ Title = 'Klassifizierungsrichtlinie'; Folder = 'Allgemein'; Classification = 'Intern'; Sections = @(
+        @{ Title = 'Klassifizierungsrichtlinie'; Folder = 'General'; Classification = 'Internal'; Sections = @(
                 @{ Title = '1 Warum vier Stufen'; Text = 'Ein Flyer, der in der Bäckerei ausliegt, darf jeder sehen, eine Gehaltsliste nicht einmal das halbe Team. Damit niemand raten muss, bekommt jedes Dokument eine von vier Stufen. Die Stufe legt fest, wer das Dokument erstellt. Im Zweifel gilt die höhere.' }
                 @{ Title = '2 Öffentlich'; Text = 'Was veröffentlicht ist oder werden darf: Pressemitteilungen nach Freigabe, Stellenanzeigen, unsere Website, Kampagnenmotive nach dem Start. Achtung: Ein fertiges Motiv ist erst ab dem Starttermin öffentlich, vorher ist es vertraulich.' }
                 @{ Title = '3 Intern'; Text = 'Für unser Team bestimmt, aber ohne Schaden, wenn es versehentlich nach draußen geht: Richtlinien, Vorlagen, Protokolle der Teamrunde, Telefonliste, Urlaubsplan. Intern ist die Standardstufe; was keine Kennzeichnung trägt, gilt als intern.' }
@@ -42,14 +42,14 @@ Die Frist beginnt mit dem Ende des Kalenderjahres. Jeden Januar räumt die Gesch
                 @{ Title = '6 Kennzeichnung'; Text = 'Die Stufe steht rechts in der Kopfzeile und noch einmal in der Fußzeile, etwa „Klassifizierung: Vertraulich“. In Excel gehört sie in die Kopfzeile jedes Blatts, in PowerPoint auf den Folienmaster. Mit den Vertraulichkeitsbezeichnungen in Office wählen Sie die Stufe über die Schaltfläche „Vertraulichkeit“, Kopf- und Fußzeile setzt das Programm dann selbst.
 Der Dateiname ersetzt keine Kennzeichnung. „Gehaelter_GEHEIM.xlsx“ ist kein Schutz, sondern ein Wegweiser.' }
             ) }
-        @{ Title = 'Homeoffice-Richtlinie'; Folder = 'Allgemein'; Classification = 'Intern'; Sections = @(
+        @{ Title = 'Homeoffice-Richtlinie'; Folder = 'General'; Classification = 'Internal'; Sections = @(
                 @{ Title = '1 Umfang und Absprache'; Text = 'Wer mag, arbeitet bis zu zwei Tage pro Woche von zu Hause, Auszubildende einen. Die Tage stimmen Sie mit der Standortleitung ab und tragen sie bis Freitag für die Folgewoche in den Teamkalender ein. Montags um 9:30 Uhr ist Teamrunde, da sind alle im Büro; Hamburg wird per Video zugeschaltet.' }
                 @{ Title = '2 Erreichbarkeit'; Text = 'Zwischen 10 und 15 Uhr sind Sie erreichbar wie im Büro: Telefon umgeleitet, Kalender aktuell. Kundentermine vor Ort und Abgaben gehen vor. Wer am Abgabetag die Druckdaten verantwortet, sitzt im Büro. Arbeitszeit, Pausen und Feierabend gelten zu Hause genauso.' }
                 @{ Title = '3 Geräte und Verbindung'; Text = 'Gearbeitet wird nur auf dem Firmen-Notebook, nicht am privaten PC. Auf den Fileserver kommen Sie über VPN; ohne VPN kein Laufwerk H:. Monitor, Tastatur und Headset stellen wir auf Wunsch, Internet und Strom tragen Sie selbst. Das Notebook nutzt nur Sie, nicht die Familie und nicht für Hausaufgaben.' }
                 @{ Title = '4 Vertraulichkeit zu Hause'; Text = 'Kundentelefonate führen Sie so, dass niemand mithört, also nicht auf dem Balkon. Ausdrucke mit Kundendaten kommen wieder mit ins Büro und dort in den Aktenvernichter, nicht ins Altpapier. Streng vertrauliche Unterlagen verlassen das Büro gar nicht.' }
                 @{ Title = '5 Störungen'; Text = 'Fallen zu Hause Internet oder Strom aus, kommen Sie ins Büro oder bauen nach Absprache Überstunden ab. Einen Unfall während der Arbeit melden Sie wie im Büro sofort der Geschäftsführung.' }
             ) }
-        @{ Title = 'Reisekostenrichtlinie'; Folder = 'Allgemein'; Classification = 'Intern'; Sections = @(
+        @{ Title = 'Reisekostenrichtlinie'; Folder = 'General'; Classification = 'Internal'; Sections = @(
                 @{ Title = '1 Genehmigung'; Text = 'Dienstreisen genehmigt vorab die Geschäftsführung, in Hamburg die Standortleitung. Eine kurze Mail mit Anlass, Datum und Verkehrsmittel genügt. Zwischen Berlin und Hamburg fahren wir Bahn, 2. Klasse mit Sitzplatzreservierung. Das Auto nur, wenn Material mitmuss (Messe, Fotoshooting) oder der Termin anders nicht erreichbar ist.' }
                 @{ Title = '2 Fahrtkosten'; Text = 'Für den privaten Pkw erstatten wir 0,30 € je gefahrenem Kilometer, laut Routenplaner und ohne Umwege. Parkgebühren und Nahverkehr gegen Beleg. Taxi nur, wenn es nicht anders geht, etwa mit zwei Roll-ups und einem Messekoffer.' }
                 @{ Title = '3 Verpflegung und Übernachtung'; Text = 'Wir zahlen die steuerlichen Pauschalen: 14 € bei mehr als 8 Stunden Abwesenheit und für An- und Abreisetag, 28 € für volle 24 Stunden. Ist das Frühstück im Hotelpreis enthalten, ziehen wir 5,60 € ab, für ein Essen, zu dem ein Kunde einlädt, 11,20 €.
@@ -57,7 +57,7 @@ Hotels bis 120 € pro Nacht buchen Sie selbst, teurere nach Rücksprache. Die R
                 @{ Title = '4 Belege und Abrechnung'; Text = 'Abgerechnet wird mit dem Formular aus Abteilungen\Allgemein\Vorlagen bis zum 10. des Folgemonats. Belege scannen Sie am Multifunktionsgerät in die Freigabe Scans, Dateiname Reisekosten_Name_Datum. Von dort übernimmt die Buchhaltung sie in ihren Ordner. Eigene Rechte auf Abteilungen\Buchhaltung braucht dafür niemand, auch nicht ausnahmsweise.
 Die Originale kommen im Umschlag mit Name und Monat ins Fach Buchhaltung am Empfang Berlin; Hamburg schickt sie gesammelt zum Monatsende. Thermopapier verblasst, deshalb erst scannen, dann abgeben. Erstattet wird mit der nächsten Gehaltsabrechnung.' }
             ) }
-        @{ Title = 'Notfallhandbuch IT'; Folder = 'IT'; Classification = 'Vertraulich'; Sections = @(
+        @{ Title = 'Notfallhandbuch IT'; Folder = 'IT'; Classification = 'Confidential'; Sections = @(
                 @{ Title = '1 Wofür dieses Handbuch da ist'; Text = 'Es beschreibt die ersten Stunden nach einem IT-Ausfall, auch wenn niemand vom Fach im Haus ist. Ausgedruckt liegt es im roten Ordner im Technikraum Berlin, bei der Standortleitung Hamburg und bei der Geschäftsführung zu Hause. Ein Notfallhandbuch, das nur auf dem ausgefallenen Server liegt, hilft niemandem. Nummern und Namen prüft die Geschäftsführung jeden Januar.' }
                 @{ Title = '2 Ansprechpartner'; Text = '• IT-Service Nordost GmbH: +49 30 23125-777, Mo–Fr 8–18 Uhr; außerhalb dieser Zeit Notdienst unter derselben Nummer, kostenpflichtig
 • Geschäftsführung: Max Mustermann, +49 30 23125-100, Vertretung Erika Mustermann, +49 30 23125-500

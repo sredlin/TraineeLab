@@ -54,6 +54,9 @@ param mode string = 'Forest'
 @description('Private IP des ersten DC (nur Modus Replica).')
 param firstDcIp string = ''
 
+@description('Sprache der Lab-Daten (de, en): Gebietsschema der VM und Namen der AD-Standorte.')
+param labLanguage string
+
 var isReplica = mode == 'Replica'
 
 resource nic 'Microsoft.Network/networkInterfaces@2025-05-01' = {
@@ -241,6 +244,10 @@ resource installDomainController 'Microsoft.Compute/virtualMachines/runCommands@
       {
         name: 'Mode'
         value: mode
+      }
+      {
+        name: 'LabLanguage'
+        value: labLanguage
       }
     ], isReplica ? [
       {

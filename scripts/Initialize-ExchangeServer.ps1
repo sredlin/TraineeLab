@@ -41,7 +41,11 @@ param(
     [string] $EnableLetsEncrypt = 'true',
 
     [ValidateSet('true', 'false')]
-    [string] $LetsEncryptStaging = 'false'
+    [string] $LetsEncryptStaging = 'false',
+
+    # Sprache der Lab-Daten: Gebietsschema der VM (de = de-DE, en = en-GB mit deutscher Tastatur).
+    [ValidateSet('de', 'en')]
+    [string] $LabLanguage = 'de'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -203,15 +207,25 @@ function Initialize-DataDisk {
 }
 
 function Initialize-RegionalSetting {
+    # Gebietsschema der Lab-Sprache. Zeitzone immer W. Europe (Auto-Shutdown, Wartung). Englisch mit deutschem
+    # Tastaturlayout, weil die Azubis an deutschen Tastaturen sitzen.
+    $setting = @{
+        de = @{ Culture = 'de-DE'; GeoId = 94; InputMethod = '0407:00000407' }
+        en = @{ Culture = 'en-GB'; GeoId = 242; InputMethod = '0809:00000407' }
+    }[$LabLanguage]
+    Write-LabLog "Setze Regionaleinstellungen $($setting.Culture) (Zeitzone, Gebietsschema, Tastatur)."
     Set-TimeZone -Id 'W. Europe Standard Time'
-    Set-WinSystemLocale -SystemLocale de-DE
-    Set-WinHomeLocation -GeoId 94
-    Set-Culture -CultureInfo de-DE
-    Set-WinUserLanguageList -LanguageList de-DE -Force
+    Set-WinSystemLocale -SystemLocale $setting.Culture
+    Set-WinHomeLocation -GeoId $setting.GeoId
+    Set-Culture -CultureInfo $setting.Culture
+    $languageList = New-WinUserLanguageList -Language $setting.Culture
+    $languageList[0].InputMethodTips.Clear()
+    $languageList[0].InputMethodTips.Add($setting.InputMethod)
+    Set-WinUserLanguageList -LanguageList $languageList -Force
     if (Get-Command -Name Copy-UserInternationalSettingsToSystem -ErrorAction SilentlyContinue) {
+        # Uebernimmt die Einstellungen fuer Anmeldebildschirm und neue Benutzerprofile.
         Copy-UserInternationalSettingsToSystem -WelcomeScreen $true -NewUser $true
     }
-    Write-LabLog 'Deutsche Regionaleinstellungen gesetzt.'
 }
 
 function Install-ExchangeWindowsFeature {

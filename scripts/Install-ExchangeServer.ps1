@@ -61,10 +61,13 @@ param(
     # Optionaler Fileserver, nur fuer Lab-Info.txt.
     [string] $FileServerComputerName = '',
 
-    # Nur Phase 'Orchestrate':
+    # Sprache der Lab-Daten: Postfachsprache, GPO-Name und Lab-Info.txt.
+    [ValidateSet('de', 'en')]
+    [string] $LabLanguage = 'de',
+
+    # Nur Phase 'Orchestrate'. LabUsers.psd1 kommt aus der userData der VM (siehe Get-LabUsersText).
     [string] $AdminPasswordB64,
     [string] $LabUserPasswordB64,
-    [string] $LabUsersB64,
     [string] $UpdateScriptB64,
     [string] $MaintenanceScriptB64,
 
@@ -94,6 +97,19 @@ $UpdateTaskName = 'ExchangeLab-InitialUpdates'
 $MaintenanceTaskName = 'ExchangeLab-Maintenance'
 $PfxPassword = 'poshacme'
 $SelfText = $MyInvocation.MyCommand.ScriptBlock.ToString()
+
+# Sprachabhaengige Einstellungen der Postfaecher und der GPO. Zeitzone in beiden Sprachen wie die VMs.
+$LanguageSetting = @{
+    de = @{
+        Culture = 'de-DE'; DateFormat = 'dd.MM.yyyy'; TimeFormat = 'HH:mm'; OutlookPolicy = 'LAB - Outlook klassisch'
+        OutlookPolicyComment = 'Exchange-Lab: neues Outlook ausblenden, klassisches Outlook fuer Exchange on Premises behalten.'
+    }
+    en = @{
+        Culture = 'en-GB'; DateFormat = 'dd/MM/yyyy'; TimeFormat = 'HH:mm'; OutlookPolicy = 'LAB - Classic Outlook'
+        OutlookPolicyComment = 'Exchange lab: hide the new Outlook, keep classic Outlook for Exchange on-premises.'
+    }
+}[$LabLanguage]
+$MailboxTimeZone = 'W. Europe Standard Time'
 
 New-Item -Path $LogDir, $ScriptDir -ItemType Directory -Force | Out-Null
 $LogFile = Join-Path $LogDir "Install-ExchangeServer-$Phase.log"
@@ -222,16 +238,35 @@ function Save-OwnScript {
     }
 }
 
+function Get-LabUsersText {
+    # LabUsers.psd1 als Base64 in der userData der VM (IMDS). Als Run-Command-Parameter wuerde die Kommandozeile
+    # mit den anderen Base64-Parametern zu lang (Windows-Grenze 32.767 Zeichen, PowerShell startet dann nicht).
+    $b64 = Invoke-WithRetry -Activity 'userData lesen (IMDS)' -Attempts 5 -DelaySeconds 15 -ScriptBlock {
+        $request = [Net.WebRequest]::Create('http://169.254.169.254/metadata/instance/compute/userData?api-version=2021-01-01&format=text')
+        $request.Headers.Add('Metadata', 'true')
+        $request.Proxy = $null
+        $request.Timeout = 15000
+        $response = $request.GetResponse()
+        try {
+            $reader = New-Object -TypeName System.IO.StreamReader -ArgumentList $response.GetResponseStream()
+            $reader.ReadToEnd().Trim()
+        }
+        finally { $response.Dispose() }
+    }
+    if (-not $b64) { throw 'userData der VM ist leer, LabUsers.psd1 fehlt.' }
+    ConvertFrom-Base64String $b64
+}
+
 function Invoke-InstallTask {
     $scriptCopy = Join-Path $ScriptDir 'Install-ExchangeServer.ps1'
     Save-OwnScript -Destination $scriptCopy
-    Write-Utf8File -Path $LabUsersFile -Content (ConvertFrom-Base64String $LabUsersB64)
+    Write-Utf8File -Path $LabUsersFile -Content (Get-LabUsersText)
     Write-Utf8File -Path $UpdateScriptFile -Content (ConvertFrom-Base64String $UpdateScriptB64)
     Write-Utf8File -Path $MaintenanceScriptFile -Content (ConvertFrom-Base64String $MaintenanceScriptB64)
     Save-InstallSecret
     Remove-Item -Path $ResultFile -Force -ErrorAction SilentlyContinue
 
-    $arguments = '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "{0}" -Phase Install -DomainName {1} -NetbiosName {2} -AdminUser {3} -PublicDomainName {4} -CompanyOu {5} -DcComputerName {6} -OrganizationName {7}' -f $scriptCopy, $DomainName, $NetbiosName, $AdminUser, $PublicDomainName, $CompanyOu, $DcComputerName, $OrganizationName
+    $arguments = '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "{0}" -Phase Install -DomainName {1} -NetbiosName {2} -AdminUser {3} -PublicDomainName {4} -CompanyOu {5} -DcComputerName {6} -OrganizationName {7} -LabLanguage {8}' -f $scriptCopy, $DomainName, $NetbiosName, $AdminUser, $PublicDomainName, $CompanyOu, $DcComputerName, $OrganizationName, $LabLanguage
     if ($SecondDcComputerName) {
         $arguments += " -SecondDcComputerName $SecondDcComputerName"
     }
@@ -275,7 +310,7 @@ function Invoke-OrchestratePhase {
         Write-LabLog 'Exchange ist bereits installiert und konfiguriert, nichts zu tun.'
         return
     }
-    foreach ($name in 'AdminPasswordB64', 'LabUserPasswordB64', 'LabUsersB64', 'UpdateScriptB64', 'MaintenanceScriptB64') {
+    foreach ($name in 'AdminPasswordB64', 'LabUserPasswordB64', 'UpdateScriptB64', 'MaintenanceScriptB64') {
         if (-not (Get-Variable -Name $name -ValueOnly)) {
             throw "Parameter $name fehlt."
         }
@@ -342,12 +377,13 @@ function Initialize-LabDirectory {
             StreetAddress     = $user.StreetAddress
             City              = $user.City
             PostalCode        = $user.PostalCode
-            Country           = 'DE'
-            Company           = $CompanyOu
+            Country           = $data.Country.Code
+            Company           = $data.Company
             Office            = $user.Office
             Title             = $user.Title
             OfficePhone       = $user.OfficePhone
             MobilePhone       = $user.MobilePhone
+            Fax               = $user.Fax
             # Lab-Kompromiss: Ohne das laeuft das Kennwort nach 42 Tagen (Default Domain Policy) ab.
             PasswordNeverExpires = $true
         }
@@ -361,6 +397,8 @@ function Initialize-LabDirectory {
             New-ADUser -Name $displayName -SamAccountName $user.SamAccountName -Path "$($user.OrganizationalUnit),$companyDn" -AccountPassword $LabUserPassword -Enabled $true @attributes
             Write-LabLog "Benutzer $($user.SamAccountName) angelegt."
         }
+        # -Country setzt nur c; Name (co) und Laendercode (countryCode) zeigen ADUC und das Adressbuch an.
+        Set-ADUser -Identity $user.SamAccountName -Replace @{ co = $data.Country.Name; countryCode = $data.Country.Number }
     }
 
     # Zweiter Durchlauf, weil Vorgesetzte erst existieren muessen.
@@ -567,14 +605,35 @@ function Initialize-LabRecipient {
         }
 
         foreach ($contact in $LabData.Contacts) {
-            if (Get-LabRecipientByAlias -Alias $contact.Alias) { continue }
-            New-MailContact -Name $contact.Name -Alias $contact.Alias -ExternalEmailAddress $contact.ExternalEmailAddress -OrganizationalUnit "$($contact.OrganizationalUnit),$companyDn" | Out-Null
-            Write-LabLog "Kontakt $($contact.Alias) angelegt."
+            if (-not (Get-LabRecipientByAlias -Alias $contact.Alias)) {
+                New-MailContact -Name $contact.Name -Alias $contact.Alias -ExternalEmailAddress $contact.ExternalEmailAddress -OrganizationalUnit "$($contact.OrganizationalUnit),$companyDn" | Out-Null
+                Write-LabLog "Kontakt $($contact.Alias) angelegt."
+            }
+            Set-Contact -Identity $contact.Alias -Phone $contact.Phone -Fax $contact.Fax -City $contact.City
         }
     }
     catch {
         Write-LabLog "WARNUNG: Beispielempfaenger unvollstaendig: $($_.Exception.Message)"
     }
+}
+
+function Initialize-LabMailboxLanguage {
+    # Sprache, Datumsformat und Zeitzone aller Lab-Postfaecher; Standardordner heissen danach z. B.
+    # "Posteingang" bzw. "Inbox", ohne Rueckfrage bei der ersten OWA-Anmeldung. Nicht fatal.
+    param([Parameter(Mandatory)][hashtable] $LabData)
+
+    $identities = @($LabData.Users | ForEach-Object { $_.SamAccountName }) + @($LabData.SharedMailboxes | ForEach-Object { $_.Alias }) + @($LabData.RoomMailboxes | ForEach-Object { $_.Alias })
+    foreach ($identity in $identities) {
+        try {
+            Invoke-WithRetry -Activity "Postfachsprache $identity" -Attempts 3 -DelaySeconds 20 -ScriptBlock {
+                Set-MailboxRegionalConfiguration -Identity $identity -Language $LanguageSetting.Culture -DateFormat $LanguageSetting.DateFormat -TimeFormat $LanguageSetting.TimeFormat -TimeZone $MailboxTimeZone -LocalizeDefaultFolderName
+            }
+        }
+        catch {
+            Write-LabLog "WARNUNG: Postfachsprache fuer $identity nicht gesetzt: $($_.Exception.Message)"
+        }
+    }
+    Write-LabLog "Postfachsprache $($LanguageSetting.Culture) fuer $($identities.Count) Postfaecher gesetzt."
 }
 
 function Register-InitialUpdate {
@@ -607,11 +666,11 @@ function Register-LabMaintenance {
 function Initialize-LabOutlookPolicy {
     # Das neue Outlook fuer Windows unterstuetzt kein Exchange on Premises. Die GPO blendet den Umschalter
     # im klassischen Outlook aus und schaltet die automatische Migration ab. Nicht fatal.
-    $name = 'LAB - Outlook klassisch'
+    $name = $LanguageSetting.OutlookPolicy
     try {
         Import-Module -Name GroupPolicy
         if (-not (Get-GPO -Name $name -ErrorAction SilentlyContinue)) {
-            New-GPO -Name $name -Comment 'Exchange-Lab: neues Outlook ausblenden, klassisches Outlook fuer Exchange on Premises behalten.' | Out-Null
+            New-GPO -Name $name -Comment $LanguageSetting.OutlookPolicyComment | Out-Null
             Write-LabLog "GPO '$name' angelegt."
         }
         Set-GPRegistryValue -Name $name -Key 'HKCU\Software\Policies\Microsoft\office\16.0\outlook\options\general' -ValueName 'HideNewOutlookToggle' -Type DWord -Value 1 | Out-Null
@@ -677,66 +736,100 @@ function Publish-LabDesktop {
         # auf Services nichts (im Testdeployment nachgewiesen).
         $certificate = Get-ChildItem -Path Cert:\LocalMachine\My | Where-Object { $_.Subject -like "*$PublicDomainName*" } |
             Sort-Object -Property NotAfter -Descending | Select-Object -First 1
+        # Texte der Lab-Info je Sprache; Freigabenamen wie in FileServer.psd1 der Sprache.
+        $text = @{
+            de = @{
+                Certificate = 'Aussteller {0}, gueltig bis {1}'; SelfSigned = 'selbstsigniert, kein Let''s-Encrypt-Zertifikat (siehe C:\ExchangeLab\letsencrypt-failed.txt)'
+                None = 'keiner'; PublicDomain = 'Oeffentliche Domain'; Certificate2 = 'Zertifikat (IIS)'
+                Client = '{0} (Windows 11, Microsoft 365 Apps, RDP direkt ueber Ausgabe clientRdpHost)'
+                FileServer = '\\{0} (Freigaben Abteilungen, Projekte, Archiv, Scans, Home$; RDP vom Client aus)'
+                Users = 'LAB-BENUTZER (Kennwort = Deployment-Parameter labUserPassword)'; Groups = 'VERTEILER'
+                Shared = 'FREIGEGEBENE POSTFAECHER'; SharedLine = 'Vollzugriff: {0}; Senden als: {1}'
+                Rooms = 'RAEUME'; RoomLine = '{0}, {1} Plaetze'; Contacts = 'EXTERNE KONTAKTE'
+                Tail = @(
+                    'WERKZEUGE (Exchange Management Shell als Administrator, Ordner C:\ExchangeLab\Tools)'
+                    '  .\HealthChecker.ps1                      Gesundheitscheck des Servers'
+                    '  .\HealthChecker.ps1 -BuildHtmlServersReport   HTML-Bericht aus dem letzten Lauf'
+                    '  .\SetupAssist.ps1                        Pruefung vor Setup oder CU-Update'
+                    '  .\SetupLogReviewer.ps1 -SetupLog C:\ExchangeSetupLogs\ExchangeSetup.log   Setup-Log auswerten'
+                    ''
+                    'STATUS UND LOGS (C:\ExchangeLab\Logs)'
+                    '  Update-LabServer.log       Update-Lauf nach der Installation, fertig bei "Keine ausstehenden Updates"'
+                    '  Invoke-LabMaintenance.log  taegliche Wartung: Log-Bereinigung, Zertifikatserneuerung'
+                    '  Die Exchange-VM faehrt abends automatisch herunter (falls aktiviert), der erste DC laeuft durch.'
+                )
+            }
+            en = @{
+                Certificate = 'issued by {0}, valid until {1}'; SelfSigned = 'self-signed, no Let''s Encrypt certificate (see C:\ExchangeLab\letsencrypt-failed.txt)'
+                None = 'none'; PublicDomain = 'Public domain'; Certificate2 = 'Certificate (IIS)'
+                Client = '{0} (Windows 11, Microsoft 365 Apps, RDP via deployment output clientRdpHost)'
+                FileServer = '\\{0} (shares Departments, Projects, Archive, Scans, Home$; RDP from the client)'
+                Users = 'LAB USERS (password = deployment parameter labUserPassword)'; Groups = 'DISTRIBUTION GROUPS'
+                Shared = 'SHARED MAILBOXES'; SharedLine = 'Full access: {0}; Send as: {1}'
+                Rooms = 'ROOMS'; RoomLine = '{0}, {1} seats'; Contacts = 'EXTERNAL CONTACTS'
+                Tail = @(
+                    'TOOLS (Exchange Management Shell as administrator, folder C:\ExchangeLab\Tools)'
+                    '  .\HealthChecker.ps1                      server health check'
+                    '  .\HealthChecker.ps1 -BuildHtmlServersReport   HTML report from the last run'
+                    '  .\SetupAssist.ps1                        checks before setup or a CU update'
+                    '  .\SetupLogReviewer.ps1 -SetupLog C:\ExchangeSetupLogs\ExchangeSetup.log   analyse the setup log'
+                    ''
+                    'STATUS AND LOGS (C:\ExchangeLab\Logs)'
+                    '  Update-LabServer.log       update run after the installation, done at "Keine ausstehenden Updates"'
+                    '  Invoke-LabMaintenance.log  daily maintenance: log cleanup, certificate renewal'
+                    '  The Exchange VM shuts down every evening (if enabled), the first DC keeps running.'
+                )
+            }
+        }[$LabLanguage]
         $certificateText = if ($certificate) {
-            "$($certificate.Subject), Aussteller $($certificate.Issuer), gueltig bis $($certificate.NotAfter)"
+            '{0}, {1}' -f $certificate.Subject, ($text.Certificate -f $certificate.Issuer, $certificate.NotAfter)
         }
         else {
-            'selbstsigniert, kein Let''s-Encrypt-Zertifikat (siehe C:\ExchangeLab\letsencrypt-failed.txt)'
+            $text.SelfSigned
         }
 
         $lines = @(
             "EXCHANGE-LAB $NetbiosName"
             ''
             "AD-Domain:           $DomainName (NetBIOS $NetbiosName)"
-            "Oeffentliche Domain: $PublicDomainName"
+            '{0,-21}{1}' -f "$($text.PublicDomain):", $PublicDomainName
             "Exchange-Server:     $env:COMPUTERNAME"
             "Domain Controller:   $($dcNames -join ', ')"
-            "Client:              $(if ($ClientComputerName) { "$ClientComputerName (Windows 11, Microsoft 365 Apps, RDP direkt ueber Ausgabe clientRdpHost)" } else { 'keiner' })"
-            "Fileserver:          $(if ($FileServerComputerName) { "\\$FileServerComputerName (Freigaben Abteilungen, Projekte, Archiv, Scans, Home$; RDP von hier aus)" } else { 'keiner' })"
+            "Client:              $(if ($ClientComputerName) { $text.Client -f $ClientComputerName } else { $text.None })"
+            "Fileserver:          $(if ($FileServerComputerName) { $text.FileServer -f $FileServerComputerName } else { $text.None })"
             "Administrator:       $NetbiosName\$AdminUser"
             "OWA:                 https://$mailHost/owa"
             "ECP:                 https://$mailHost/ecp"
-            "Zertifikat (IIS):    $certificateText"
+            '{0,-21}{1}' -f "$($text.Certificate2):", $certificateText
             ''
-            'LAB-BENUTZER (Kennwort = Deployment-Parameter labUserPassword)'
+            $text.Users
         )
         foreach ($user in $LabData.Users) {
             $address = '{0}@{1}' -f $user.SamAccountName.ToLowerInvariant(), $PublicDomainName
             $lines += '  {0,-40} {1} {2}, {3}, {4}' -f $address, $user.GivenName, $user.Surname, $user.Title, $user.City
         }
         $lines += ''
-        $lines += 'VERTEILER'
+        $lines += $text.Groups
         foreach ($group in $LabData.DistributionGroups) {
             $lines += '  {0,-40} {1}' -f "$($group.Alias)@$PublicDomainName", $group.Name
         }
         $lines += ''
-        $lines += 'FREIGEGEBENE POSTFAECHER'
+        $lines += $text.Shared
         foreach ($shared in $LabData.SharedMailboxes) {
-            $lines += '  {0,-40} Vollzugriff: {1}; Senden als: {2}' -f "$($shared.Alias)@$PublicDomainName", ($shared.FullAccess -join ', '), ($shared.SendAs -join ', ')
+            $lines += '  {0,-40} {1}' -f "$($shared.Alias)@$PublicDomainName", ($text.SharedLine -f ($shared.FullAccess -join ', '), ($shared.SendAs -join ', '))
         }
         $lines += ''
-        $lines += 'RAEUME'
+        $lines += $text.Rooms
         foreach ($room in $LabData.RoomMailboxes) {
-            $lines += '  {0,-40} {1}, {2} Plaetze' -f "$($room.Alias)@$PublicDomainName", $room.Name, $room.Capacity
+            $lines += '  {0,-40} {1}' -f "$($room.Alias)@$PublicDomainName", ($text.RoomLine -f $room.Name, $room.Capacity)
         }
         $lines += ''
-        $lines += 'EXTERNE KONTAKTE'
+        $lines += $text.Contacts
         foreach ($contact in $LabData.Contacts) {
             $lines += '  {0,-40} {1}' -f $contact.ExternalEmailAddress, $contact.Name
         }
-        $lines += @(
-            ''
-            'WERKZEUGE (Exchange Management Shell als Administrator, Ordner C:\ExchangeLab\Tools)'
-            '  .\HealthChecker.ps1                      Gesundheitscheck des Servers'
-            '  .\HealthChecker.ps1 -BuildHtmlServersReport   HTML-Bericht aus dem letzten Lauf'
-            '  .\SetupAssist.ps1                        Pruefung vor Setup oder CU-Update'
-            '  .\SetupLogReviewer.ps1 -SetupLog C:\ExchangeSetupLogs\ExchangeSetup.log   Setup-Log auswerten'
-            ''
-            'STATUS UND LOGS (C:\ExchangeLab\Logs)'
-            '  Update-LabServer.log       Update-Lauf nach der Installation, fertig bei "Keine ausstehenden Updates"'
-            '  Invoke-LabMaintenance.log  taegliche Wartung: Log-Bereinigung, Zertifikatserneuerung'
-            '  Die Exchange-VM faehrt abends automatisch herunter (falls aktiviert), der erste DC laeuft durch.'
-        )
+        $lines += ''
+        $lines += $text.Tail
 
         Write-Utf8File -Path (Join-Path $desktop 'Lab-Info.txt') -Content ($lines -join "`r`n")
         Write-UrlShortcut -Path (Join-Path $desktop 'OWA.url') -Url "https://$mailHost/owa"
@@ -787,6 +880,7 @@ function Invoke-InstallPhase {
     Connect-ExchangeSession
     Initialize-ExchangeConfiguration -Users $labData.Users
     Initialize-LabRecipient -LabData $labData
+    Initialize-LabMailboxLanguage -LabData $labData
     Initialize-LabOutlookPolicy
     Register-InitialUpdate
     Register-LabMaintenance

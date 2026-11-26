@@ -8,8 +8,9 @@
         tagsueber nicht neu, Neustarts fallen auf das abendliche Herunterfahren
       - BlockAADWorkplaceJoin: Die Office-Aktivierung mit dem Firmenkonto registriert den Lab-Client nicht
         im Entra ID der Firma
-      - Sprachpaket de-DE als Anzeigesprache, Zeitzone, Gebietsschema, Tastatur
-      - Microsoft 365 Apps (de-de, 64 Bit, Monthly Enterprise Channel) per Office Deployment Tool,
+      - Sprache nach LabLanguage: de = Sprachpaket de-DE als Anzeigesprache, en = Oberflaeche en-US mit
+        Formaten en-GB; Zeitzone, Gebietsschema, deutsche Tastatur
+      - Microsoft 365 Apps (de-de bzw. en-gb, 64 Bit, Monthly Enterprise Channel) per Office Deployment Tool,
         ohne Access, Publisher, Teams, Skype/Lync, Groove und Bing
       - Devolutions Remote Desktop Manager Free mit .NET Desktop Runtime 10, Richtlinien (kein Onboarding,
         keine Update-/Konto-Hinweise), PowerShell 7 und dem Modul Devolutions.PowerShell
@@ -32,6 +33,11 @@
 param(
     [ValidateSet('Prepare', 'Complete')]
     [string] $Phase = 'Prepare',
+
+    # Sprache der Lab-Daten: de = Sprachpaket und Formate de-DE, Office de-de; en = Oberflaeche en-US aus dem
+    # Image, Formate en-GB, Office en-gb; deutsche Tastatur in beiden Faellen. Bestimmt auch die Lab-Info.
+    [ValidateSet('de', 'en')]
+    [string] $LabLanguage = 'de',
 
     # Nur Phase 'Prepare':
     [ValidateSet('O365ProPlusRetail', 'O365BusinessRetail')]
@@ -100,6 +106,13 @@ $RdmModule = @{
     Name    = 'Devolutions.PowerShell'
     Version = '2026.3.4'
 }
+
+# Sprache je Lab-Sprache. Englisch: Oberflaeche en-US bleibt (kein Sprachpaket, schneller), Formate en-GB.
+# Tastatur in beiden Faellen Deutsch, weil die Azubis an deutschen Tastaturen sitzen.
+$ClientLanguage = @{
+    de = @{ LanguagePack = 'de-DE'; Culture = 'de-DE'; GeoId = 94; InputMethod = '0407:00000407'; Office = 'de-de'; SampleUser = 'mmustermann' }
+    en = @{ LanguagePack = ''; Culture = 'en-GB'; GeoId = 242; InputMethod = '0809:00000407'; Office = 'en-gb'; SampleUser = 'fbloggs' }
+}[$LabLanguage]
 
 $RdmExe = Join-Path $env:ProgramFiles 'Devolutions\Remote Desktop Manager\RemoteDesktopManager.exe'
 $PwshExe = Join-Path $env:ProgramFiles 'PowerShell\7\pwsh.exe'
@@ -210,31 +223,40 @@ function Initialize-ClientPolicy {
 
 function Initialize-ClientLanguage {
     Set-TimeZone -Id 'W. Europe Standard Time'
-    try {
-        if ((Get-InstalledLanguage -Language de-DE -ErrorAction SilentlyContinue)) {
-            Write-LabLog 'Sprachpaket de-DE bereits installiert.'
-        }
-        else {
-            Write-LabLog 'Installiere Sprachpaket de-DE (dauert einige Minuten).'
-            Invoke-WithRetry -Activity 'Install-Language de-DE' -Attempts 2 -DelaySeconds 60 -ScriptBlock {
-                Install-Language -Language de-DE -CopyToSettings | Out-Null
+    if ($ClientLanguage.LanguagePack) {
+        $pack = $ClientLanguage.LanguagePack
+        try {
+            if ((Get-InstalledLanguage -Language $pack -ErrorAction SilentlyContinue)) {
+                Write-LabLog "Sprachpaket $pack bereits installiert."
             }
+            else {
+                Write-LabLog "Installiere Sprachpaket $pack (dauert einige Minuten)."
+                Invoke-WithRetry -Activity "Install-Language $pack" -Attempts 2 -DelaySeconds 60 -ScriptBlock {
+                    Install-Language -Language $pack -CopyToSettings | Out-Null
+                }
+            }
+            Set-SystemPreferredUILanguage -Language $pack
+            Write-LabLog "Anzeigesprache $pack gesetzt, aktiv nach dem Neustart beim Domaenenbeitritt."
         }
-        Set-SystemPreferredUILanguage -Language de-DE
-        Write-LabLog 'Anzeigesprache de-DE gesetzt, aktiv nach dem Neustart beim Domaenenbeitritt.'
+        catch {
+            Write-LabLog "WARNUNG: Sprachpaket $pack nicht installiert, Oberflaeche bleibt Englisch: $($_.Exception.Message)"
+        }
     }
-    catch {
-        Write-LabLog "WARNUNG: Sprachpaket de-DE nicht installiert, Oberflaeche bleibt Englisch: $($_.Exception.Message)"
+    else {
+        Write-LabLog 'Kein Sprachpaket noetig, die Oberflaeche bleibt Englisch (Image).'
     }
 
-    Set-WinSystemLocale -SystemLocale de-DE
-    Set-WinHomeLocation -GeoId 94
-    Set-Culture -CultureInfo de-DE
-    Set-WinUserLanguageList -LanguageList de-DE -Force
+    Set-WinSystemLocale -SystemLocale $ClientLanguage.Culture
+    Set-WinHomeLocation -GeoId $ClientLanguage.GeoId
+    Set-Culture -CultureInfo $ClientLanguage.Culture
+    $languageList = New-WinUserLanguageList -Language $ClientLanguage.Culture
+    $languageList[0].InputMethodTips.Clear()
+    $languageList[0].InputMethodTips.Add($ClientLanguage.InputMethod)
+    Set-WinUserLanguageList -LanguageList $languageList -Force
     if (Get-Command -Name Copy-UserInternationalSettingsToSystem -ErrorAction SilentlyContinue) {
         Copy-UserInternationalSettingsToSystem -WelcomeScreen $true -NewUser $true
     }
-    Write-LabLog 'Deutsche Regionaleinstellungen gesetzt.'
+    Write-LabLog "Regionaleinstellungen $($ClientLanguage.Culture) gesetzt (Tastatur $($ClientLanguage.InputMethod))."
 }
 
 function Install-OfficeApp {
@@ -264,7 +286,7 @@ function Install-OfficeApp {
             '<Configuration>'
             '  <Add OfficeClientEdition="64" Channel="MonthlyEnterprise">'
             ('    <Product ID="{0}">' -f $OfficeProductId)
-            '      <Language ID="de-de" />'
+            ('      <Language ID="{0}" />' -f $ClientLanguage.Office)
             '      <ExcludeApp ID="Access" />'
             '      <ExcludeApp ID="Bing" />'
             '      <ExcludeApp ID="Groove" />'
@@ -283,7 +305,7 @@ function Install-OfficeApp {
         $configFile = Join-Path $OdtDir 'LabConfiguration.xml'
         Set-Content -Path $configFile -Value $configuration -Encoding UTF8
 
-        Write-LabLog "Installiere Microsoft 365 Apps ($OfficeProductId, de-de, Monthly Enterprise Channel)."
+        Write-LabLog "Installiere Microsoft 365 Apps ($OfficeProductId, $($ClientLanguage.Office), Monthly Enterprise Channel)."
         $setup = Start-Process -FilePath (Join-Path $OdtDir 'setup.exe') -ArgumentList '/configure', "`"$configFile`"" -Wait -PassThru
         if ($setup.ExitCode -ne 0 -or -not (Test-Path -Path $OutlookExe)) {
             throw "Office-Setup mit Exit-Code $($setup.ExitCode) beendet, Outlook nicht gefunden. Details: C:\Windows\Temp\*.log"
@@ -548,40 +570,78 @@ function Publish-ClientDesktop {
     param([string[]] $RdmServers = @())
     $desktop = Join-Path $env:PUBLIC 'Desktop'
     $owaUrl = "https://mail.$PublicDomainName/owa"
-    $officeStatus = if (Test-Path -Path $OutlookExe) { 'installiert' } else { 'FEHLT, siehe C:\ExchangeLab\office-failed.txt' }
+    $text = @{
+        de = @{
+            Installed = 'installiert'; Missing = 'FEHLT, siehe C:\ExchangeLab\office-failed.txt'; None = 'keiner'
+            Logon = 'Anmeldung:    {0}\{1} (oder ein anderer Lab-Benutzer), Kennwort = Deployment-Parameter labUserPassword'
+            FileServer = '\\{0}, Basisordner H: = \\{0}\Home$\<Benutzer>'
+            Body = @(
+                'OFFICE AKTIVIEREN'
+                '  Beim ersten Start von Word oder Outlook mit dem eigenen Firmenkonto anmelden (Lizenz der Firma).'
+                '  Eine Registrierung des Lab-Clients in der Firma ist per Richtlinie blockiert.'
+                '  Meldet Office eine fehlende Lizenz, das Lab mit officeProductId = O365BusinessRetail neu bereitstellen.'
+                ''
+                'OUTLOOK'
+                '  Outlook (klassisch) starten. Das Profil fuer das Lab-Postfach legt Autodiscover automatisch an.'
+                '  Das neue Outlook unterstuetzt kein Exchange on Premises, der Umschalter ist per GPO ausgeblendet.'
+                '  Autodiscover testen: Strg + Rechtsklick auf das Outlook-Symbol im Infobereich,'
+                '  "E-Mail-AutoKonfiguration testen".'
+                ''
+                'REMOTE DESKTOP MANAGER'
+            )
+            Rdm = @(
+                '  Desktop oder Startmenue: Remote Desktop Manager, Arbeitsbereich "Lab-Server".'
+                '  Verbindungen: {0}'
+                '  Anmeldung automatisch als {0} (Domain-Admin).'
+                '  ACHTUNG: Jeder Benutzer dieses Clients kann das hinterlegte Admin-Passwort auslesen (Lab-Komfort).'
+                '  RDM Free ist laut Devolutions fuer eine Einzelperson lizenziert.'
+            )
+            NoRdm = '  nicht eingerichtet (Parameter clientRemoteDesktopManager oder Fehler, siehe Logs)'
+        }
+        en = @{
+            Installed = 'installed'; Missing = 'MISSING, see C:\ExchangeLab\office-failed.txt'; None = 'none'
+            Logon = 'Sign-in:      {0}\{1} (or another lab user), password = deployment parameter labUserPassword'
+            FileServer = '\\{0}, home folder H: = \\{0}\Home$\<user>'
+            Body = @(
+                'ACTIVATE OFFICE'
+                '  On the first start of Word or Outlook, sign in with your own work account (company licence).'
+                '  Registering the lab client with your company is blocked by policy.'
+                '  If Office reports a missing licence, redeploy the lab with officeProductId = O365BusinessRetail.'
+                ''
+                'OUTLOOK'
+                '  Start Outlook (classic). Autodiscover creates the profile for the lab mailbox automatically.'
+                '  The new Outlook does not support Exchange on-premises, its toggle is hidden by GPO.'
+                '  Test Autodiscover: Ctrl + right-click the Outlook icon in the notification area,'
+                '  "Test E-mail AutoConfiguration".'
+                ''
+                'REMOTE DESKTOP MANAGER'
+            )
+            Rdm = @(
+                '  Desktop or Start menu: Remote Desktop Manager, workspace "Lab-Server".'
+                '  Connections: {0}'
+                '  Signs in automatically as {0} (domain admin).'
+                '  WARNING: every user of this client can read the stored admin password (lab convenience).'
+                '  According to Devolutions, RDM Free is licensed for a single person.'
+            )
+            NoRdm = '  not set up (parameter clientRemoteDesktopManager or an error, see logs)'
+        }
+    }[$LabLanguage]
+    $officeStatus = if (Test-Path -Path $OutlookExe) { $text.Installed } else { $text.Missing }
     $lines = @(
         "LAB-CLIENT $env:COMPUTERNAME"
         ''
         "Domain:       $DomainName (NetBIOS $NetbiosName)"
-        "Anmeldung:    $NetbiosName\mmustermann (oder ein anderer Lab-Benutzer), Kennwort = Deployment-Parameter labUserPassword"
+        ($text.Logon -f $NetbiosName, $ClientLanguage.SampleUser)
         "OWA:          $owaUrl"
         "Office:       Microsoft 365 Apps $officeStatus"
-        "Fileserver:   $(if ($FileServerComputerName) { "\\$FileServerComputerName, Basisordner H: = \\$FileServerComputerName\Home$\<Benutzer>" } else { 'keiner' })"
+        "Fileserver:   $(if ($FileServerComputerName) { $text.FileServer -f $FileServerComputerName } else { $text.None })"
         ''
-        'OFFICE AKTIVIEREN'
-        '  Beim ersten Start von Word oder Outlook mit dem eigenen Firmenkonto anmelden (Lizenz der Firma).'
-        '  Eine Registrierung des Lab-Clients in der Firma ist per Richtlinie blockiert.'
-        '  Meldet Office eine fehlende Lizenz, das Lab mit officeProductId = O365BusinessRetail neu bereitstellen.'
-        ''
-        'OUTLOOK'
-        '  Outlook (klassisch) starten. Das Profil fuer das Lab-Postfach legt Autodiscover automatisch an.'
-        '  Das neue Outlook unterstuetzt kein Exchange on Premises, der Umschalter ist per GPO ausgeblendet.'
-        '  Autodiscover testen: Strg + Rechtsklick auf das Outlook-Symbol im Infobereich,'
-        '  "E-Mail-AutoKonfiguration testen".'
-        ''
-        'REMOTE DESKTOP MANAGER'
-    )
+    ) + $text.Body
     if ($RdmServers) {
-        $lines += @(
-            '  Desktop oder Startmenue: Remote Desktop Manager, Arbeitsbereich "Lab-Server".'
-            "  Verbindungen: $($RdmServers -join ', ')"
-            "  Anmeldung automatisch als $NetbiosName\$AdminUser (Domain-Admin)."
-            '  ACHTUNG: Jeder Benutzer dieses Clients kann das hinterlegte Admin-Passwort auslesen (Lab-Komfort).'
-            '  RDM Free ist laut Devolutions fuer eine Einzelperson lizenziert.'
-        )
+        $lines += @($text.Rdm[0], ($text.Rdm[1] -f ($RdmServers -join ', ')), ($text.Rdm[2] -f "$NetbiosName\$AdminUser"), $text.Rdm[3], $text.Rdm[4])
     }
     else {
-        $lines += '  nicht eingerichtet (Parameter clientRemoteDesktopManager oder Fehler, siehe Logs)'
+        $lines += $text.NoRdm
     }
     $lines += @(
         ''

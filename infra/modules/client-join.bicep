@@ -46,6 +46,9 @@ param exchangeComputerName string
 @description('Computername des optionalen Fileservers fuer Lab-Info.txt und Remote Desktop Manager. Leer = kein Fileserver.')
 param fileServerComputerName string = ''
 
+@description('Sprache der Lab-Daten (de, en): Lab-Info.txt.')
+param labLanguage string
+
 resource vm 'Microsoft.Compute/virtualMachines@2025-04-01' existing = {
   name: vmName
 }
@@ -181,6 +184,10 @@ resource completeClient 'Microsoft.Compute/virtualMachines/runCommands@2025-04-0
       {
         name: 'ExchangeComputerName'
         value: exchangeComputerName
+      }
+      {
+        name: 'LabLanguage'
+        value: labLanguage
       }
     ], empty(secondDcComputerName) ? [] : [
       {

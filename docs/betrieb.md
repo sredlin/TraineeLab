@@ -88,7 +88,11 @@ az vm run-command list -g rg-exlab-<k> --vm-name vm-<k>-fs01 --query "[].{name:n
 
 ## Fileserver: Beispieldaten und VM-Größe
 
-Die Beispieldokumente entstehen im Deployment höchstens 60 Minuten lang, den Rest erzeugt der Task `TraineeLab-SampleDocuments` im Hintergrund. Danach verkleinert sich der Fileserver selbst auf `fileServerFinalVmSize` (Standard `Standard_B2s_v2`). Das passiert erst, wenn Beispieldaten, Einrichtung und Update-Lauf fertig sind, und kostet einen Neustart.
+Die Beispieldokumente füllen die Datendisk `F:` bis `fileServerDataPercent` (Standard 90 %, rund 230 GB), in der Sprache aus `labLanguage`. Davon ist rund ein Drittel Kopien wie auf echten Servern (Basisordner, „Kopie von“, alte Versionen, Quartalssicherungen im Archiv). Für mehr als rund 60 GB eigene Dokumente legt der Generator entsprechend mehr Projekte je Kunde und Jahr an. Er hört auf, wenn weniger als 8 % der Disk frei sind.
+
+Die Dokumente entstehen im Deployment höchstens 60 Minuten lang, den Rest erzeugt der Task `TraineeLab-SampleDocuments` im Hintergrund (mit `Standard_D4s_v5` insgesamt rund zwei Stunden). Danach verkleinert sich der Fileserver selbst auf `fileServerFinalVmSize` (Standard `Standard_B2s_v2`). Das passiert erst, wenn Beispieldaten, Einrichtung und Update-Lauf fertig sind, und kostet einen Neustart.
+
+Bei 90 % Belegung bleibt wenig Platz für Schattenkopien und eigene Versuche auf `F:`. Wer mehr Luft braucht, setzt `fileServerDataPercent` niedriger, z. B. 60.
 
 Stand der Beispieldaten und der Verkleinerung:
 

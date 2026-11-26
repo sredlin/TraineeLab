@@ -44,6 +44,9 @@ param finalVmSize string = ''
 @description('Verkleinern erst nach fertigen Beispieldokumenten.')
 param waitForSampleDocuments bool = true
 
+@description('Sprache der Lab-Daten (de, en): Lab-Info.txt.')
+param labLanguage string
+
 resource vm 'Microsoft.Compute/virtualMachines@2025-04-01' existing = {
   name: vmName
 }
@@ -154,6 +157,10 @@ resource completeFileServer 'Microsoft.Compute/virtualMachines/runCommands@2025-
       {
         name: 'Phase'
         value: 'Complete'
+      }
+      {
+        name: 'LabLanguage'
+        value: labLanguage
       }
       {
         name: 'DomainName'

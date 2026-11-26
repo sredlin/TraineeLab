@@ -6,14 +6,22 @@ BeforeDiscovery {
     $scriptFiles = Get-ChildItem -Path (Join-Path $repoRoot 'scripts') -Filter '*.ps1' | ForEach-Object {
         @{ Name = $_.Name; Path = $_.FullName }
     }
+    # Lab-Daten je Sprache unter scripts/data/<Sprache>.
+    $languages = @(@{ Language = 'de' }, @{ Language = 'en' })
 }
 
 BeforeAll {
     $repoRoot = Split-Path -Path $PSScriptRoot -Parent
-    $labUsers = Import-PowerShellDataFile -Path (Join-Path -Path $repoRoot -ChildPath 'scripts/LabUsers.psd1')
-    $fileServer = Import-PowerShellDataFile -Path (Join-Path -Path $repoRoot -ChildPath 'scripts/FileServer.psd1')
+    $labUsers = Import-PowerShellDataFile -Path (Join-Path -Path $repoRoot -ChildPath 'scripts/data/de/LabUsers.psd1')
+    $fileServer = Import-PowerShellDataFile -Path (Join-Path -Path $repoRoot -ChildPath 'scripts/data/de/FileServer.psd1')
     $templateText = Get-Content -Path (Join-Path $repoRoot 'azuredeploy.json') -Raw
     $template = $templateText | ConvertFrom-Json -Depth 100
+    # Nur fiktive Rufnummern: Deutsch Bundesnetzagentur (Medienproduktionen, Mitteilung 148/2021), Englisch Ofcom
+    # (Drama-Nummern fuer TV und Radio). Echte Anschluesse duerfen weder im Adressbuch noch auf Dokumenten stehen.
+    $phonePattern = @{
+        de = @{ Fixed = '^\+49 (30 23125|40 66969)-\d{3}$'; Mobile = '^\+49 171 39200\d{2}$'; Source = 'Bundesnetzagentur: Berlin 030 23125, Hamburg 040 66969, Mobil 0171 39200' }
+        en = @{ Fixed = '^\+44 (20 7946 0|161 496 0)\d{3}$'; Mobile = '^\+44 7700 900\d{3}$'; Source = 'Ofcom: London 020 7946 0, Manchester 0161 496 0, Mobil 07700 900' }
+    }
 }
 
 Describe 'Skript <Name>' -ForEach $scriptFiles {
@@ -39,9 +47,22 @@ Describe 'Skript <Name>' -ForEach $scriptFiles {
     }
 }
 
-Describe 'LabUsers.psd1' {
-    It 'enthaelt 12 Lab-Benutzer' {
-        $labUsers.Users.Count | Should -Be 12
+Describe 'LabUsers.psd1 (<Language>)' -ForEach $languages {
+    BeforeAll {
+        $labUsers = Import-PowerShellDataFile -Path (Join-Path -Path $repoRoot -ChildPath "scripts/data/$Language/LabUsers.psd1")
+    }
+
+    It 'enthaelt 28 Lab-Benutzer, davon die 16 Microsoft-Demo-Personas mit ihren Demo-Tenant-Konten' {
+        $labUsers.Users.Count | Should -Be 28
+        $personas = 'Adele Vance', 'Alex Wilber', 'Diego Siciliani', 'Grady Archie', 'Henrietta Mueller', 'Isaiah Langer', 'Johanna Lorenz', 'Joni Sherman',
+        'Lee Gu', 'Lidia Holloway', 'Lynne Robbins', 'Megan Bowen', 'Miriam Graham', 'Nestor Wilke', 'Patti Fernandez', 'Pradeep Gupta'
+        foreach ($persona in $personas) {
+            $given, $surname = $persona -split ' ', 2
+            $user = $labUsers.Users | Where-Object { $_.GivenName -eq $given -and $_.Surname -eq $surname }
+            $user | Should -Not -BeNullOrEmpty -Because "$persona fehlt"
+            # Konto wie im M365-Demo-Tenant: Vorname plus Initiale des Nachnamens.
+            $user.SamAccountName | Should -BeExactly ($given + $surname.Substring(0, 1))
+        }
     }
 
     It 'hat eindeutige SamAccountNames mit hoechstens 20 Zeichen' {
@@ -51,7 +72,7 @@ Describe 'LabUsers.psd1' {
     }
 
     It 'hat fuer jeden Benutzer alle Pflichtattribute' {
-        $required = 'SamAccountName', 'GivenName', 'Surname', 'OrganizationalUnit', 'StreetAddress', 'City', 'PostalCode', 'Office', 'Title', 'OfficePhone', 'MobilePhone'
+        $required = 'SamAccountName', 'GivenName', 'Surname', 'OrganizationalUnit', 'StreetAddress', 'City', 'PostalCode', 'Office', 'Title', 'OfficePhone', 'MobilePhone', 'Fax'
         foreach ($user in $labUsers.Users) {
             foreach ($key in $required) {
                 $user[$key] | Should -Not -BeNullOrEmpty -Because "$($user.SamAccountName) braucht $key"
@@ -59,13 +80,26 @@ Describe 'LabUsers.psd1' {
         }
     }
 
-    It 'nutzt nur fiktive Rufnummern der Bundesnetzagentur (Medienproduktionen, Mitteilung 148/2021)' {
-        # Echte Anschluesse duerfen weder im Adressbuch noch auf Beispieldokumenten auftauchen.
+    It 'nennt Firma und Land fuer die AD-Attribute company, c, co und countryCode' {
+        $labUsers.Company | Should -Not -BeNullOrEmpty
+        $labUsers.Country.Code | Should -Match '^[A-Z]{2}$'
+        $labUsers.Country.Name | Should -Not -BeNullOrEmpty
+        $labUsers.Country.Number | Should -BeOfType [int]
+    }
+
+    It 'nutzt nur fiktive Rufnummern fuer Medienproduktionen' {
+        $pattern = $phonePattern[$Language]
         $numbers = @($labUsers.Users.OfficePhone) + @($labUsers.Users.MobilePhone)
         ($numbers | Select-Object -Unique).Count | Should -Be $numbers.Count
         foreach ($user in $labUsers.Users) {
-            $user.OfficePhone | Should -Match '^\+49 (30 23125|40 66969)-\d{3}$' -Because "$($user.SamAccountName) braucht eine Festnetznummer aus Berlin 030 23125 oder Hamburg 040 66969"
-            $user.MobilePhone | Should -Match '^\+49 171 39200\d{2}$' -Because "$($user.SamAccountName) braucht eine Mobilnummer aus 0171 39200-00..99"
+            $user.OfficePhone | Should -Match $pattern.Fixed -Because "$($user.SamAccountName) braucht eine Festnetznummer ($($pattern.Source))"
+            $user.MobilePhone | Should -Match $pattern.Mobile -Because "$($user.SamAccountName) braucht eine Mobilnummer ($($pattern.Source))"
+            $user.Fax | Should -Match $pattern.Fixed -Because "$($user.SamAccountName) braucht eine Faxnummer des Standorts"
+        }
+        foreach ($contact in $labUsers.Contacts) {
+            foreach ($number in $contact.Phone, $contact.Fax) {
+                $number | Should -Match $pattern.Fixed -Because "Kontakt $($contact.Alias) braucht Telefon und Fax aus den fiktiven Bereichen"
+            }
         }
     }
 
@@ -129,8 +163,10 @@ Describe 'LabUsers.psd1' {
     }
 }
 
-Describe 'FileServer.psd1' {
+Describe 'FileServer.psd1 (<Language>)' -ForEach $languages {
     BeforeAll {
+        $labUsers = Import-PowerShellDataFile -Path (Join-Path -Path $repoRoot -ChildPath "scripts/data/$Language/LabUsers.psd1")
+        $fileServer = Import-PowerShellDataFile -Path (Join-Path -Path $repoRoot -ChildPath "scripts/data/$Language/FileServer.psd1")
         $groupNames = @($fileServer.GlobalGroups.Name)
         $folderPaths = @($fileServer.Folders.Path)
         $specialPrincipals = '@DomainUsers', '@Everyone', '@AuthenticatedUsers'
@@ -185,6 +221,14 @@ Describe 'FileServer.psd1' {
         ($fileServer.Shares | Where-Object Name -EQ $fileServer.HomeFolders.Share).Path | Should -Be $fileServer.HomeFolders.Path
     }
 
+    It 'beschriftet Datenlaufwerk und domaenenlokale Gruppen' {
+        $fileServer.VolumeLabel | Should -Not -BeNullOrEmpty
+        foreach ($suffix in 'M', 'R') {
+            # {0} = Server, {1} = Ordnerpfad (Initialize-LabGroup).
+            $fileServer.DomainLocalGroupDescription[$suffix] | Should -Match '\{0\}.*\{1\}'
+        }
+    }
+
     It 'definiert Altlasten mit gueltigen Zielen' {
         $fileServer.Legacy | Should -Not -BeNullOrEmpty
         foreach ($item in $fileServer.Legacy) {
@@ -200,11 +244,49 @@ Describe 'FileServer.psd1' {
             if ($item.Type -eq 'OrphanedSid') {
                 $labUsers.Users.SamAccountName | Should -Not -Contain $item.SamAccountName -Because 'der Praktikant wird geloescht und darf kein Lab-Benutzer sein'
                 $labUsers.OrganizationalUnits | Should -Contain $item.OrganizationalUnit
+                $item.Description | Should -Not -BeNullOrEmpty
+                $item.DocumentsFolder | Should -Not -BeNullOrEmpty
             }
             if ($item.Type -eq 'EveryoneFull') {
                 $fileServer.Shares.Name | Should -Contain $item.Share
             }
         }
+    }
+}
+
+Describe 'Lab-Daten Deutsch und Englisch gleich aufgebaut' {
+    BeforeAll {
+        $data = @{}
+        foreach ($language in 'de', 'en') {
+            $data[$language] = @{
+                Users      = Import-PowerShellDataFile -Path (Join-Path -Path $repoRoot -ChildPath "scripts/data/$language/LabUsers.psd1")
+                FileServer = Import-PowerShellDataFile -Path (Join-Path -Path $repoRoot -ChildPath "scripts/data/$language/FileServer.psd1")
+            }
+        }
+    }
+
+    It 'hat dieselben Schluessel und Mengen in LabUsers.psd1' {
+        @($data.de.Users.Keys | Sort-Object) | Should -Be @($data.en.Users.Keys | Sort-Object)
+        foreach ($key in 'OrganizationalUnits', 'Users', 'DistributionGroups', 'SharedMailboxes', 'RoomMailboxes', 'Contacts') {
+            @($data.en.Users[$key]).Count | Should -Be @($data.de.Users[$key]).Count -Because "$key braucht in beiden Sprachen gleich viele Eintraege"
+        }
+        $data.en.Users.Managers.Count | Should -Be $data.de.Users.Managers.Count
+    }
+
+    It 'hat dieselben Personas mit denselben Konten' {
+        $personas = { param($d) @($d.Users.Users | Where-Object { $_.SamAccountName -ceq ($_.GivenName + $_.Surname.Substring(0, 1)) } | ForEach-Object { '{0}|{1}|{2}' -f $_.SamAccountName, $_.GivenName, $_.Surname } | Sort-Object) }
+        $de = & $personas $data.de
+        $de.Count | Should -Be 16
+        & $personas $data.en | Should -Be $de
+    }
+
+    It 'hat dieselbe Struktur in FileServer.psd1 (Gruppen, Ordner, Freigaben, Altlasten)' {
+        @($data.de.FileServer.Keys | Sort-Object) | Should -Be @($data.en.FileServer.Keys | Sort-Object)
+        foreach ($key in 'GlobalGroups', 'Folders', 'Shares') {
+            @($data.en.FileServer[$key]).Count | Should -Be @($data.de.FileServer[$key]).Count -Because "$key braucht in beiden Sprachen gleich viele Eintraege"
+        }
+        @($data.en.FileServer.Legacy.Type) | Should -Be @($data.de.FileServer.Legacy.Type)
+        @($data.en.FileServer.Folders | Where-Object { $_.Stem }).Count | Should -Be @($data.de.FileServer.Folders | Where-Object { $_.Stem }).Count
     }
 }
 
@@ -284,6 +366,42 @@ Describe 'azuredeploy.json' {
         ($complete.properties.parameters | ConvertTo-Json -Depth 20) | Should -Not -Match 'adminPassword'
     }
 
+    It 'waehlt die Sprache der Lab-Daten (Standard Deutsch)' {
+        $template.parameters.labLanguage.allowedValues | Should -Be @('de', 'en')
+        $template.parameters.labLanguage.defaultValue | Should -Be 'de'
+    }
+
+    It 'uebergibt die Lab-Sprache an <Script> im Modul <Module>' -ForEach @(
+        @{ Module = 'domain-controller'; Script = 'Install-DomainController' }
+        @{ Module = 'exchange-server'; Script = 'Initialize-ExchangeServer' }
+        @{ Module = 'exchange-install'; Script = 'Install-ExchangeServer' }
+        @{ Module = 'client'; Script = 'Initialize-LabClient' }
+        @{ Module = 'client-join'; Script = 'Complete-LabClient' }
+        @{ Module = 'file-server'; Script = 'Initialize-FileServer' }
+        @{ Module = 'file-server-join'; Script = 'Complete-FileServer' }
+    ) {
+        $deployment = $template.resources | Where-Object name -EQ $Module
+        $deployment.properties.parameters.labLanguage.value | Should -Be "[parameters('labLanguage')]"
+        $runCommand = $deployment.properties.template.resources | Where-Object { $_.type -eq 'Microsoft.Compute/virtualMachines/runCommands' -and $_.name -match "'$Script'" }
+        $runCommand | Should -Not -BeNullOrEmpty
+        ($runCommand.properties.parameters | ConvertTo-Json -Depth 20) | Should -Match '["'']LabLanguage["'']'
+    }
+
+    It 'haelt die Base64-Parameter jedes Run Commands unter der Windows-Kommandozeilengrenze' {
+        # Run Commands uebergeben Parameter auf der Kommandozeile (max. 32.767 Zeichen). Darueber startet PowerShell
+        # nicht (Exit 1 ohne Ausgabe, Testdeployment 2026-11-26). Reserve fuer Pfad und uebrige Parameter.
+        $b64 = { param([string[]] $Files) ($Files | ForEach-Object { [Convert]::ToBase64String([IO.File]::ReadAllBytes((Join-Path $repoRoot $_))).Length } | Measure-Object -Sum).Sum }
+        $largest = { param([string] $Name) @('de', 'en' | ForEach-Object { & $b64 "scripts/data/$_/$Name" }) | Sort-Object -Descending | Select-Object -First 1 }
+        (& $b64 'scripts/Update-LabServer.ps1', 'scripts/Invoke-LabMaintenance.ps1') | Should -BeLessThan 31000 -Because 'Install-ExchangeServer'
+        ((& $largest 'LabUsers.psd1') + (& $largest 'FileServer.psd1')) | Should -BeLessThan 31000 -Because 'Initialize-FileServer (Prepare), im Testdeployment mit 30.076 noch gelaufen'
+        (& $b64 'scripts/Update-LabServer.ps1', 'scripts/Resize-FileServer.ps1') | Should -BeLessThan 31000 -Because 'Complete-FileServer'
+        # LabUsers.psd1 erreicht Exchange deshalb ueber die userData der VM.
+        $exchangeModule = ($template.resources | Where-Object name -EQ 'exchange-server').properties.template
+        ($exchangeModule.resources | Where-Object type -EQ 'Microsoft.Compute/virtualMachines').properties.userData | Should -Match "labLanguage"
+        $install = ($template.resources | Where-Object name -EQ 'exchange-install').properties.template.resources | Where-Object { $_.type -eq 'Microsoft.Compute/virtualMachines/runCommands' -and $_.name -match "'Install-ExchangeServer'" }
+        ($install.properties.parameters | ConvertTo-Json -Depth 20) | Should -Not -Match 'LabUsersB64'
+    }
+
     It 'erlaubt nur Office-Produkte mit Benutzeraktivierung' {
         $template.parameters.officeProductId.allowedValues | Should -Be @('O365ProPlusRetail', 'O365BusinessRetail')
     }
@@ -308,12 +426,15 @@ Describe 'azuredeploy.json' {
     }
 
     It 'erzeugt die Beispieldokumente vor dem Domaenenbeitritt, mit Korpus in der userData' {
-        $template.parameters.fileServerDataSizeGB.defaultValue | Should -Be 60
-        $template.parameters.fileServerDataSizeGB.maxValue | Should -Be 120
+        # 90 % der Datendisk; der Generator haelt zusaetzlich 8 % frei (Test-VolumeFull).
+        $template.parameters.fileServerDataPercent.defaultValue | Should -Be 90
+        $template.parameters.fileServerDataPercent.maxValue | Should -Be 90
         $fileServerModule = ($template.resources | Where-Object name -EQ 'file-server').properties.template
+        $sampleRun = $fileServerModule.resources | Where-Object { $_.type -eq 'Microsoft.Compute/virtualMachines/runCommands' -and $_.name -match 'New-SampleDocuments' }
+        $sampleRun.properties.parameters.name | Should -Contain 'TargetPercent'
         $vm = $fileServerModule.resources | Where-Object type -EQ 'Microsoft.Compute/virtualMachines'
-        $vm.properties.userData | Should -Not -BeNullOrEmpty
-        $vm.properties.userData.Length | Should -BeLessOrEqual 65536
+        # Je Sprache ein Korpus-Paket (Groesse prueft der Block Beispieldokumente), Auswahl ueber labLanguage.
+        $vm.properties.userData | Should -Match "^\[if\(equals\(parameters\('labLanguage'\), 'en'\)"
         $vm.properties.storageProfile.dataDisks[0].diskSizeGB | Should -Not -BeNullOrEmpty
         $fileServerModule.parameters.dataDiskSizeGB.defaultValue | Should -Be 256
         $generator = $fileServerModule.resources | Where-Object { $_.type -eq 'Microsoft.Compute/virtualMachines/runCommands' -and $_.name -match 'New-SampleDocuments' }
@@ -354,6 +475,28 @@ Describe 'azuredeploy.json' {
     }
 }
 
+Describe 'Lab-Sprache in den Skripten' {
+    BeforeAll {
+        $dcScript = Get-Content -Path (Join-Path $repoRoot 'scripts/Install-DomainController.ps1') -Raw
+        $exchangeInstallScript = Get-Content -Path (Join-Path $repoRoot 'scripts/Install-ExchangeServer.ps1') -Raw
+    }
+
+    It 'reicht LabLanguage an die Folgephasen weiter (geplante Tasks)' {
+        # Fehlt der Parameter im Argumentstring, laeuft die naechste Phase mit dem Standard 'de'.
+        [regex]::Match($dcScript, '(?s)function Register-PhaseTask \{.*?\n\}').Value | Should -Match '-LabLanguage \{\d+\}'
+        [regex]::Match($exchangeInstallScript, '(?s)function Invoke-InstallTask \{.*?\n\}').Value | Should -Match '-LabLanguage \{\d+\}'
+    }
+
+    It 'benennt die AD-Standorte wie die Standort-OUs in LabUsers.psd1 (<_>)' -ForEach 'de', 'en' {
+        $data = Import-PowerShellDataFile -Path (Join-Path $repoRoot "scripts/data/$_/LabUsers.psd1")
+        $block = [regex]::Match($dcScript, "(?m)^\s+$_ = @\{ Headquarters = '([^']+)'; Branch = '([^']+)'")
+        $block.Success | Should -BeTrue
+        foreach ($site in $block.Groups[1].Value, $block.Groups[2].Value) {
+            $data.OrganizationalUnits | Should -Contain "OU=$site,OU=Branch"
+        }
+    }
+}
+
 Describe 'Remote Desktop Manager auf dem Client' {
     BeforeAll {
         $clientScript = Get-Content -Path (Join-Path $repoRoot 'scripts/Initialize-LabClient.ps1') -Raw
@@ -381,8 +524,16 @@ Describe 'Remote Desktop Manager auf dem Client' {
     }
 }
 
-Describe 'Beispieldokumente (Korpus, Artefakte, Generator)' {
+Describe 'Beispieldokumente (Korpus, Artefakte, Generator) (<Language>)' -ForEach $languages {
     BeforeAll {
+        $labUsersPath = Join-Path -Path $repoRoot -ChildPath "scripts/data/$Language/LabUsers.psd1"
+        $labUsers = Import-PowerShellDataFile -Path $labUsersPath
+        $fileServer = Import-PowerShellDataFile -Path (Join-Path -Path $repoRoot -ChildPath "scripts/data/$Language/FileServer.psd1")
+        # Nur fiktive Rufnummern; der Generator nutzt fuer Privatpersonen auch die uebrigen reservierten Bereiche.
+        $corpusPhone = @{
+            de = @{ Find = '\+49 [\d \-]+\d'; Allowed = '^\+49 (30 23125|40 66969|221 4710|89 99998|69 90009|171 39200|176 040690)'; Foreign = '\+44 ' }
+            en = @{ Find = '\+44 [\d ]+\d'; Allowed = '^\+44 (20 7946 0|161 496 0|121 496 0|113 496 0|117 496 0|7700 900)'; Foreign = '\+49 ' }
+        }[$Language]
         function Expand-GzipByte([byte[]] $Bytes) {
             $packed = New-Object -TypeName System.IO.MemoryStream -ArgumentList (, $Bytes)
             $gzip = New-Object -TypeName System.IO.Compression.GZipStream -ArgumentList $packed, ([IO.Compression.CompressionMode]::Decompress)
@@ -391,22 +542,32 @@ Describe 'Beispieldokumente (Korpus, Artefakte, Generator)' {
             $gzip.Dispose()
             , $plain.ToArray()
         }
-        $corpusDir = Join-Path $repoRoot 'scripts/corpus'
+        $corpusDir = Join-Path $repoRoot "scripts/data/$Language/corpus"
         $corpusFiles = @(Get-ChildItem -Path $corpusDir -Filter '*.psd1' -File | Sort-Object -Property Name)
         $corpusText = ($corpusFiles | ForEach-Object { [IO.File]::ReadAllText($_.FullName) }) -join "`n"
         $company = Import-PowerShellDataFile -Path (Join-Path $corpusDir 'Company.psd1')
         $generatorPath = Join-Path $repoRoot 'scripts/New-SampleDocuments.ps1'
         $generatorText = [IO.File]::ReadAllText($generatorPath)
         $rebuild = 'tools/Build-SampleArtifacts.ps1 ausfuehren und die Artefakte committen'
+        # Wie tools/Build-SampleArtifacts.ps1: ohne Kommentarzeilen und Einrueckung.
+        function Get-MinifiedCorpusText([string] $Path) {
+            $text = [IO.File]::ReadAllText($Path).Replace("`r`n", "`n")
+            (($text -split "`n") | Where-Object { $_ -notmatch '^\s*#' } | ForEach-Object { $_.TrimStart() }) -join "`n"
+        }
     }
 
-    It 'SampleCorpus.gz passt in die userData und entspricht den Quellen' {
-        $bytes = [IO.File]::ReadAllBytes((Join-Path $repoRoot 'scripts/SampleCorpus.gz'))
+    It 'SampleCorpus.<Language>.gz passt in die userData und entspricht den Quellen' {
+        $bytes = [IO.File]::ReadAllBytes((Join-Path $repoRoot "scripts/SampleCorpus.$Language.gz"))
         [Convert]::ToBase64String($bytes).Length | Should -BeLessOrEqual 65536
         $json = [Text.Encoding]::UTF8.GetString((Expand-GzipByte $bytes)) | ConvertFrom-Json
         @($json.PSObject.Properties.Name) | Should -Be @($corpusFiles.Name) -Because $rebuild
         foreach ($file in $corpusFiles) {
-            $json.($file.Name) | Should -BeExactly ([IO.File]::ReadAllText($file.FullName).Replace("`r`n", "`n")) -Because $rebuild
+            $json.($file.Name) | Should -BeExactly (Get-MinifiedCorpusText $file.FullName) -Because $rebuild
+            # Das Kuerzen darf die Daten nicht aendern (z. B. eingerueckte Zeilen in mehrzeiligen Texten).
+            $minified = Join-Path $TestDrive $file.Name
+            [IO.File]::WriteAllText($minified, $json.($file.Name), (New-Object -TypeName System.Text.UTF8Encoding -ArgumentList $true))
+            (Import-PowerShellDataFile -Path $minified | ConvertTo-Json -Depth 30 -Compress) |
+                Should -BeExactly (Import-PowerShellDataFile -Path $file.FullName | ConvertTo-Json -Depth 30 -Compress) -Because "$($file.Name) ohne Kommentare und Einrueckung"
         }
     }
 
@@ -420,7 +581,9 @@ Describe 'Beispieldokumente (Korpus, Artefakte, Generator)' {
 
     It 'laedt alle Korpus-Dateien und kennt die Pflichtbereiche des Drehbuchs' {
         foreach ($file in $corpusFiles) { { Import-PowerShellDataFile -Path $file.FullName } | Should -Not -Throw -Because $file.Name }
-        foreach ($key in 'Company', 'Ci', 'Timeline', 'Employees', 'Customers', 'Suppliers', 'Shops', 'Motifs', 'Labels', 'FolderNames') {
+        foreach ($key in 'Company', 'Ci', 'Timeline', 'Employees', 'Customers', 'Suppliers', 'Shops', 'Motifs', 'Labels', 'FolderNames',
+            'Locale', 'Paths', 'Roles', 'Departments', 'Industries', 'Patterns', 'Office',
+            'BirthPlaces', 'LocalCities', 'Phases', 'WebMenu', 'CardBookings', 'PasswordWords', 'NoteNames') {
             $company.Keys | Should -Contain $key
         }
         # Drehbuch und LabUsers.psd1 beschreiben dieselben Lab-Benutzer.
@@ -434,10 +597,11 @@ Describe 'Beispieldokumente (Korpus, Artefakte, Generator)' {
         foreach ($domain in $domains) { $domain | Should -Match '(^|\.)example\.(com|org|net)$' }
     }
 
-    It 'nutzt nur Rufnummern fuer Medienproduktionen (Bundesnetzagentur)' {
-        $numbers = [regex]::Matches(($corpusText + "`n" + $generatorText), '\+49 [\d \-]+\d') | ForEach-Object Value | Select-Object -Unique
+    It 'nutzt nur Rufnummern fuer Medienproduktionen (Bundesnetzagentur bzw. Ofcom)' {
+        $numbers = [regex]::Matches(($corpusText + "`n" + $generatorText), $corpusPhone.Find) | ForEach-Object Value | Select-Object -Unique
         $numbers | Should -Not -BeNullOrEmpty
-        foreach ($number in $numbers) { $number | Should -Match '^\+49 (30 23125|40 66969|221 4710|89 99998|69 90009|171 39200|176 040690)' }
+        foreach ($number in $numbers) { $number | Should -Match $corpusPhone.Allowed }
+        $corpusText | Should -Not -Match $corpusPhone.Foreign -Because 'Rufnummern des anderen Landes gehoeren nicht in diesen Korpus'
     }
 
     It 'nutzt nur Platzhalter, die der Generator fuellt' {
@@ -456,7 +620,47 @@ Describe 'Beispieldokumente (Korpus, Artefakte, Generator)' {
             $company.FolderNames.Keys | Should -Contain $key
         }
         $shapes = [regex]::Match($generatorText, '(?s)\$ShapeSizes = @\{.*?\n\}').Value
-        foreach ($motif in $company.Motifs) { $shapes | Should -Match ("'?{0}'?\s*=\s*@\{{" -f [regex]::Escape($motif.File)) }
+        foreach ($motif in $company.Motifs) { $shapes | Should -Match ("'?{0}'?\s*=\s*@\{{" -f [regex]::Escape($motif.Format)) }
+    }
+
+    It 'findet jeden Schluessel der sprachabhaengigen Bereiche im Drehbuch' {
+        # Zugriff im Generator -> Bereich in Company.psd1 (AreaName hat dieselben Schluessel wie Paths).
+        $sections = [ordered]@{
+            '$Locale.' = 'Locale'; '$Paths.' = 'Paths'; '$AreaName.' = 'Paths'; '$Roles.' = 'Roles'; '$Office.' = 'Office'; '$Patterns.' = 'Patterns'
+            '$C.Departments.' = 'Departments'; '$C.Company.' = 'Company'
+        }
+        foreach ($prefix in $sections.Keys) {
+            $keys = @([regex]::Matches($generatorText, ('{0}([A-Za-z]+)' -f [regex]::Escape($prefix))) | ForEach-Object { $_.Groups[1].Value } | Where-Object { $_ -cnotin 'Keys', 'Values', 'Count' } | Select-Object -Unique)
+            $keys | Should -Not -BeNullOrEmpty -Because "der Generator nutzt $prefix"
+            foreach ($key in $keys) { $company[$sections[$prefix]].Keys | Should -Contain $key -Because "$prefix$key" }
+        }
+        foreach ($layout in 'Title', 'Content', 'ImageRight', 'ImageFull', 'Section', 'Closing') { $company.Office.Layouts.Keys | Should -Contain $layout }
+        foreach ($site in 'HQ', 'Branch') { @($company.Company.Sites.Key) | Should -Contain $site }
+        foreach ($site in $company.Company.Sites) { foreach ($key in 'Key', 'Code', 'Name', 'City', 'Dial') { $site.Keys | Should -Contain $key } }
+        foreach ($sam in @($company.Roles.Values | ForEach-Object { $_ })) { @($company.Employees.Sam) | Should -Contain $sam }
+        @($company.Suppliers | Where-Object { $_.Role -eq 'TaxAdvisor' }) | Should -HaveCount 1
+    }
+
+    It 'nutzt sprachneutrale IDs fuer Abteilungen, Branchen, Richtlinien und Werbemittel' {
+        foreach ($employee in $company.Employees) { $company.Departments.Keys | Should -Contain $employee.Department -Because $employee.Sam }
+        $textFiles = ($corpusFiles | Where-Object Name -Like 'Texts-*' | ForEach-Object { [IO.File]::ReadAllText($_.FullName) }) -join "`n"
+        $industries = @($company.Customers.Industry) + @([regex]::Matches($textFiles, "Industry = '([^']+)'") | ForEach-Object { $_.Groups[1].Value })
+        foreach ($industry in $industries | Select-Object -Unique) { $company.Industries.Keys | Should -Contain $industry }
+        $texture = [regex]::Match($generatorText, '\$IndustryTexture = @\{[^\n]*\}').Value
+        foreach ($industry in $company.Industries.Keys) { $texture | Should -Match ("\b{0} = '" -f $industry) }
+        $texts = Import-PowerShellDataFile -Path (Join-Path $corpusDir 'Texts-Company.psd1')
+        foreach ($policy in $texts.Policy) {
+            $company.Paths.Keys | Should -Contain $policy.Folder -Because $policy.Title
+            $company.Labels.Keys | Should -Contain $policy.Classification -Because $policy.Title
+        }
+    }
+
+    It 'legt nur in Ordner aus FileServer.psd1 ab (Paths)' {
+        $folders = @($fileServer.Folders.Path)
+        $targets = @($company.Paths.Values) + @($company.Company.Sites | ForEach-Object { '{0}\{1}' -f $company.Paths.Marketing, $_.Name })
+        foreach ($path in $targets) {
+            @($folders | Where-Object { $path -eq $_ -or $path.StartsWith($_ + '\') }) | Should -Not -BeNullOrEmpty -Because "$path fehlt in FileServer.psd1"
+        }
     }
 
     It 'legt die Altlasten in Ordner, die der Generator befuellt' {
@@ -470,7 +674,7 @@ Describe 'Beispieldokumente (Korpus, Artefakte, Generator)' {
         $target = Join-Path $TestDrive 'daten'
         $labRoot = Join-Path $TestDrive 'lab'
         $arguments = @('-NoProfile', '-NonInteractive', '-File', $generatorPath, '-TargetPath', $target, '-TargetSizeMB', '6', '-LabRoot', $labRoot,
-            '-CorpusPath', $corpusDir, '-LabUsersPath', (Join-Path $repoRoot 'scripts/LabUsers.psd1'), '-ReferenceDate', '2026-11-24',
+            '-CorpusPath', $corpusDir, '-LabUsersPath', $labUsersPath, '-ReferenceDate', '2026-11-24',
             '-WorkerCount', '1', '-NoRaster', '-TimeBudgetMinutes', '0')
         & (Get-Process -Id $PID).Path @arguments | Out-Null
         $LASTEXITCODE | Should -Be 0 -Because (Get-Content -Path (Join-Path $labRoot 'Logs/New-SampleDocuments.log') -Raw)
@@ -491,6 +695,10 @@ Describe 'Beispieldokumente (Korpus, Artefakte, Generator)' {
                     $reader.Dispose()
                     { [xml]$xml } | Should -Not -Throw -Because "$($file.Name)/$($entry.FullName)"
                     $xml | Should -Not -Match '\{[A-Z][A-Za-z0-9]+\}' -Because "$($file.Name)/$($entry.FullName) hat einen offenen Platzhalter"
+                    if ($Language -eq 'en') {
+                        # Englische Dokumente ohne deutsche Reste aus Generator oder Korpus.
+                        $xml | Should -Not -Match '[äöüÄÖÜß€]|Mustermann|\+49 |\bSeite \d' -Because "$($file.Name)/$($entry.FullName) enthaelt Deutsches"
+                    }
                 }
             }
             finally { $zip.Dispose() }

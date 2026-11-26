@@ -35,14 +35,17 @@ param adminPassword string
 @description('Groesse der Datendisk in GB.')
 param dataDiskSizeGB int = 256
 
-@description('Umfang der Beispieldokumente in GB, 0 = keine.')
-param sampleDataSizeGB int = 60
+@description('Umfang der Beispieldokumente in Prozent der Datendisk, 0 = keine.')
+param sampleDataPercent int = 90
 
 @description('Zeitbudget des Generators im Deployment in Minuten. Danach setzt ein Task im Hintergrund fort.')
 param sampleTimeBudgetMinutes int = 60
 
 @description('Dauergroesse nach den Beispieldokumenten, leer = Groesse bleibt. Die VM verkleinert sich selbst (Resize-FileServer.ps1).')
 param finalVmSize string = ''
+
+@description('Sprache der Lab-Daten (de, en): Gebietsschema, Lab-Daten und Textkorpus der Beispieldokumente.')
+param labLanguage string
 
 // Virtual Machine Contributor: Groessenaenderung inklusive der verknuepften NIC und Disks.
 var vmContributorRoleId = '9980e02c-c2be-4d73-94e8-173b1dc7cf3c'
@@ -79,7 +82,7 @@ resource vm 'Microsoft.Compute/virtualMachines@2025-04-01' = {
       vmSize: vmSize
     }
     // Textkorpus fuer New-SampleDocuments (gzip-JSON, per IMDS lesbar). Erzeugt von tools/Build-SampleArtifacts.ps1.
-    userData: loadFileAsBase64('../../scripts/SampleCorpus.gz')
+    userData: labLanguage == 'en' ? loadFileAsBase64('../../scripts/SampleCorpus.en.gz') : loadFileAsBase64('../../scripts/SampleCorpus.de.gz')
     securityProfile: {
       securityType: 'TrustedLaunch'
       uefiSettings: {
@@ -167,12 +170,16 @@ resource prepareFileServer 'Microsoft.Compute/virtualMachines/runCommands@2025-0
         value: 'Prepare'
       }
       {
+        name: 'LabLanguage'
+        value: labLanguage
+      }
+      {
         name: 'LabUsersB64'
-        value: loadFileAsBase64('../../scripts/LabUsers.psd1')
+        value: labLanguage == 'en' ? loadFileAsBase64('../../scripts/data/en/LabUsers.psd1') : loadFileAsBase64('../../scripts/data/de/LabUsers.psd1')
       }
       {
         name: 'FileServerB64'
-        value: loadFileAsBase64('../../scripts/FileServer.psd1')
+        value: labLanguage == 'en' ? loadFileAsBase64('../../scripts/data/en/FileServer.psd1') : loadFileAsBase64('../../scripts/data/de/FileServer.psd1')
       }
     ]
     asyncExecution: false
@@ -183,7 +190,7 @@ resource prepareFileServer 'Microsoft.Compute/virtualMachines/runCommands@2025-0
 
 // Beispieldokumente vor dem Domaenenbeitritt (dessen Neustart wuerde die Erzeugung abbrechen).
 // Nach dem Zeitbudget endet der Run Command erfolgreich, der Task TraineeLab-SampleDocuments setzt fort.
-resource sampleDocuments 'Microsoft.Compute/virtualMachines/runCommands@2025-04-01' = if (sampleDataSizeGB > 0) {
+resource sampleDocuments 'Microsoft.Compute/virtualMachines/runCommands@2025-04-01' = if (sampleDataPercent > 0) {
   parent: vm
   name: 'New-SampleDocuments'
   location: location
@@ -197,8 +204,8 @@ resource sampleDocuments 'Microsoft.Compute/virtualMachines/runCommands@2025-04-
     }
     parameters: [
       {
-        name: 'TargetSizeGB'
-        value: string(sampleDataSizeGB)
+        name: 'TargetPercent'
+        value: string(sampleDataPercent)
       }
       {
         name: 'TimeBudgetMinutes'

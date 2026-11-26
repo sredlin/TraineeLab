@@ -43,6 +43,9 @@ param officeProductId string
 @description('Devolutions Remote Desktop Manager mit .NET Desktop Runtime, PowerShell 7 und RDM-Modul installieren.')
 param installRemoteDesktopManager bool
 
+@description('Sprache der Lab-Daten (de, en): Sprachpaket, Formate, Office-Sprache.')
+param labLanguage string
+
 resource nic 'Microsoft.Network/networkInterfaces@2025-05-01' = {
   name: 'nic-${vmName}'
   location: location
@@ -155,6 +158,10 @@ resource prepareClient 'Microsoft.Compute/virtualMachines/runCommands@2025-04-01
       {
         name: 'RemoteDesktopManager'
         value: installRemoteDesktopManager ? 'Install' : 'Skip'
+      }
+      {
+        name: 'LabLanguage'
+        value: labLanguage
       }
     ]
     asyncExecution: false

@@ -49,6 +49,9 @@ param letsEncryptStaging bool
 @description('Optionale winget-Pakete.')
 param wingetPackages array
 
+@description('Sprache der Lab-Daten (de, en): Gebietsschema der VM.')
+param labLanguage string
+
 // Integrierte Rolle "DNS Zone Contributor"
 var dnsZoneContributorRoleId = 'befefa01-2a29-4197-83a8-272ff33ce314'
 
@@ -91,6 +94,9 @@ resource vm 'Microsoft.Compute/virtualMachines@2025-04-01' = {
     hardwareProfile: {
       vmSize: vmSize
     }
+    // LabUsers.psd1 der Lab-Sprache fuer Install-ExchangeServer (per IMDS lesbar). Als Run-Command-Parameter
+    // wuerde die Kommandozeile zu lang (Windows-Grenze 32.767 Zeichen).
+    userData: base64(labLanguage == 'en' ? loadTextContent('../../scripts/data/en/LabUsers.psd1') : loadTextContent('../../scripts/data/de/LabUsers.psd1'))
     securityProfile: {
       securityType: 'TrustedLaunch'
       uefiSettings: {
@@ -203,6 +209,10 @@ resource initializeExchangeServer 'Microsoft.Compute/virtualMachines/runCommands
       {
         name: 'LetsEncryptStaging'
         value: toLower(string(letsEncryptStaging))
+      }
+      {
+        name: 'LabLanguage'
+        value: labLanguage
       }
     ], empty(wingetPackages) ? [] : [
       {
