@@ -450,11 +450,36 @@ function Assert-DomainControllerBuild {
     }
 }
 
+function Wait-SecondDomainController {
+    # Das Deployment wartet nicht auf die Erstreplikation des zweiten DC. Bis er das Admin-Konto kennt, schlagen
+    # Anmeldungen fehl, die die DC-Suche zu ihm schickt (gleicher Standort). Nicht fatal: Setup laeuft gegen DC01.
+    if (-not $SecondDcComputerName) { return }
+    $dc2 = "$SecondDcComputerName.$DomainName"
+    $deadline = (Get-Date).AddMinutes(30)
+    while ($true) {
+        try {
+            Get-ADUser -Identity $AdminUser -Server $dc2 -ErrorAction Stop | Out-Null
+            Write-LabLog "Zweiter DC $dc2 kennt $AdminUser (Erstreplikation fertig)."
+            return
+        }
+        catch {
+            if ((Get-Date) -gt $deadline) {
+                Write-LabLog "WARNUNG: Zweiter DC $dc2 nach 30 Minuten nicht bereit ($($_.Exception.Message)), Exchange-Setup laeuft gegen den ersten DC."
+                return
+            }
+            Write-LabLog "Warte auf zweiten DC ${dc2}: $($_.Exception.Message)"
+            Start-Sleep -Seconds 30
+        }
+    }
+}
+
 function Invoke-ExchangeSetup {
     param([Parameter(Mandatory)][string] $Step, [Parameter(Mandatory)][string[]] $Arguments)
 
     $setupExe = Join-Path $MediaDir 'Setup.exe'
-    $allArguments = $Arguments + '/IAcceptExchangeServerLicenseTerms_DiagnosticDataOFF'
+    # Immer gegen den ersten DC: Ein zweiter DC im selben Standort kann waehrend seiner Erstreplikation noch
+    # kein azadmin kennen ("credential is invalid", CannotAccessAD; Testdeployment 2026-11-26).
+    $allArguments = $Arguments + "/DomainController:$DcComputerName.$DomainName" + '/IAcceptExchangeServerLicenseTerms_DiagnosticDataOFF'
     $outFile = Join-Path $LogDir "ExchangeSetup-$Step.out.log"
     Write-LabLog "Exchange-Setup ${Step}: $($allArguments -join ' ')"
     $process = Start-Process -FilePath $setupExe -ArgumentList $allArguments -Wait -PassThru -NoNewWindow -RedirectStandardOutput $outFile -RedirectStandardError "$outFile.err"
@@ -471,6 +496,7 @@ function Install-Exchange {
         return
     }
     Assert-DomainControllerBuild
+    Wait-SecondDomainController
     Invoke-ExchangeSetup -Step 'PrepareSchema' -Arguments '/PrepareSchema'
     Invoke-ExchangeSetup -Step 'PrepareAD' -Arguments '/PrepareAD', "/OrganizationName:$OrganizationName"
     Invoke-ExchangeSetup -Step 'Install' -Arguments '/Mode:Install', '/Roles:Mailbox', '/MdbName:DB01', '/DbFilePath:F:\ExchangeDatabases\DB01\DB01.edb', '/LogFolderPath:F:\ExchangeDatabases\DB01\Logs'

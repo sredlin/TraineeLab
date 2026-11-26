@@ -497,6 +497,19 @@ Describe 'Lab-Sprache in den Skripten' {
     }
 }
 
+Describe 'Zweiter DC waehrend der Erstreplikation' {
+    It 'fuehrt das Exchange-Setup gegen den ersten DC aus und wartet auf den zweiten' {
+        $script = Get-Content -Path (Join-Path $repoRoot 'scripts/Install-ExchangeServer.ps1') -Raw
+        [regex]::Match($script, '(?s)function Invoke-ExchangeSetup \{.*?\n\}').Value | Should -Match '/DomainController:\$DcComputerName\.\$DomainName'
+        [regex]::Match($script, '(?s)function Install-Exchange \{.*?\n\}').Value | Should -Match 'Wait-SecondDomainController'
+    }
+
+    It 'wiederholt icacls, solange neue Gruppen noch nicht repliziert sind' {
+        $script = Get-Content -Path (Join-Path $repoRoot 'scripts/Initialize-FileServer.ps1') -Raw
+        [regex]::Match($script, '(?s)function Invoke-IcaclsCommand \{.*?\n\}').Value | Should -Match '1332'
+    }
+}
+
 Describe 'Remote Desktop Manager auf dem Client' {
     BeforeAll {
         $clientScript = Get-Content -Path (Join-Path $repoRoot 'scripts/Initialize-LabClient.ps1') -Raw
