@@ -122,10 +122,23 @@ function Write-Utf8File {
 }
 
 function Invoke-IcaclsCommand {
+    # Exit 1332 (ERROR_NONE_MAPPED): Die SID einer eben auf DC01 angelegten Gruppe ist auf dem DC, den der
+    # Fileserver fragt (z. B. DC02), noch nicht repliziert. Dann warten und wiederholen (Testdeployment 2026-11-26).
     param([Parameter(Mandatory)][string[]] $Arguments)
-    $output = & icacls.exe @Arguments 2>&1
-    if ($LASTEXITCODE -ne 0) {
-        throw "icacls $($Arguments -join ' ') endete mit $LASTEXITCODE`: $($output -join ' ')"
+    for ($attempt = 1; ; $attempt++) {
+        # Windows PowerShell 5.1 wirft bei 2>&1 und ErrorActionPreference Stop schon die stderr-Zeile als Fehler,
+        # bevor der Exit-Code ausgewertet werden kann (Testdeployment 2026-11-26).
+        $previousPreference = $ErrorActionPreference
+        $ErrorActionPreference = 'Continue'
+        try { $output = & icacls.exe @Arguments 2>&1 }
+        finally { $ErrorActionPreference = $previousPreference }
+        if ($LASTEXITCODE -eq 0) { return }
+        $unmapped = $LASTEXITCODE -eq 1332 -or (($output -join ' ') -match 'No mapping between account names')
+        if (-not $unmapped -or $attempt -ge 20) {
+            throw "icacls $($Arguments -join ' ') endete mit $LASTEXITCODE`: $($output -join ' ')"
+        }
+        Write-LabLog "SID noch nicht aufloesbar (Replikation), neuer Versuch in 15 Sekunden ($attempt/20)."
+        Start-Sleep -Seconds 15
     }
 }
 
