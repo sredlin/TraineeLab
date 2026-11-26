@@ -250,9 +250,13 @@ function Initialize-RegionalSetting {
 }
 
 function Install-ExchangeWindowsFeature {
-    $result = Install-WindowsFeature -Name ($ExchangeWindowsFeatures + $AdminToolFeatures)
-    if (-not $result.Success) {
-        throw 'Installation der Windows-Features fuer Exchange und Verwaltung fehlgeschlagen.'
+    # Wiederholt, weil der Servicing Stack kurz nach dem Start noch beschaeftigt sein kann.
+    $result = Invoke-WithRetry -Activity 'Windows-Features' -Attempts 3 -DelaySeconds 120 -ScriptBlock {
+        $featureResult = Install-WindowsFeature -Name ($ExchangeWindowsFeatures + $AdminToolFeatures)
+        if (-not $featureResult.Success) {
+            throw "Installation der Windows-Features fuer Exchange und Verwaltung fehlgeschlagen (Exit-Code $($featureResult.ExitCode))."
+        }
+        $featureResult
     }
     Write-LabLog "Windows-Features installiert (Neustart erforderlich: $($result.RestartNeeded))."
 
@@ -287,6 +291,22 @@ function Save-VerifiedDownload {
     }
 }
 
+function Invoke-Installer {
+    # Exit 1618: Eine andere Installation laeuft gerade (z. B. Windows Update im Hintergrund). Dann warten und wiederholen.
+    param(
+        [Parameter(Mandatory)][string] $FilePath,
+        [Parameter(Mandatory)][string] $ArgumentList,
+        [Parameter(Mandatory)][string] $Name
+    )
+    $attempts = 15
+    for ($attempt = 1; ; $attempt++) {
+        $process = Start-Process -FilePath $FilePath -ArgumentList $ArgumentList -Wait -PassThru
+        if ($process.ExitCode -ne 1618 -or $attempt -ge $attempts) { return $process.ExitCode }
+        Write-LabLog "${Name}: andere Installation laeuft (Exit-Code 1618), neuer Versuch in 60 Sekunden ($attempt/$attempts)."
+        Start-Sleep -Seconds 60
+    }
+}
+
 function Install-PackageFromDownload {
     param([Parameter(Mandatory)][hashtable] $Package)
 
@@ -295,15 +315,15 @@ function Install-PackageFromDownload {
     Save-VerifiedDownload -Url $Package.Url -Destination $target -Sha256 $Package.Sha256 -Name $Package.Id
 
     if ($target -like '*.msi') {
-        $process = Start-Process -FilePath 'msiexec.exe' -ArgumentList "/i `"$target`" $($Package.Arguments)" -Wait -PassThru
+        $exitCode = Invoke-Installer -FilePath 'msiexec.exe' -ArgumentList "/i `"$target`" $($Package.Arguments)" -Name $Package.Id
     }
     else {
-        $process = Start-Process -FilePath $target -ArgumentList $Package.Arguments -Wait -PassThru
+        $exitCode = Invoke-Installer -FilePath $target -ArgumentList $Package.Arguments -Name $Package.Id
     }
-    if ($process.ExitCode -notin 0, 1638, 3010) {
-        throw "Installation von $($Package.Id) per Download fehlgeschlagen (Exit-Code $($process.ExitCode))."
+    if ($exitCode -notin 0, 1638, 3010) {
+        throw "Installation von $($Package.Id) per Download fehlgeschlagen (Exit-Code $exitCode)."
     }
-    Write-LabLog "$($Package.Id) per Microsoft-Download installiert (Exit-Code $($process.ExitCode))."
+    Write-LabLog "$($Package.Id) per Microsoft-Download installiert (Exit-Code $exitCode)."
 }
 
 function Save-LabTool {
@@ -435,11 +455,11 @@ function Install-Ucma {
     }
 
     $ucmaSetup = Join-Path $MediaDir 'UCMARedist\Setup.exe'
-    $process = Start-Process -FilePath $ucmaSetup -ArgumentList '/quiet /norestart' -Wait -PassThru
-    if ($process.ExitCode -notin 0, 3010) {
-        throw "UCMA-Installation fehlgeschlagen (Exit-Code $($process.ExitCode))."
+    $exitCode = Invoke-Installer -FilePath $ucmaSetup -ArgumentList '/quiet /norestart' -Name 'UCMA 4.0'
+    if ($exitCode -notin 0, 3010) {
+        throw "UCMA-Installation fehlgeschlagen (Exit-Code $exitCode)."
     }
-    Write-LabLog "UCMA 4.0 installiert (Exit-Code $($process.ExitCode))."
+    Write-LabLog "UCMA 4.0 installiert (Exit-Code $exitCode)."
 }
 
 function Request-LabCertificate {

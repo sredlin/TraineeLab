@@ -330,17 +330,24 @@ function Wait-LabUser {
     # Die Lab-Benutzer legt die Exchange-Installation zu Beginn ihrer Installationsphase an.
     param([Parameter(Mandatory)][string[]] $SamAccountName)
 
+    # Ein voruebergehend nicht erreichbarer DC (Neustart, Last) zaehlt nicht als Fehler, sondern als "noch warten".
     $deadline = (Get-Date).AddMinutes($UserWaitMinutes)
     while ($true) {
-        $missing = @($SamAccountName | Where-Object { -not (Get-ADUser -Filter "SamAccountName -eq '$_'" @AdParams) })
-        if (-not $missing) {
-            Write-LabLog "Alle $($SamAccountName.Count) Lab-Benutzer sind im AD vorhanden."
-            return
+        try {
+            $missing = @($SamAccountName | Where-Object { -not (Get-ADUser -Filter "SamAccountName -eq '$_'" @AdParams) })
+            if (-not $missing) {
+                Write-LabLog "Alle $($SamAccountName.Count) Lab-Benutzer sind im AD vorhanden."
+                return
+            }
+            $state = "$($missing.Count) fehlen, z. B. $($missing[0])"
+        }
+        catch {
+            $state = "DC nicht erreichbar: $($_.Exception.Message)"
         }
         if ((Get-Date) -gt $deadline) {
-            throw "Lab-Benutzer nach $UserWaitMinutes Minuten nicht vorhanden: $($missing -join ', ')"
+            throw "Lab-Benutzer nach $UserWaitMinutes Minuten nicht vorhanden ($state)."
         }
-        Write-LabLog "Warte auf Lab-Benutzer ($($missing.Count) fehlen, z. B. $($missing[0]))."
+        Write-LabLog "Warte auf Lab-Benutzer ($state)."
         Start-Sleep -Seconds 60
     }
 }
@@ -744,16 +751,17 @@ function Invoke-CompletePhase {
         Server     = "$DcComputerName.$DomainName"
         Credential = New-Object -TypeName System.Management.Automation.PSCredential -ArgumentList "$NetbiosName\$AdminUser", $password
     }
-    $domain = Get-ADDomain @AdParams
+    $domain = Invoke-WithRetry -Activity 'Get-ADDomain' -Attempts 10 -DelaySeconds 30 -ScriptBlock { Get-ADDomain @AdParams }
     $script:DomainSid = $domain.DomainSID.Value
     $script:CompanyDn = "OU=$CompanyOu,$($domain.DistinguishedName)"
 
     Wait-LabUser -SamAccountName @($labData.Users | ForEach-Object SamAccountName)
     Register-FileServerPtrRecord
-    Initialize-LabGroup -Config $config
-    Initialize-FolderAcl -Config $config
-    Initialize-LabShare -Config $config
-    Initialize-HomeFolder -Config $config -LabData $labData
+    # Idempotent; bei transienten AD-Fehlern (DC-Neustart, Last) wird der ganze Schritt wiederholt.
+    Invoke-WithRetry -Activity 'Gruppen (AGDLP)' -Attempts 3 -DelaySeconds 60 -ScriptBlock { Initialize-LabGroup -Config $config }
+    Invoke-WithRetry -Activity 'NTFS-Rechte' -Attempts 3 -DelaySeconds 60 -ScriptBlock { Initialize-FolderAcl -Config $config }
+    Invoke-WithRetry -Activity 'Freigaben' -Attempts 3 -DelaySeconds 60 -ScriptBlock { Initialize-LabShare -Config $config }
+    Invoke-WithRetry -Activity 'Basisordner' -Attempts 3 -DelaySeconds 60 -ScriptBlock { Initialize-HomeFolder -Config $config -LabData $labData }
     Enable-LabRecycleBin
     Add-LegacyPermission -Config $config
     Register-LabUpdateTask -ScriptContent (ConvertFrom-Base64String $UpdateScriptB64) -TaskName $UpdateTaskName

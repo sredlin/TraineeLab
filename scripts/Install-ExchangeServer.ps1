@@ -86,6 +86,7 @@ $ScriptDir = Join-Path $LabRoot 'Scripts'
 $SecretDir = Join-Path $LabRoot 'Secrets'
 $SecretFile = Join-Path $SecretDir 'install.dat'
 $ResultFile = Join-Path $LabRoot 'exchange-install.result'
+$StartedMarker = Join-Path $LabRoot 'exchange-install.started'
 $DoneMarker = Join-Path $LabRoot 'exchange-install.done'
 $LabUsersFile = Join-Path $ScriptDir 'LabUsers.psd1'
 $UpdateScriptFile = Join-Path $ScriptDir 'Update-LabServer.ps1'
@@ -278,6 +279,50 @@ function Get-LabUsersText {
     ConvertFrom-Base64String $b64
 }
 
+function Register-InstallTask {
+    # Registriert und startet den Installationstask und prueft, dass die Phase 'Install' wirklich anlaeuft (Start-Marke).
+    # Kurz nach dem Domaenenbeitritt kann die Anmeldung als Domain-Admin scheitern (DC-Suche, Replikation); dann laeuft
+    # der Task gar nicht erst an und wird nach einer Minute neu registriert und gestartet.
+    param(
+        [Parameter(Mandatory)][object] $Action,
+        [Parameter(Mandatory)][object] $Settings
+    )
+    $attempts = 10
+    $adminPassword = ConvertFrom-Base64String $AdminPasswordB64
+    for ($attempt = 1; ; $attempt++) {
+        Remove-Item -Path $StartedMarker -Force -ErrorAction SilentlyContinue
+        try {
+            Register-ScheduledTask -TaskName $InstallTaskName -Action $Action -Settings $Settings -User "$NetbiosName\$AdminUser" -Password $adminPassword -RunLevel Highest -Force | Out-Null
+            Start-ScheduledTask -TaskName $InstallTaskName
+            $deadline = (Get-Date).AddMinutes(5)
+            while (-not (Test-Path -Path $StartedMarker) -and (Get-Date) -lt $deadline) {
+                Start-Sleep -Seconds 5
+                $task = Get-ScheduledTask -TaskName $InstallTaskName
+                if ($task.State -ne 'Running' -and -not (Test-Path -Path $StartedMarker)) {
+                    # Task schon beendet, ohne dass die Phase gestartet ist (z. B. Anmeldefehler).
+                    Start-Sleep -Seconds 5
+                    break
+                }
+            }
+            if ((Test-Path -Path $StartedMarker) -or (Get-ScheduledTask -TaskName $InstallTaskName).State -eq 'Running') {
+                Write-LabLog "Installationsphase als $NetbiosName\$AdminUser gestartet (Task $InstallTaskName)."
+                return
+            }
+            $info = Get-ScheduledTaskInfo -TaskName $InstallTaskName
+            $reason = 'Task-Code 0x{0:X8}, Status {1}' -f $info.LastTaskResult, (Get-ScheduledTask -TaskName $InstallTaskName).State
+        }
+        catch {
+            $reason = $_.Exception.Message
+        }
+        Stop-ScheduledTask -TaskName $InstallTaskName -ErrorAction SilentlyContinue
+        if ($attempt -ge $attempts) {
+            throw "Installationstask startet nicht ($reason)."
+        }
+        Write-LabLog "Installationstask nicht angelaufen ($reason), neuer Versuch in 60 Sekunden ($attempt/$attempts)."
+        Start-Sleep -Seconds 60
+    }
+}
+
 function Invoke-InstallTask {
     $scriptCopy = Join-Path $ScriptDir 'Install-ExchangeServer.ps1'
     Save-OwnScript -Destination $scriptCopy
@@ -299,13 +344,9 @@ function Invoke-InstallTask {
     }
     $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument $arguments
     $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Hours 3)
-    $adminPassword = ConvertFrom-Base64String $AdminPasswordB64
-    Register-ScheduledTask -TaskName $InstallTaskName -Action $action -Settings $settings -User "$NetbiosName\$AdminUser" -Password $adminPassword -RunLevel Highest -Force | Out-Null
-    Start-ScheduledTask -TaskName $InstallTaskName
-    Write-LabLog "Installationsphase als $NetbiosName\$AdminUser gestartet (Task $InstallTaskName)."
+    Register-InstallTask -Action $action -Settings $settings
 
     $deadline = (Get-Date).AddMinutes($TimeoutMinutes)
-    Start-Sleep -Seconds 30
     while ((Get-ScheduledTask -TaskName $InstallTaskName).State -eq 'Running') {
         if ((Get-Date) -gt $deadline) {
             Stop-ScheduledTask -TaskName $InstallTaskName
@@ -501,12 +542,15 @@ function Invoke-ExchangeSetup {
     # Immer gegen den ersten DC: Ein zweiter DC im selben Standort kann waehrend seiner Erstreplikation noch
     # kein azadmin kennen ("credential is invalid", CannotAccessAD; Testdeployment 2026-11-26).
     $allArguments = $Arguments + "/DomainController:$DcComputerName.$DomainName" + '/IAcceptExchangeServerLicenseTerms_DiagnosticDataOFF'
-    $outFile = Join-Path $LogDir "ExchangeSetup-$Step.out.log"
-    Write-LabLog "Exchange-Setup ${Step}: $($allArguments -join ' ')"
-    $process = Start-Process -FilePath $setupExe -ArgumentList $allArguments -Wait -PassThru -NoNewWindow -RedirectStandardOutput $outFile -RedirectStandardError "$outFile.err"
-    if ($process.ExitCode -ne 0) {
-        $tail = Get-Content -Path 'C:\ExchangeSetupLogs\ExchangeSetup.log' -Tail 30 -ErrorAction SilentlyContinue
-        throw "Exchange-Setup $Step mit Exit-Code $($process.ExitCode) beendet.`n$($tail -join "`n")"
+    # Zwei Versuche: Ein transienter AD-Fehler bricht das Setup ab, ein erneuter Aufruf setzt an der Abbruchstelle fort.
+    Invoke-WithRetry -Activity "Exchange-Setup $Step" -Attempts 2 -DelaySeconds 120 -ScriptBlock {
+        $outFile = Join-Path $LogDir "ExchangeSetup-$Step.out.log"
+        Write-LabLog "Exchange-Setup ${Step}: $($allArguments -join ' ')"
+        $process = Start-Process -FilePath $setupExe -ArgumentList $allArguments -Wait -PassThru -NoNewWindow -RedirectStandardOutput $outFile -RedirectStandardError "$outFile.err"
+        if ($process.ExitCode -ne 0) {
+            $tail = Get-Content -Path 'C:\ExchangeSetupLogs\ExchangeSetup.log' -Tail 30 -ErrorAction SilentlyContinue
+            throw "Exchange-Setup $Step mit Exit-Code $($process.ExitCode) beendet.`n$($tail -join "`n")"
+        }
     }
     Write-LabLog "Exchange-Setup $Step erfolgreich."
 }
@@ -921,11 +965,17 @@ function Register-LabPtrRecord {
 
 function Invoke-InstallPhase {
     $secret = Get-InstallSecret
-    $labData = Initialize-LabDirectory -LabUserPassword (ConvertTo-SecureString -String $secret.LabUserPassword -AsPlainText -Force)
+    $labUserPassword = ConvertTo-SecureString -String $secret.LabUserPassword -AsPlainText -Force
+    # Beide Schritte sind idempotent und werden bei transienten AD- bzw. Exchange-Fehlern als Ganzes wiederholt.
+    $labData = Invoke-WithRetry -Activity 'Lab-Verzeichnis (OUs, Benutzer)' -Attempts 4 -DelaySeconds 60 -ScriptBlock {
+        Initialize-LabDirectory -LabUserPassword $labUserPassword
+    }
     Enable-AdRecycleBin
     Install-Exchange
     Connect-ExchangeSession
-    Initialize-ExchangeConfiguration -Users $labData.Users
+    Invoke-WithRetry -Activity 'Exchange-Konfiguration' -Attempts 3 -DelaySeconds 60 -ScriptBlock {
+        Initialize-ExchangeConfiguration -Users $labData.Users
+    }
     Initialize-LabRecipient -LabData $labData
     Initialize-LabMailboxLanguage -LabData $labData
     Initialize-LabOutlookPolicy
@@ -943,6 +993,7 @@ try {
     switch ($Phase) {
         'Orchestrate' { Invoke-OrchestratePhase }
         'Install' {
+            Set-Content -Path $StartedMarker -Value (Get-Date -Format o) -Encoding ASCII
             Invoke-InstallPhase
             Set-Content -Path $ResultFile -Value '0' -Encoding ASCII
         }

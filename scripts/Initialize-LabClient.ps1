@@ -488,18 +488,23 @@ function Wait-DomainJoin {
 
 function Add-DomainUsersToRemoteDesktop {
     # Gruppennamen sind sprachabhaengig (Remotedesktopbenutzer, Domain Users), SIDs nicht.
-    $computerAccount = New-Object -TypeName System.Security.Principal.NTAccount -ArgumentList "$NetbiosName\$env:COMPUTERNAME`$"
-    $domainSid = $computerAccount.Translate([System.Security.Principal.SecurityIdentifier]).AccountDomainSid
+    # Beide Schritte fragen einen DC; kurz nach dem Beitritt oder waehrend eines DC-Neustarts wiederholen.
+    $domainSid = Invoke-WithRetry -Activity 'Domaenen-SID ermitteln' -Attempts 10 -DelaySeconds 30 -ScriptBlock {
+        $computerAccount = New-Object -TypeName System.Security.Principal.NTAccount -ArgumentList "$NetbiosName\$env:COMPUTERNAME`$"
+        $computerAccount.Translate([System.Security.Principal.SecurityIdentifier]).AccountDomainSid
+    }
     $domainUsersSid = '{0}-513' -f $domainSid.Value
     $group = Get-LocalGroup -SID 'S-1-5-32-555'
 
-    $members = @(Get-LocalGroupMember -Group $group -ErrorAction SilentlyContinue | ForEach-Object { $_.SID.Value })
-    if ($members -contains $domainUsersSid) {
-        Write-LabLog "Domaenen-Benutzer sind bereits Mitglied von $($group.Name)."
-        return
+    Invoke-WithRetry -Activity "Domaenen-Benutzer in $($group.Name)" -Attempts 5 -DelaySeconds 30 -ScriptBlock {
+        $members = @(Get-LocalGroupMember -Group $group -ErrorAction SilentlyContinue | ForEach-Object { $_.SID.Value })
+        if ($members -contains $domainUsersSid) {
+            Write-LabLog "Domaenen-Benutzer sind Mitglied von $($group.Name)."
+            return
+        }
+        Add-LocalGroupMember -Group $group -Member $domainUsersSid
+        Write-LabLog "Domaenen-Benutzer ($domainUsersSid) zu $($group.Name) hinzugefuegt."
     }
-    Add-LocalGroupMember -Group $group -Member $domainUsersSid
-    Write-LabLog "Domaenen-Benutzer ($domainUsersSid) zu $($group.Name) hinzugefuegt."
 }
 
 function ConvertFrom-Base64String {

@@ -14,17 +14,19 @@
       - Modus 'Replica': weiterer DC in der bestehenden Domain (Domain-Admin im UPN-Format)
       - registriert einen einmaligen Startup-Task fuer Phase 'PostReboot'
       - verzoegerter Neustart (120 s), damit der Run Command seinen Status melden kann
-      - hat die Windows-Wartung bereits einen Neustart vorgemerkt, verweigert dcpromo die Heraufstufung:
-        dann Kennwoerter DPAPI-geschuetzt ablegen, Startup-Task fuer Phase 'Promote' registrieren, neu starten
+      - hat die Windows-Wartung einen Neustart vorgemerkt (dcpromo verweigert dann) oder scheitert die
+        Heraufstufung: Kennwoerter DPAPI-geschuetzt ablegen, Startup-Task fuer Phase 'Promote' registrieren,
+        neu starten (hoechstens 3 Neustarts, danach FEHLER im Log)
 
-    Phase 'Promote' (einmaliger Startup-Task, SYSTEM, nur nach vorgemerktem Neustart):
+    Phase 'Promote' (einmaliger Startup-Task, SYSTEM, nur nach Neustart wie oben):
       - liest und loescht die Kennwoerter, stuft herauf wie oben, danach weiter mit 'PostReboot'
 
     Phase 'PostReboot' (einmaliger Startup-Task, SYSTEM, keine Secrets):
       - DNS-Forwarder 168.63.129.16, DNS-Registrierung des DC
       - nur Modus 'Forest': Reverse-Zone des Subnets und Split DNS (interne Zone <PublicDomainName>
         mit mail/autodiscover/MX auf die interne Exchange-IP); weitere DCs erhalten beides per Replikation
-      - schreibt Marker und entfernt den Task
+      - wiederholt die DNS-Schritte bis zu 30 Minuten; schreibt Marker und entfernt den Task
+        (bei FEHLER bleibt der Task und laeuft beim naechsten Start erneut)
 
     Das Skript ist idempotent und enthaelt bewusst nur ASCII-Zeichen (Windows PowerShell 5.1).
 #>
@@ -76,6 +78,7 @@ $PromoteTaskName = 'ExchangeLab-PromoteDomainController'
 $SecretDir = Join-Path $LabRoot 'Secrets'
 $SecretFile = Join-Path $SecretDir 'promote.dat'
 $PromoteAttemptFile = Join-Path $LabRoot 'promote-attempts.txt'
+$MaxPromoteReboots = 3
 $MarkerFile = Join-Path $LabRoot 'dc-ready.txt'
 $SelfText = $MyInvocation.MyCommand.ScriptBlock.ToString()
 
@@ -143,6 +146,25 @@ function Invoke-NativeCommand {
         throw ('{0} endete mit Exit-Code {1}: {2}' -f (Split-Path -Path $FilePath -Leaf), $exitCode, (($output | Select-Object -Last 5) -join ' '))
     }
     [pscustomobject]@{ ExitCode = $exitCode; Output = $output }
+}
+
+function Invoke-WithRetry {
+    param(
+        [Parameter(Mandatory)][scriptblock] $ScriptBlock,
+        [Parameter(Mandatory)][string] $Activity,
+        [int] $Attempts = 3,
+        [int] $DelaySeconds = 30
+    )
+    for ($i = 1; $i -le $Attempts; $i++) {
+        try {
+            return & $ScriptBlock
+        }
+        catch {
+            Write-LabLog "$Activity - Versuch $i/$Attempts fehlgeschlagen: $($_.Exception.Message)"
+            if ($i -eq $Attempts) { throw }
+            Start-Sleep -Seconds $DelaySeconds
+        }
+    }
 }
 
 function Test-CbsRebootPending {
@@ -242,35 +264,41 @@ function Initialize-LabSite {
         @{ Name = '{0}.{1}.{2}.0/24' -f $octets[0], $octets[1], ([int]$octets[2] + 1); Site = $site.Branch }
     )
     try {
-        $default = Get-ADReplicationSite -Filter "Name -eq 'Default-First-Site-Name'"
-        if ($default) {
-            Rename-ADObject -Identity $default.DistinguishedName -NewName $site.Headquarters
-            Write-LabLog "AD-Standort Default-First-Site-Name in $($site.Headquarters) umbenannt."
-        }
-        Set-ADReplicationSite -Identity $site.Headquarters -Description $site.HeadquartersDescription
-        if (-not (Get-ADReplicationSite -Filter "Name -eq '$($site.Branch)'")) {
-            New-ADReplicationSite -Name $site.Branch -Description $site.BranchDescription
-            Write-LabLog "AD-Standort $($site.Branch) angelegt."
-        }
-        foreach ($subnet in $subnets) {
-            if (-not (Get-ADReplicationSubnet -Filter "Name -eq '$($subnet.Name)'")) {
-                New-ADReplicationSubnet -Name $subnet.Name -Site $subnet.Site -Location $subnet.Site
-                Write-LabLog "Subnetz $($subnet.Name) dem Standort $($subnet.Site) zugeordnet."
-            }
-        }
-        $linkName = '{0}-{1}' -f $site.Headquarters, $site.Branch
-        $link = Get-ADReplicationSiteLink -Filter "Name -eq 'DEFAULTIPSITELINK'"
-        if ($link) {
-            Rename-ADObject -Identity $link.DistinguishedName -NewName $linkName
-            Write-LabLog "Standortverknuepfung DEFAULTIPSITELINK in $linkName umbenannt."
-        }
-        if (-not ((Get-ADReplicationSiteLink -Identity $linkName).SitesIncluded | Where-Object { $_ -like "CN=$($site.Branch),*" })) {
-            Set-ADReplicationSiteLink -Identity $linkName -SitesIncluded @{ Add = $site.Branch }
-            Write-LabLog "Standort $($site.Branch) in die Standortverknuepfung $linkName aufgenommen."
-        }
+        Invoke-WithRetry -Activity 'AD-Standorte' -Attempts 5 -DelaySeconds 60 -ScriptBlock { Invoke-LabSiteSetup -Site $site -Subnets $subnets }
     }
     catch {
         Write-LabLog "WARNUNG: AD-Standorte nicht vollstaendig eingerichtet: $($_.Exception.Message)"
+    }
+}
+
+function Invoke-LabSiteSetup {
+    # Idempotent, siehe Initialize-LabSite.
+    param([Parameter(Mandatory)][hashtable] $Site, [Parameter(Mandatory)][object[]] $Subnets)
+    $default = Get-ADReplicationSite -Filter "Name -eq 'Default-First-Site-Name'"
+    if ($default) {
+        Rename-ADObject -Identity $default.DistinguishedName -NewName $site.Headquarters
+        Write-LabLog "AD-Standort Default-First-Site-Name in $($site.Headquarters) umbenannt."
+    }
+    Set-ADReplicationSite -Identity $site.Headquarters -Description $site.HeadquartersDescription
+    if (-not (Get-ADReplicationSite -Filter "Name -eq '$($site.Branch)'")) {
+        New-ADReplicationSite -Name $site.Branch -Description $site.BranchDescription
+        Write-LabLog "AD-Standort $($site.Branch) angelegt."
+    }
+    foreach ($subnet in $subnets) {
+        if (-not (Get-ADReplicationSubnet -Filter "Name -eq '$($subnet.Name)'")) {
+            New-ADReplicationSubnet -Name $subnet.Name -Site $subnet.Site -Location $subnet.Site
+            Write-LabLog "Subnetz $($subnet.Name) dem Standort $($subnet.Site) zugeordnet."
+        }
+    }
+    $linkName = '{0}-{1}' -f $site.Headquarters, $site.Branch
+    $link = Get-ADReplicationSiteLink -Filter "Name -eq 'DEFAULTIPSITELINK'"
+    if ($link) {
+        Rename-ADObject -Identity $link.DistinguishedName -NewName $linkName
+        Write-LabLog "Standortverknuepfung DEFAULTIPSITELINK in $linkName umbenannt."
+    }
+    if (-not ((Get-ADReplicationSiteLink -Identity $linkName).SitesIncluded | Where-Object { $_ -like "CN=$($site.Branch),*" })) {
+        Set-ADReplicationSiteLink -Identity $linkName -SitesIncluded @{ Add = $site.Branch }
+        Write-LabLog "Standort $($site.Branch) in die Standortverknuepfung $linkName aufgenommen."
     }
 }
 
@@ -310,6 +338,34 @@ function Get-PromotionSecret {
     [Text.Encoding]::UTF8.GetString($bytes) | ConvertFrom-Json
 }
 
+function Request-PromotionAfterReboot {
+    # Heraufstufung nach einem Neustart per Startup-Task 'Promote' wiederholen, hoechstens $MaxPromoteReboots Mal.
+    # Danach ist der Fehler fatal und steht im Log; die DC02-Schranke im Deployment meldet ihn.
+    param([Parameter(Mandatory)][string] $Reason)
+    $attempt = 1
+    if (Test-Path -Path $PromoteAttemptFile) {
+        $attempt = [int](Get-Content -Path $PromoteAttemptFile -Raw) + 1
+    }
+    if ($attempt -gt $MaxPromoteReboots) {
+        throw "Heraufstufung nach $MaxPromoteReboots Neustarts nicht moeglich: $Reason"
+    }
+    Set-Content -Path $PromoteAttemptFile -Value $attempt -Encoding ASCII
+    Save-PromotionSecret
+    Register-PhaseTask -Name $PromoteTaskName -TargetPhase Promote
+    Write-LabLog "$Reason Heraufstufung nach dem Neustart (Neustart $attempt von $MaxPromoteReboots), Neustart in 60 Sekunden."
+    & shutdown.exe /r /t 60 /c 'ExchangeLab: Neustart vor der DC-Heraufstufung' /d p:4:2 | Out-Null
+}
+
+function Invoke-PromotionOrReboot {
+    try {
+        Invoke-Promotion
+    }
+    catch {
+        if ((Get-CimInstance -ClassName Win32_ComputerSystem).DomainRole -ge 4) { throw }
+        Request-PromotionAfterReboot -Reason "Heraufstufung nicht moeglich ($($_.Exception.Message))."
+    }
+}
+
 function Invoke-InstallPhase {
     if ((Get-CimInstance -ClassName Win32_ComputerSystem).DomainRole -ge 4) {
         Write-LabLog 'Server ist bereits Domain Controller, nichts zu tun.'
@@ -335,9 +391,11 @@ function Invoke-InstallPhase {
     Initialize-RegionalSetting
 
     Write-LabLog 'Installiere AD DS und DNS.'
-    $feature = Install-WindowsFeature -Name AD-Domain-Services, DNS -IncludeManagementTools
-    if (-not $feature.Success) {
-        throw 'Installation von AD-Domain-Services/DNS fehlgeschlagen.'
+    Invoke-WithRetry -Activity 'AD DS und DNS installieren' -Attempts 3 -DelaySeconds 120 -ScriptBlock {
+        $feature = Install-WindowsFeature -Name AD-Domain-Services, DNS -IncludeManagementTools
+        if (-not $feature.Success) {
+            throw "Installation von AD-Domain-Services/DNS fehlgeschlagen (Exit-Code $($feature.ExitCode))."
+        }
     }
 
     # Windows-Wartung nach dem ersten Start (CbsTask, LanguageFeaturesOnDemand) merkt nach etwa
@@ -345,45 +403,38 @@ function Invoke-InstallPhase {
     # progress or this computer needs to be restarted"), auch mit -SkipPreChecks. Je nach Zeitpunkt trifft
     # das den ersten oder den weiteren DC (im Testdeployment nachgewiesen). In diesem Fall erst neu starten
     # und per Startup-Task heraufstufen. Der Run Command meldet trotzdem Erfolg: Alle nachfolgenden Schritte
-    # warten ohnehin per Wait-DomainController, bis der erste DC wirklich bereit ist.
-    if (Test-CbsRebootPending) {
-        Save-PromotionSecret
-        Register-PhaseTask -Name $PromoteTaskName -TargetPhase Promote
-        Write-LabLog 'Windows-Wartung hat einen Neustart vorgemerkt (CBS RebootPending). Heraufstufung nach dem Neustart, Neustart in 60 Sekunden.'
-        & shutdown.exe /r /t 60 /c 'ExchangeLab: Neustart vor der DC-Heraufstufung (Windows-Wartung)' /d p:4:2 | Out-Null
-        return
-    }
-
-    Invoke-Promotion
+    # warten ohnehin per Wait-DomainController bzw. die DC02-Schranke, bis der DC wirklich bereit ist.
+    # Dasselbe gilt fuer einen fehlgeschlagenen Heraufstufungsversuch (z. B. Erstreplikation, RPC).
+    Invoke-PromotionOrReboot
 }
 
 function Invoke-PromotePhase {
     try {
         if ((Get-CimInstance -ClassName Win32_ComputerSystem).DomainRole -ge 4) {
+            Remove-Item -Path $SecretFile -Force -ErrorAction SilentlyContinue
+            Unregister-ScheduledTask -TaskName $PromoteTaskName -Confirm:$false -ErrorAction SilentlyContinue
+            if (-not (Test-Path -Path $MarkerFile) -and -not (Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue)) {
+                # Der letzte Versuch hat Fehler gemeldet, die Heraufstufung ist aber doch wirksam geworden.
+                Write-LabLog 'Server ist bereits Domain Controller, Einrichtung wie in Phase PostReboot.'
+                Invoke-PostRebootPhase
+                return
+            }
             Write-LabLog 'Server ist bereits Domain Controller, nichts zu tun.'
             return
         }
-        if (Test-CbsRebootPending) {
-            # Wartung noch nicht abgeschlossen: hoechstens zwei weitere Neustarts, danach abbrechen.
-            $attempt = 1
-            if (Test-Path -Path $PromoteAttemptFile) {
-                $attempt = [int](Get-Content -Path $PromoteAttemptFile -Raw) + 1
-            }
-            Set-Content -Path $PromoteAttemptFile -Value $attempt -Encoding ASCII
-            if ($attempt -gt 2) {
-                throw 'Nach zwei weiteren Neustarts ist immer noch ein Neustart vorgemerkt, Heraufstufung abgebrochen.'
-            }
-            Write-LabLog "Immer noch Neustart vorgemerkt, weiterer Neustart (Versuch $attempt von 2)."
-            & shutdown.exe /r /t 30 /c 'ExchangeLab: weiterer Neustart vor der DC-Heraufstufung' /d p:4:2 | Out-Null
-            return
-        }
+        $secret = Get-PromotionSecret
+        $script:SafeModePasswordB64 = $secret.SafeModePasswordB64
+        $script:AdminPasswordB64 = $secret.AdminPasswordB64
+        Remove-Item -Path $SecretFile -Force
+        Unregister-ScheduledTask -TaskName $PromoteTaskName -Confirm:$false -ErrorAction SilentlyContinue
 
         # Startup-Tasks laufen frueh im Boot: erst warten, bis das Netz bzw. der erste DC erreichbar ist.
         if ($Mode -eq 'Replica') {
             $deadline = (Get-Date).AddMinutes(10)
             while (-not (Test-NetConnection -ComputerName $FirstDcIp -Port 389 -InformationLevel Quiet -WarningAction SilentlyContinue)) {
                 if ((Get-Date) -gt $deadline) {
-                    throw "Erster DC $FirstDcIp nach 10 Minuten nicht per LDAP erreichbar."
+                    Request-PromotionAfterReboot -Reason "Erster DC $FirstDcIp nach 10 Minuten nicht per LDAP erreichbar."
+                    return
                 }
                 Start-Sleep -Seconds 15
             }
@@ -392,12 +443,8 @@ function Invoke-PromotePhase {
             Start-Sleep -Seconds 30
         }
 
-        $secret = Get-PromotionSecret
-        $script:SafeModePasswordB64 = $secret.SafeModePasswordB64
-        $script:AdminPasswordB64 = $secret.AdminPasswordB64
-        Remove-Item -Path $SecretFile -Force
-        Unregister-ScheduledTask -TaskName $PromoteTaskName -Confirm:$false -ErrorAction SilentlyContinue
-        Invoke-Promotion
+        # Ein vorgemerkter Neustart (Windows-Wartung) oder ein fehlgeschlagener Versuch fuehrt zum naechsten Neustart.
+        Invoke-PromotionOrReboot
     }
     catch {
         # Ohne Secret und Task kein endloser Kreislauf; der Fehler steht im Log.
@@ -425,23 +472,36 @@ function Invoke-Promotion {
         WarningAction                 = 'SilentlyContinue'
     }
 
-    if ($Mode -eq 'Forest') {
-        Write-LabLog "Lege Forest $DomainName (NetBIOS $NetbiosName, Functional Level 2016) an."
-        $result = Install-ADDSForest @commonParams -DomainName $DomainName -DomainNetbiosName $NetbiosName -ForestMode 'WinThreshold' -DomainMode 'WinThreshold'
-        # Der erste DC nutzt sich selbst als DNS-Server.
-        $dnsServers = @('127.0.0.1')
+    try {
+        # Die Windows-Wartung kann den Neustart auch erst nach dem Start dieser Phase vormerken (12-16 min nach dem Boot).
+        if (Test-CbsRebootPending) {
+            throw 'Windows-Wartung hat einen Neustart vorgemerkt (CBS RebootPending).'
+        }
+        if ($Mode -eq 'Forest') {
+            Write-LabLog "Lege Forest $DomainName (NetBIOS $NetbiosName, Functional Level 2016) an."
+            $result = Install-ADDSForest @commonParams -DomainName $DomainName -DomainNetbiosName $NetbiosName -ForestMode 'WinThreshold' -DomainMode 'WinThreshold'
+            # Der erste DC nutzt sich selbst als DNS-Server.
+            $dnsServers = @('127.0.0.1')
+        }
+        else {
+            # UPN-Format: von einem Rechner ausserhalb der Domain scheitert NETBIOS\Benutzer.
+            $adminPassword = ConvertTo-SecureString -String (ConvertFrom-Base64String $AdminPasswordB64) -AsPlainText -Force
+            $credential = New-Object -TypeName System.Management.Automation.PSCredential -ArgumentList "$AdminUser@$DomainName", $adminPassword
+            Write-LabLog "Stufe weiteren DC fuer $DomainName herauf (Quelle der Erstreplikation: $FirstDcIp)."
+            $result = Install-ADDSDomainController @commonParams -DomainName $DomainName -Credential $credential
+            # Erster DC zuerst, eigene Adresse nur als zweiter Eintrag (Microsoft-Empfehlung, sonst Startverzoegerung).
+            $dnsServers = @($FirstDcIp, '127.0.0.1')
+        }
+        if ($result.Status -ne 'Success') {
+            throw "Heraufstufung ($Mode) meldet Status '$($result.Status)': $($result.Message)"
+        }
     }
-    else {
-        # UPN-Format: von einem Rechner ausserhalb der Domain scheitert NETBIOS\Benutzer.
-        $adminPassword = ConvertTo-SecureString -String (ConvertFrom-Base64String $AdminPasswordB64) -AsPlainText -Force
-        $credential = New-Object -TypeName System.Management.Automation.PSCredential -ArgumentList "$AdminUser@$DomainName", $adminPassword
-        Write-LabLog "Stufe weiteren DC fuer $DomainName herauf (Quelle der Erstreplikation: $FirstDcIp)."
-        $result = Install-ADDSDomainController @commonParams -DomainName $DomainName -Credential $credential
-        # Erster DC zuerst, eigene Adresse nur als zweiter Eintrag (Microsoft-Empfehlung, sonst Startverzoegerung).
-        $dnsServers = @($FirstDcIp, '127.0.0.1')
-    }
-    if ($result.Status -ne 'Success') {
-        throw "Heraufstufung ($Mode) meldet Status '$($result.Status)': $($result.Message)"
+    catch {
+        # Ohne Heraufstufung darf PostReboot nach dem naechsten Start nicht laufen (er wuerde 30 min auf AD warten).
+        if ((Get-CimInstance -ClassName Win32_ComputerSystem).DomainRole -lt 4) {
+            Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue
+        }
+        throw
     }
 
     $adapter = Get-NetAdapter | Where-Object Status -EQ 'Up' | Select-Object -First 1
@@ -475,6 +535,16 @@ function Invoke-PostRebootPhase {
     }
     Write-LabLog 'AD DS und DNS laufen.'
 
+    # Alle Schritte sind idempotent. Bleiben sie 30 Minuten erfolglos, endet die Phase mit FEHLER; der Startup-Task
+    # bleibt dann registriert und versucht es beim naechsten Start erneut.
+    Invoke-WithRetry -Activity 'DNS-Einrichtung' -Attempts 30 -DelaySeconds 60 -ScriptBlock { Initialize-DcDnsSetting }
+
+    Set-Content -Path $MarkerFile -Value (Get-Date -Format o) -Encoding ASCII
+    Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue
+    Write-LabLog 'Domain Controller fertig eingerichtet, Startup-Task entfernt.'
+}
+
+function Initialize-DcDnsSetting {
     # Forwarder sind pro DNS-Server gespeichert und werden nicht repliziert, also auf jedem DC setzen.
     Set-DnsServerForwarder -IPAddress '168.63.129.16'
     Write-LabLog 'DNS-Forwarder 168.63.129.16 (Azure DNS) gesetzt.'
@@ -500,10 +570,6 @@ function Invoke-PostRebootPhase {
         Add-SplitDnsRecord -Zone $PublicDomainName -Name 'autodiscover' -Type CNAME -Value "mail.$PublicDomainName."
         Add-SplitDnsRecord -Zone $PublicDomainName -Name '.' -Type MX -Value "mail.$PublicDomainName."
     }
-
-    Set-Content -Path $MarkerFile -Value (Get-Date -Format o) -Encoding ASCII
-    Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue
-    Write-LabLog 'Domain Controller fertig eingerichtet, Startup-Task entfernt.'
 }
 
 try {

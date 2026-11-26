@@ -3426,14 +3426,25 @@ function Import-SampleCorpus {
     $target = Join-Path $ScriptDir 'corpus'
     if (-not $CorpusPath) {
         try {
-            $request = [Net.WebRequest]::Create('http://169.254.169.254/metadata/instance/compute/userData?api-version=2021-01-01&format=text')
-            $request.Headers.Add('Metadata', 'true')
-            $request.Proxy = $null
-            $request.Timeout = 15000
-            $response = $request.GetResponse()
-            $reader = New-Object -TypeName System.IO.StreamReader -ArgumentList $response.GetResponseStream()
-            $b64 = $reader.ReadToEnd().Trim()
-            $reader.Dispose(); $response.Dispose()
+            # IMDS ist kurz nach dem Start oder bei Last nicht immer sofort erreichbar: bis zu fuenf Versuche.
+            for ($attempt = 1; ; $attempt++) {
+                try {
+                    $request = [Net.WebRequest]::Create('http://169.254.169.254/metadata/instance/compute/userData?api-version=2021-01-01&format=text')
+                    $request.Headers.Add('Metadata', 'true')
+                    $request.Proxy = $null
+                    $request.Timeout = 15000
+                    $response = $request.GetResponse()
+                    $reader = New-Object -TypeName System.IO.StreamReader -ArgumentList $response.GetResponseStream()
+                    $b64 = $reader.ReadToEnd().Trim()
+                    $reader.Dispose(); $response.Dispose()
+                    break
+                }
+                catch {
+                    if ($attempt -ge 5) { throw }
+                    Write-LabLog "userData (IMDS) nicht lesbar, Versuch $attempt/5: $($_.Exception.Message)"
+                    Start-Sleep -Seconds 15
+                }
+            }
             $inputStream = New-Object -TypeName System.IO.MemoryStream -ArgumentList (, [Convert]::FromBase64String($b64))
             $gzip = New-Object -TypeName System.IO.Compression.GZipStream -ArgumentList $inputStream, ([IO.Compression.CompressionMode]::Decompress)
             $output = New-Object -TypeName System.IO.MemoryStream
@@ -5436,12 +5447,35 @@ function Register-ContinuationTask {
     $principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
     $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) -StartWhenAvailable
     Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Force | Out-Null
+    Exit-GeneratorLock
     Start-ScheduledTask -TaskName $TaskName
+}
+
+function Enter-GeneratorLock {
+    # Nur eine Hauptinstanz je VM (Run Command, Fortsetzungs-Task, erneutes Deployment). Ein benannter Mutex wird
+    # beim Prozessende frei, auch nach einem Absturz. Zwei Minuten Wartezeit decken die Uebergabe an den Task ab.
+    if (-not $IsWindowsHost) { return $true }
+    $script:GeneratorMutex = New-Object -TypeName System.Threading.Mutex -ArgumentList $false, 'Global\TraineeLab-SampleDocuments'
+    try { $acquired = $script:GeneratorMutex.WaitOne([TimeSpan]::FromMinutes(2)) }
+    catch [System.Threading.AbandonedMutexException] { $acquired = $true }
+    if (-not $acquired) { $script:GeneratorMutex = $null }
+    return $acquired
+}
+
+function Exit-GeneratorLock {
+    if ($script:GeneratorMutex) {
+        try { $script:GeneratorMutex.ReleaseMutex() } catch { Write-LabLog "Sperre nicht freigegeben: $($_.Exception.Message)" }
+        $script:GeneratorMutex = $null
+    }
 }
 
 #endregion
 
 try {
+    if ($Worker -lt 0 -and -not (Enter-GeneratorLock)) {
+        Write-LabLog 'Eine andere Instanz erzeugt bereits Beispieldokumente, diese endet ohne Aenderung.'
+        exit 0
+    }
     Initialize-Generator
     if ($Worker -ge 0) {
         $targetBytes = Get-TargetByte
