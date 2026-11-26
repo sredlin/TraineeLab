@@ -126,7 +126,12 @@ function Invoke-IcaclsCommand {
     # Fileserver fragt (z. B. DC02), noch nicht repliziert. Dann warten und wiederholen (Testdeployment 2026-11-26).
     param([Parameter(Mandatory)][string[]] $Arguments)
     for ($attempt = 1; ; $attempt++) {
-        $output = & icacls.exe @Arguments 2>&1
+        # Windows PowerShell 5.1 wirft bei 2>&1 und ErrorActionPreference Stop schon die stderr-Zeile als Fehler,
+        # bevor der Exit-Code ausgewertet werden kann (Testdeployment 2026-11-26).
+        $previousPreference = $ErrorActionPreference
+        $ErrorActionPreference = 'Continue'
+        try { $output = & icacls.exe @Arguments 2>&1 }
+        finally { $ErrorActionPreference = $previousPreference }
         if ($LASTEXITCODE -eq 0) { return }
         $unmapped = $LASTEXITCODE -eq 1332 -or (($output -join ' ') -match 'No mapping between account names')
         if (-not $unmapped -or $attempt -ge 20) {
