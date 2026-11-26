@@ -592,7 +592,7 @@ function Publish-ClientDesktop {
             Rdm = @(
                 '  Desktop oder Startmenue: Remote Desktop Manager, Arbeitsbereich "Lab-Server".'
                 '  Verbindungen: {0}'
-                '  Anmeldung automatisch als {1} (Domain-Admin).'
+                '  Anmeldung automatisch als {0} (Domain-Admin).'
                 '  ACHTUNG: Jeder Benutzer dieses Clients kann das hinterlegte Admin-Passwort auslesen (Lab-Komfort).'
                 '  RDM Free ist laut Devolutions fuer eine Einzelperson lizenziert.'
             )
@@ -619,7 +619,7 @@ function Publish-ClientDesktop {
             Rdm = @(
                 '  Desktop or Start menu: Remote Desktop Manager, workspace "Lab-Server".'
                 '  Connections: {0}'
-                '  Signs in automatically as {1} (domain admin).'
+                '  Signs in automatically as {0} (domain admin).'
                 '  WARNING: every user of this client can read the stored admin password (lab convenience).'
                 '  According to Devolutions, RDM Free is licensed for a single person.'
             )

@@ -94,6 +94,9 @@ resource vm 'Microsoft.Compute/virtualMachines@2025-04-01' = {
     hardwareProfile: {
       vmSize: vmSize
     }
+    // LabUsers.psd1 der Lab-Sprache fuer Install-ExchangeServer (per IMDS lesbar). Als Run-Command-Parameter
+    // wuerde die Kommandozeile zu lang (Windows-Grenze 32.767 Zeichen).
+    userData: base64(labLanguage == 'en' ? loadTextContent('../../scripts/data/en/LabUsers.psd1') : loadTextContent('../../scripts/data/de/LabUsers.psd1'))
     securityProfile: {
       securityType: 'TrustedLaunch'
       uefiSettings: {

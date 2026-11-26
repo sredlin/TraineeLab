@@ -387,6 +387,21 @@ Describe 'azuredeploy.json' {
         ($runCommand.properties.parameters | ConvertTo-Json -Depth 20) | Should -Match '["'']LabLanguage["'']'
     }
 
+    It 'haelt die Base64-Parameter jedes Run Commands unter der Windows-Kommandozeilengrenze' {
+        # Run Commands uebergeben Parameter auf der Kommandozeile (max. 32.767 Zeichen). Darueber startet PowerShell
+        # nicht (Exit 1 ohne Ausgabe, Testdeployment 2026-11-26). Reserve fuer Pfad und uebrige Parameter.
+        $b64 = { param([string[]] $Files) ($Files | ForEach-Object { [Convert]::ToBase64String([IO.File]::ReadAllBytes((Join-Path $repoRoot $_))).Length } | Measure-Object -Sum).Sum }
+        $largest = { param([string] $Name) @('de', 'en' | ForEach-Object { & $b64 "scripts/data/$_/$Name" }) | Sort-Object -Descending | Select-Object -First 1 }
+        (& $b64 'scripts/Update-LabServer.ps1', 'scripts/Invoke-LabMaintenance.ps1') | Should -BeLessThan 31000 -Because 'Install-ExchangeServer'
+        ((& $largest 'LabUsers.psd1') + (& $largest 'FileServer.psd1')) | Should -BeLessThan 31000 -Because 'Initialize-FileServer (Prepare), im Testdeployment mit 30.076 noch gelaufen'
+        (& $b64 'scripts/Update-LabServer.ps1', 'scripts/Resize-FileServer.ps1') | Should -BeLessThan 31000 -Because 'Complete-FileServer'
+        # LabUsers.psd1 erreicht Exchange deshalb ueber die userData der VM.
+        $exchangeModule = ($template.resources | Where-Object name -EQ 'exchange-server').properties.template
+        ($exchangeModule.resources | Where-Object type -EQ 'Microsoft.Compute/virtualMachines').properties.userData | Should -Match "labLanguage"
+        $install = ($template.resources | Where-Object name -EQ 'exchange-install').properties.template.resources | Where-Object { $_.type -eq 'Microsoft.Compute/virtualMachines/runCommands' -and $_.name -match "'Install-ExchangeServer'" }
+        ($install.properties.parameters | ConvertTo-Json -Depth 20) | Should -Not -Match 'LabUsersB64'
+    }
+
     It 'erlaubt nur Office-Produkte mit Benutzeraktivierung' {
         $template.parameters.officeProductId.allowedValues | Should -Be @('O365ProPlusRetail', 'O365BusinessRetail')
     }

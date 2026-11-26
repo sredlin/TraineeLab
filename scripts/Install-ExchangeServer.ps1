@@ -65,10 +65,9 @@ param(
     [ValidateSet('de', 'en')]
     [string] $LabLanguage = 'de',
 
-    # Nur Phase 'Orchestrate':
+    # Nur Phase 'Orchestrate'. LabUsers.psd1 kommt aus der userData der VM (siehe Get-LabUsersText).
     [string] $AdminPasswordB64,
     [string] $LabUserPasswordB64,
-    [string] $LabUsersB64,
     [string] $UpdateScriptB64,
     [string] $MaintenanceScriptB64,
 
@@ -239,10 +238,29 @@ function Save-OwnScript {
     }
 }
 
+function Get-LabUsersText {
+    # LabUsers.psd1 als Base64 in der userData der VM (IMDS). Als Run-Command-Parameter wuerde die Kommandozeile
+    # mit den anderen Base64-Parametern zu lang (Windows-Grenze 32.767 Zeichen, PowerShell startet dann nicht).
+    $b64 = Invoke-WithRetry -Activity 'userData lesen (IMDS)' -Attempts 5 -DelaySeconds 15 -ScriptBlock {
+        $request = [Net.WebRequest]::Create('http://169.254.169.254/metadata/instance/compute/userData?api-version=2021-01-01&format=text')
+        $request.Headers.Add('Metadata', 'true')
+        $request.Proxy = $null
+        $request.Timeout = 15000
+        $response = $request.GetResponse()
+        try {
+            $reader = New-Object -TypeName System.IO.StreamReader -ArgumentList $response.GetResponseStream()
+            $reader.ReadToEnd().Trim()
+        }
+        finally { $response.Dispose() }
+    }
+    if (-not $b64) { throw 'userData der VM ist leer, LabUsers.psd1 fehlt.' }
+    ConvertFrom-Base64String $b64
+}
+
 function Invoke-InstallTask {
     $scriptCopy = Join-Path $ScriptDir 'Install-ExchangeServer.ps1'
     Save-OwnScript -Destination $scriptCopy
-    Write-Utf8File -Path $LabUsersFile -Content (ConvertFrom-Base64String $LabUsersB64)
+    Write-Utf8File -Path $LabUsersFile -Content (Get-LabUsersText)
     Write-Utf8File -Path $UpdateScriptFile -Content (ConvertFrom-Base64String $UpdateScriptB64)
     Write-Utf8File -Path $MaintenanceScriptFile -Content (ConvertFrom-Base64String $MaintenanceScriptB64)
     Save-InstallSecret
@@ -292,7 +310,7 @@ function Invoke-OrchestratePhase {
         Write-LabLog 'Exchange ist bereits installiert und konfiguriert, nichts zu tun.'
         return
     }
-    foreach ($name in 'AdminPasswordB64', 'LabUserPasswordB64', 'LabUsersB64', 'UpdateScriptB64', 'MaintenanceScriptB64') {
+    foreach ($name in 'AdminPasswordB64', 'LabUserPasswordB64', 'UpdateScriptB64', 'MaintenanceScriptB64') {
         if (-not (Get-Variable -Name $name -ValueOnly)) {
             throw "Parameter $name fehlt."
         }
