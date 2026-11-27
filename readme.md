@@ -14,6 +14,7 @@ Eine komplette Microsoft-Firmenumgebung zum Lernen und Üben, per Klick in Azure
 - [English](#english)
   - [What is it for?](#what-is-it-for)
   - [Who is it for?](#who-is-it-for)
+  - [What everyone gets](#what-everyone-gets)
   - [What is inside?](#what-is-inside)
   - [What can you practise?](#what-can-you-practise)
   - [Quick start](#quick-start)
@@ -25,6 +26,7 @@ Eine komplette Microsoft-Firmenumgebung zum Lernen und Üben, per Klick in Azure
 - [Deutsch](#deutsch)
   - [Wozu das Ganze?](#wozu-das-ganze)
   - [Für wen?](#für-wen)
+  - [Was alle davon haben](#was-alle-davon-haben)
   - [Was steckt drin?](#was-steckt-drin)
   - [Was lässt sich üben?](#was-lässt-sich-üben)
   - [Schnellstart](#schnellstart)
@@ -47,26 +49,9 @@ Trainee Lab solves this:
 - **The same environment, every time.** Every deployment delivers the same starting point, with no manual work. All trainees start equal, results are comparable.
 - **Breaking things is allowed.** If the lab is misconfigured, delete it and deploy it again. Everything is back to day one.
 - **Realistic, not empty.** Instead of an empty domain there is a company with sites, staff, distribution groups, shares, documents and the typical legacy issues of environments that have grown over time.
-- **One lab per trainee**, separate from everyone else and from the company IT.
+- **One lab per trainee**, independent of everyone else.
 
 ### Who is it for?
-
-#### IT managers
-
-- Each lab runs isolated in its own Azure resource group, with no connection to the production environment or the company tenant.
-- No Global Administrator rights needed: trainees only need permissions on their own resource group and the shared DNS zone.
-- Predictable costs: the servers shut down by themselves in the evening, the file server shrinks after setup.
-- Reachable from outside only from approved IP addresses.
-- Current, supported versions: Exchange Server SE, Windows Server 2025, Windows 11.
-- Licences: Windows 11 in Azure and Microsoft 365 Apps need suitable company licences; without a product key, Exchange runs as a 180-day trial. Details in [Deployment](docs/en/deployment.md#prerequisites).
-
-#### Training managers
-
-- The same environment for all trainees, every time: good for joint exercises and comparable results.
-- In English (Contoso Ltd) or German (Mustermann Medien GmbH).
-- The lab builds itself without intervention and can be checked automatically for completeness at the end.
-- Tear down and rebuild at any time, for example for each new intake.
-- A basis for your own exercises, from user management to migration to the cloud.
 
 #### Trainees
 
@@ -81,6 +66,16 @@ Trainee Lab solves this:
 - Own public mail domain with a real certificate from Let's Encrypt, just like a real company.
 - Entirely as code in the repository: see how such an environment can be built automatically.
 - Starting point for the journey to the cloud: Entra Connect, Exchange Hybrid, SharePoint Online.
+
+### What everyone gets
+
+- **Safely isolated:** Each lab runs in its own Azure resource group, with no connection to the production environment or the company tenant, and can only be reached from approved IP addresses.
+- **Few permissions needed:** No Global Administrator rights, only permissions on your own resource group and the shared DNS zone.
+- **Builds and checks itself:** The lab is set up without intervention and can be checked automatically for completeness at the end.
+- **Costs under control:** The servers shut down by themselves in the evening, and the file server shrinks after setup.
+- **Current and supported:** Exchange Server SE, Windows Server 2025, Windows 11.
+- **English or German:** company, staff, documents and workstation in English (Contoso Ltd) or German (Mustermann Medien GmbH).
+- **Licences:** Windows 11 in Azure and Microsoft 365 Apps need suitable company licences; without a product key, Exchange runs as a 180-day trial. Details in [Deployment](docs/en/deployment.md#prerequisites).
 
 ### What is inside?
 
@@ -147,7 +142,7 @@ Budgets, early shutdown and removal: [Operations](docs/en/operations.md#keep-an-
 | Document | For | Contents |
 | --- | --- | --- |
 | [Deployment](docs/en/deployment.md) | anyone setting up a lab | prerequisites, permissions, licences, parameters, duration, first steps |
-| [Architecture](docs/en/architecture.md) | IT managers, the technically curious | design, network, servers, sequence and logs, supportability, certificate |
+| [Architecture](docs/en/architecture.md) | Microsoft enthusiasts, the technically curious | design, network, servers, sequence and logs, supportability, certificate |
 | [Operations](docs/en/operations.md) | trainees, trainers | start and stop, new IP address, check the lab, file server, costs, removal |
 | [Troubleshooting](docs/en/troubleshooting.md) | trainees, trainers | help when something does not work |
 | [Development](docs/en/development.md) | contributors | repository layout, build, tests, acceptance |
@@ -178,26 +173,9 @@ Das Trainee Lab löst das:
 - **Immer wieder dieselbe Umgebung.** Jedes Deployment liefert denselben Ausgangsstand, ohne Handarbeit. Alle Azubis starten gleich, Ergebnisse sind vergleichbar.
 - **Kaputtmachen erlaubt.** Ist das Lab verkonfiguriert, wird es gelöscht und neu bereitgestellt. Danach ist alles wieder wie am ersten Tag.
 - **Realistisch statt leer.** Statt einer leeren Domäne gibt es eine Firma mit Standorten, Mitarbeitenden, Verteilern, Freigaben, Dokumenten und den typischen Altlasten gewachsener Umgebungen.
-- **Ein eigenes Lab pro Azubi**, getrennt von allen anderen und von der Firmen-IT.
+- **Ein eigenes Lab pro Azubi**, unabhängig von allen anderen.
 
 ### Für wen?
-
-#### IT-Leiter
-
-- Jedes Lab läuft abgeschottet in einer eigenen Azure-Ressourcengruppe, ohne Verbindung zur Produktivumgebung und zum Firmen-Tenant.
-- Keine Global-Admin-Rechte nötig: Die Azubis brauchen nur Rechte auf ihre eigene Ressourcengruppe und die gemeinsame DNS-Zone.
-- Kosten planbar: Die Server schalten sich abends selbst ab, der Fileserver verkleinert sich nach dem Aufbau.
-- Von außen nur von freigegebenen IP-Adressen erreichbar.
-- Aktuelle, supportete Versionen: Exchange Server SE, Windows Server 2025, Windows 11.
-- Lizenzen: Windows 11 in Azure und Microsoft 365 Apps brauchen passende Firmenlizenzen, Exchange läuft ohne Product Key 180 Tage als Testversion. Details in der [Bereitstellung](docs/de/deployment.md#voraussetzungen).
-
-#### Ausbildungsleiter
-
-- Immer wieder dieselbe Umgebung für alle Azubis, gut für gemeinsame Übungen und vergleichbare Ergebnisse.
-- Wahlweise auf Deutsch (Mustermann Medien GmbH) oder Englisch (Contoso Ltd).
-- Das Lab baut sich ohne Eingriff auf und lässt sich am Ende automatisch auf Vollständigkeit prüfen.
-- Abbau und Neuaufbau jederzeit, zum Beispiel für jeden neuen Jahrgang.
-- Grundlage für eigene Übungen, von der Benutzerverwaltung bis zur Migration in die Cloud.
 
 #### Auszubildende
 
@@ -212,6 +190,16 @@ Das Trainee Lab löst das:
 - Eigene öffentliche Maildomain mit echtem Zertifikat von Let's Encrypt, wie in einer richtigen Firma.
 - Komplett als Code im Repository: nachvollziehbar, wie sich eine solche Umgebung automatisch aufbauen lässt.
 - Ausgangslage für den Weg in die Cloud: Entra Connect, Exchange Hybrid, SharePoint Online.
+
+### Was alle davon haben
+
+- **Sicher abgeschottet:** Jedes Lab läuft in einer eigenen Azure-Ressourcengruppe, ohne Verbindung zur Produktivumgebung und zum Firmen-Tenant, und ist nur von freigegebenen IP-Adressen erreichbar.
+- **Wenig Rechte nötig:** Keine Global-Admin-Rechte, nur Rechte auf die eigene Ressourcengruppe und die gemeinsame DNS-Zone.
+- **Baut und prüft sich selbst:** Das Lab entsteht ohne Eingriff und lässt sich am Ende automatisch auf Vollständigkeit prüfen.
+- **Kosten im Griff:** Die Server schalten sich abends selbst ab, der Fileserver verkleinert sich nach dem Aufbau.
+- **Aktuell und supportet:** Exchange Server SE, Windows Server 2025, Windows 11.
+- **Englisch oder Deutsch:** Firma, Mitarbeitende, Dokumente und Arbeitsplatz wahlweise auf Englisch (Contoso Ltd) oder Deutsch (Mustermann Medien GmbH).
+- **Lizenzen:** Windows 11 in Azure und Microsoft 365 Apps brauchen passende Firmenlizenzen, Exchange läuft ohne Product Key 180 Tage als Testversion. Details in der [Bereitstellung](docs/de/deployment.md#voraussetzungen).
 
 ### Was steckt drin?
 
@@ -278,7 +266,7 @@ Budgets, vorzeitiges Abschalten und Abbau: [Betrieb](docs/de/operations.md#koste
 | Dokument | Für | Inhalt |
 | --- | --- | --- |
 | [Bereitstellung](docs/de/deployment.md) | alle, die ein Lab aufsetzen | Voraussetzungen, Rechte, Lizenzen, Parameter, Dauer, erste Schritte |
-| [Architektur](docs/de/architecture.md) | IT-Leiter, Technikinteressierte | Aufbau, Netzwerk, Server, Ablauf und Logs, Supportbarkeit, Zertifikat |
+| [Architektur](docs/de/architecture.md) | Microsoft-Interessierte, Technikinteressierte | Aufbau, Netzwerk, Server, Ablauf und Logs, Supportbarkeit, Zertifikat |
 | [Betrieb](docs/de/operations.md) | Azubis, Ausbilder | Starten und Stoppen, neue IP-Adresse, Lab prüfen, Fileserver, Kosten, Abbau |
 | [Troubleshooting](docs/de/troubleshooting.md) | Azubis, Ausbilder | Hilfe, wenn etwas nicht läuft |
 | [Entwicklung](docs/de/development.md) | Mitwirkende | Aufbau des Repositorys, Build, Tests, Abnahme |
