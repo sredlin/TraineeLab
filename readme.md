@@ -5,7 +5,11 @@
 
 Eine komplette Microsoft-Firmenumgebung zum Lernen und Üben, per Klick in Azure.
 
-## Inhalt
+*A complete Microsoft company environment for learning and practice, deployed to Azure in one click.*
+
+**[Deutsch](#deutsch) · [English](#english)**
+
+## Inhalt / Contents
 
 - [Deutsch](#deutsch)
   - [Wozu das Ganze?](#wozu-das-ganze)
@@ -18,6 +22,17 @@ Eine komplette Microsoft-Firmenumgebung zum Lernen und Üben, per Klick in Azure
   - [Hinweis für Betreiber](#hinweis-für-betreiber)
   - [Unterstützen](#unterstützen)
   - [Lizenz](#lizenz)
+- [English](#english)
+  - [What is it for?](#what-is-it-for)
+  - [Who is it for?](#who-is-it-for)
+  - [What is inside?](#what-is-inside)
+  - [What can you practise?](#what-can-you-practise)
+  - [Quick start](#quick-start)
+  - [Costs](#costs)
+  - [Documentation](#documentation)
+  - [Note for operators](#note-for-operators)
+  - [Support the project](#support-the-project)
+  - [Licence](#licence)
 
 ## Deutsch
 
@@ -149,3 +164,134 @@ Das Lab ist kostenlos und quelloffen. Wer die Weiterentwicklung unterstützen m�
 ### Lizenz
 
 [MIT](LICENSE). Exchange Server, Microsoft 365 Apps, CSS-Exchange und weitere Software lädt das Lab zur Laufzeit von den Herstellern. Dafür gelten deren Lizenzbedingungen.
+
+## English
+
+Trainee Lab builds the IT of a fictional company in Azure, fully set up: Active Directory, Exchange Server, a file server and a Windows 11 workstation with Microsoft 365 Apps. Staff, mailboxes, department folders and twelve years of company documents are already in place. Here you can practise, experiment, break things and start over, without any production system noticing.
+
+### What is it for?
+
+Anyone learning IT infrastructure needs an environment where mistakes are allowed. Real systems are off limits for that. Building a lab by hand takes trainers a lot of time and ends up slightly different for every trainee.
+
+Trainee Lab solves this:
+
+- **The same environment, every time.** Every deployment delivers the same starting point, with no manual work. All trainees start equal, results are comparable.
+- **Breaking things is allowed.** If the lab is misconfigured, delete it and deploy it again. Everything is back to day one.
+- **Realistic, not empty.** Instead of an empty domain there is a company with sites, staff, distribution groups, shares, documents and the typical legacy issues of environments that have grown over time.
+- **One lab per trainee**, separate from everyone else and from the company IT.
+
+### Who is it for?
+
+#### IT managers
+
+- Each lab runs isolated in its own Azure resource group, with no connection to the production environment or the company tenant.
+- No Global Administrator rights needed: trainees only need permissions on their own resource group and the shared DNS zone.
+- Predictable costs: the servers shut down by themselves in the evening, the file server shrinks after setup.
+- Reachable from outside only from approved IP addresses.
+- Current, supported versions: Exchange Server SE, Windows Server 2025, Windows 11.
+- Licences: Windows 11 in Azure and Microsoft 365 Apps need suitable company licences; without a product key, Exchange runs as a 180-day trial. Details in [Deployment](docs/en/deployment.md#prerequisites).
+
+#### Training managers
+
+- The same environment for all trainees, every time: good for joint exercises and comparable results.
+- In English (Contoso Ltd) or German (Mustermann Medien GmbH).
+- The lab builds itself without intervention and can be checked automatically for completeness at the end.
+- Tear down and rebuild at any time, for example for each new intake.
+- A basis for your own exercises, from user management to migration to the cloud.
+
+#### Trainees
+
+- A company you can get your hands on: colleagues with mailboxes, departments, distribution groups, meeting rooms, shares and plenty of documents.
+- Start like in the office: sign in to your own Windows 11 workstation with Outlook, Word and co., and continue from there to all servers.
+- Experiment without fear: whatever breaks is back after a rebuild.
+- Real tasks rather than dry runs: grown permissions, old files and data protection issues are waiting to be cleaned up.
+
+#### Microsoft enthusiasts
+
+- Current on-premises stack: Active Directory, Exchange Server SE, Windows Server 2025, Windows 11 with Microsoft 365 Apps.
+- Own public mail domain with a real certificate from Let's Encrypt, just like a real company.
+- Entirely as code in the repository: see how such an environment can be built automatically.
+- Starting point for the journey to the cloud: Entra Connect, Exchange Hybrid, SharePoint Online.
+
+### What is inside?
+
+```mermaid
+flowchart LR
+    TRAINEE((Trainee)) -->|Remote Desktop| CL
+    INTERNET((Internet)) -->|Outlook on the web, email| EX
+    subgraph LAB[Your own lab in Azure]
+        CL[Windows 11 workstation<br/>Microsoft 365 Apps]
+        DC[Domain controller<br/>Active Directory, DNS]
+        EX[Exchange Server SE<br/>Email, calendar]
+        FS[File server<br/>Shares, documents]
+        CL --> EX
+        CL --> FS
+        CL --> DC
+        EX --> DC
+        FS --> DC
+    end
+```
+
+- **The company:** a fictional advertising agency; in English Contoso Ltd with offices in London and Manchester, in German Mustermann Medien GmbH in Berlin and Hamburg.
+- **The staff:** 28 users with mailbox, department, manager and phone numbers, including the 16 well-known Microsoft demo personas such as Adele Vance or Megan Bowen.
+- **The servers:**
+  - Domain controller with Active Directory and DNS, optionally a second one for resilience
+  - Exchange Server SE with mailboxes, distribution groups, shared mailboxes, meeting rooms and Outlook on the web
+  - File server with department, project, archive and scan shares plus personal home folders
+  - Windows 11 workstation with Microsoft 365 Apps, Outlook ready to use and Remote Desktop Manager to reach all servers
+- **The data:** around 230 GB of Word, Excel, PowerPoint and PDF files from twelve years of company history, from client projects through accounting and HR to corporate design.
+- **The legacy issues:** built in on purpose, as in any environment that has grown over time: copies and old versions, permissions for individual users instead of groups, job applications readable by everyone, permissions of an intern deleted long ago, a private folder no admin can access, and a scan share with full control for everyone.
+
+### What can you practise?
+
+From your own data centre to the cloud, for example:
+
+- **Active Directory:** manage users, groups and OUs, Group Policy, sites, a second domain controller and resilience, restore deleted objects
+- **DNS and certificates:** internal and public name resolution, renew and bind certificates
+- **Exchange:** mailboxes, distribution groups, shared mailboxes and rooms, permissions, updates
+- **File server:** shares and permissions following AGDLP, find, assess and fix legacy issues, data protection
+- **Hybrid:** Entra Connect to synchronise with your own Microsoft 365 test tenant (not the company tenant), Exchange Hybrid and mailbox migration to Exchange Online
+- **Cloud migration:** move files from the file server to SharePoint Online
+
+### Quick start
+
+1. **Prepare:** an Azure subscription with permissions on your own resource group, initials and DNS zone from your trainer, your own public IP address and suitable licences for Windows 11 and Microsoft 365 Apps.
+2. **Deploy:** click *Deploy to Azure* at the top and fill in the form.
+3. **Wait:** the lab builds itself without intervention, including updates and sample data. This takes several hours, so it is best to start in the morning.
+4. **Get going:** sign in to the Windows 11 workstation via Remote Desktop; from there you can reach all servers.
+
+All prerequisites, settings and first steps: [Deployment](docs/en/deployment.md).
+
+### Costs
+
+The lab runs in your own Azure subscription and incurs costs as long as it exists. The largest item is the Exchange server. To keep it affordable:
+
+- Exchange server, workstation and file server shut down by themselves every evening. Servers that are shut down only cost their storage.
+- The domain controller is small and deliberately keeps running so that Active Directory stays stable.
+- The file server only runs with more power during setup and shrinks itself afterwards.
+- When the lab is no longer needed, it is deleted completely.
+
+Budgets, early shutdown and removal: [Operations](docs/en/operations.md#keep-an-eye-on-costs).
+
+### Documentation
+
+| Document | For | Contents |
+| --- | --- | --- |
+| [Deployment](docs/en/deployment.md) | anyone setting up a lab | prerequisites, permissions, licences, parameters, duration, first steps |
+| [Architecture](docs/en/architecture.md) | IT managers, the technically curious | design, network, servers, sequence and logs, supportability, certificate |
+| [Operations](docs/en/operations.md) | trainees, trainers | start and stop, new IP address, check the lab, file server, costs, removal |
+| [Troubleshooting](docs/en/troubleshooting.md) | trainees, trainers | help when something does not work |
+| [Development](docs/en/development.md) | contributors | repository layout, build, tests, acceptance |
+| [Text corpus](scripts/data/README.md) (German) | contributors | rules for the sample documents |
+
+### Note for operators
+
+Older versions of this template passed a service principal secret for Let's Encrypt in plain text. The secret is stored in the deployment history of all resource groups created with those versions. **Rotate the secret or delete the service principal** if you have not already done so.
+
+### Support the project
+
+The lab is free and open source. If you would like to support its further development, you can do so via [Buy Me a Coffee](https://buymeacoffee.com/sredlin). Thank you!
+
+### Licence
+
+[MIT](LICENSE). The lab downloads Exchange Server, Microsoft 365 Apps, CSS-Exchange and other software from the vendors at runtime. Their licence terms apply.

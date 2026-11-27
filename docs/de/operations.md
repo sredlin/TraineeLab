@@ -1,5 +1,7 @@
 # Betrieb des Labs
 
+**Deutsch** · [English](../en/operations.md)
+
 Platzhalter: `<k>` = dein Kürzel (klein), `<K>` = dein Kürzel (groß), `<zone>` = übergeordnete DNS-Zone vom Ausbilder. Die Befehle laufen in der [Azure Cloud Shell](https://shell.azure.com) (Bash) oder lokal mit Azure CLI.
 
 ## Ausgaben des Deployments anzeigen

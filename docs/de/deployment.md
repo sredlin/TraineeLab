@@ -1,5 +1,7 @@
 # Bereitstellung
 
+**Deutsch** · [English](../en/deployment.md)
+
 Voraussetzungen, Parameter und erste Schritte nach dem Deployment. Platzhalter: `<k>` = Kürzel des Azubis (3 Buchstaben, klein), `<K>` = Kürzel groß, `<zone>` = übergeordnete DNS-Zone vom Ausbilder. Wie das Lab aufgebaut ist, steht in der [Architektur](architecture.md).
 
 ## Voraussetzungen

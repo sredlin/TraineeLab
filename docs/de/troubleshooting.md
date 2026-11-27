@@ -1,5 +1,7 @@
 # Troubleshooting
 
+**Deutsch** · [English](../en/troubleshooting.md)
+
 Platzhalter wie in [Betrieb](operations.md). „EMS“ = Exchange Management Shell auf `<K>-EX01`, als Administrator gestartet.
 
 ## Deployment ist fehlgeschlagen

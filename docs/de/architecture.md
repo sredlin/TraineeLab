@@ -1,5 +1,7 @@
 # Architektur
 
+**Deutsch** · [English](../en/architecture.md)
+
 Aufbau des Labs, Ablauf des Deployments, Supportbarkeit und Zertifikat. Für Bereitstellung und Parameter siehe [Bereitstellung](deployment.md), für den Alltag [Betrieb](operations.md).
 
 ## Überblick
