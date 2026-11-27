@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.40.2.10011",
-      "templateHash": "14232070657199072981"
+      "templateHash": "10021819306582499314"
     },
     "name": "Exchange Server SE Lab",
     "description": "Azubi-Lab: separater Domain Controller und Exchange Server SE auf Windows Server 2025, fertig konfiguriert (Split DNS, Zertifikat, URLs, Postfaecher)."
@@ -212,7 +212,7 @@
         "Standard_D8s_v5"
       ],
       "metadata": {
-        "description": "VM-Groesse des Fileservers. Mehr vCPUs erzeugen die Beispieldokumente schneller (siehe readme). Startet er mit einer B-Groesse, bleibt sie."
+        "description": "VM-Groesse des Fileservers. Mehr vCPUs erzeugen die Beispieldokumente schneller (siehe docs/de/deployment.md). Startet er mit einer B-Groesse, bleibt sie."
       }
     },
     "fileServerFinalVmSize": {

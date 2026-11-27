@@ -104,7 +104,7 @@ param clientRemoteDesktopManager bool = true
 @description('Fileserver <K>-FS01 bereitstellen: Freigaben mit AGDLP-Berechtigungen, Basisordner, FSRM und absichtliche Altlasten fuer Uebungen. Keine Public IP.')
 param deployFileServer bool = true
 
-@description('VM-Groesse des Fileservers. Mehr vCPUs erzeugen die Beispieldokumente schneller (siehe readme). Startet er mit einer B-Groesse, bleibt sie.')
+@description('VM-Groesse des Fileservers. Mehr vCPUs erzeugen die Beispieldokumente schneller (siehe docs/de/deployment.md). Startet er mit einer B-Groesse, bleibt sie.')
 @allowed([
   'Standard_B2s_v2'
   'Standard_B2ms'
