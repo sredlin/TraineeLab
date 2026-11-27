@@ -93,7 +93,20 @@ flowchart LR
         EX --> DC
         FS --> DC
     end
+    subgraph M365["Microsoft 365 demo tenant (set up manually)"]
+        ENTRA[Entra ID]
+        EXO[Exchange Online]
+        SPO[SharePoint Online]
+        MORE["Intune, Purview, ..."]
+    end
+    CL -.->|Office activation| ENTRA
+    DC -.->|Entra Connect| ENTRA
+    EX -.->|Exchange Hybrid| EXO
+    FS -.->|Migration| SPO
+    style M365 stroke-dasharray: 5 5
 ```
+
+The deployment builds everything inside the lab. The Microsoft 365 demo tenant (dashed) is not part of it and is set up manually; the dashed connections are activated or set up as exercises.
 
 - **The company:** a fictional advertising agency; in English Contoso Ltd with offices in London and Manchester, in German Mustermann Medien GmbH in Berlin and Hamburg.
 - **The staff:** 28 users with mailbox, department, manager and phone numbers, including the 16 well-known Microsoft demo personas such as Adele Vance or Megan Bowen.
@@ -214,7 +227,20 @@ flowchart LR
         EX --> DC
         FS --> DC
     end
+    subgraph M365["Microsoft-365-Demo-Tenant (manuell eingerichtet)"]
+        ENTRA[Entra ID]
+        EXO[Exchange Online]
+        SPO[SharePoint Online]
+        MORE["Intune, Purview, ..."]
+    end
+    CL -.->|Office-Aktivierung| ENTRA
+    DC -.->|Entra Connect| ENTRA
+    EX -.->|Exchange Hybrid| EXO
+    FS -.->|Migration| SPO
+    style M365 stroke-dasharray: 5 5
 ```
+
+Das Deployment baut alles im Lab auf. Der Microsoft-365-Demo-Tenant (gestrichelt) gehört nicht dazu und wird manuell eingerichtet; die gestrichelten Verbindungen entstehen bei der Aktivierung oder als Übung.
 
 - **Die Firma:** eine fiktive Werbeagentur, auf Deutsch die Mustermann Medien GmbH mit Standorten in Berlin und Hamburg, auf Englisch die Contoso Ltd in London und Manchester.
 - **Die Mitarbeitenden:** 28 Benutzer mit Postfach, Abteilung, Vorgesetzten und Telefonnummern, darunter die 16 bekannten Microsoft-Demo-Personas wie Adele Vance oder Megan Bowen.
