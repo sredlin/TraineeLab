@@ -80,29 +80,29 @@ Trainee Lab solves this:
 
 ```mermaid
 flowchart LR
-    TRAINEE((Trainee)) -->|Remote Desktop| CL
-    INTERNET((Internet)) -->|Outlook on the web, email| EX
     subgraph LAB[Your own lab in Azure]
         CL[Windows 11 workstation<br/>Microsoft 365 Apps]
+        FS[File server<br/>Shares, documents]
         DC[Domain controller<br/>Active Directory, DNS]
         EX[Exchange Server SE<br/>Email, calendar]
-        FS[File server<br/>Shares, documents]
-        CL --> EX
         CL --> FS
         CL --> DC
-        EX --> DC
+        CL --> EX
         FS --> DC
+        EX --> DC
     end
     subgraph M365["Microsoft 365 demo tenant (set up manually)"]
-        ENTRA[Entra ID]
-        EXO[Exchange Online]
         SPO[SharePoint Online]
+        ENTRA[Entra ID]
         MORE["Intune, Purview, ..."]
+        EXO[Exchange Online]
     end
+    TRAINEE((Trainee)) -->|Remote Desktop| CL
+    INTERNET((Internet)) -->|Outlook on the web, email| EX
+    FS -.->|Migration| SPO
     CL -.->|Office activation| ENTRA
     DC -.->|Entra Connect| ENTRA
     EX -.->|Exchange Hybrid| EXO
-    FS -.->|Migration| SPO
     style M365 stroke-dasharray: 5 5
 ```
 
@@ -214,29 +214,29 @@ Das Trainee Lab löst das:
 
 ```mermaid
 flowchart LR
-    AZUBI((Azubi)) -->|Remote Desktop| CL
-    INTERNET((Internet)) -->|Outlook im Web, E-Mail| EX
     subgraph LAB[Eigenes Lab in Azure]
         CL[Windows-11-Arbeitsplatz<br/>Microsoft 365 Apps]
+        FS[Fileserver<br/>Freigaben, Dokumente]
         DC[Domain Controller<br/>Active Directory, DNS]
         EX[Exchange Server SE<br/>E-Mail, Kalender]
-        FS[Fileserver<br/>Freigaben, Dokumente]
-        CL --> EX
         CL --> FS
         CL --> DC
-        EX --> DC
+        CL --> EX
         FS --> DC
+        EX --> DC
     end
     subgraph M365["Microsoft-365-Demo-Tenant (manuell eingerichtet)"]
-        ENTRA[Entra ID]
-        EXO[Exchange Online]
         SPO[SharePoint Online]
+        ENTRA[Entra ID]
         MORE["Intune, Purview, ..."]
+        EXO[Exchange Online]
     end
+    AZUBI((Azubi)) -->|Remote Desktop| CL
+    INTERNET((Internet)) -->|Outlook im Web, E-Mail| EX
+    FS -.->|Migration| SPO
     CL -.->|Office-Aktivierung| ENTRA
     DC -.->|Entra Connect| ENTRA
     EX -.->|Exchange Hybrid| EXO
-    FS -.->|Migration| SPO
     style M365 stroke-dasharray: 5 5
 ```
 
