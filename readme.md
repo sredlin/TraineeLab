@@ -100,13 +100,12 @@ flowchart LR
     TRAINEE((Trainee)) -->|Remote Desktop| CL
     INTERNET((Internet)) -->|Outlook on the web, email| EX
     FS -.->|Migration| SPO
-    CL -.->|Office activation| ENTRA
     DC -.->|Entra Connect| ENTRA
     EX -.->|Exchange Hybrid| EXO
     style M365 stroke-dasharray: 5 5
 ```
 
-The deployment builds everything inside the lab. The Microsoft 365 demo tenant (dashed) is not part of it and is set up manually; the dashed connections are activated or set up as exercises.
+The deployment builds everything inside the lab. The Microsoft 365 demo tenant (dashed) is not part of it and is set up manually; the dashed connections are set up as exercises.
 
 - **The company:** a fictional advertising agency; in English Contoso Ltd with offices in London and Manchester, in German Mustermann Medien GmbH in Berlin and Hamburg.
 - **The staff:** 28 users with mailbox, department, manager and phone numbers, including the 16 well-known Microsoft demo personas such as Adele Vance or Megan Bowen.
@@ -234,13 +233,12 @@ flowchart LR
     AZUBI((Azubi)) -->|Remote Desktop| CL
     INTERNET((Internet)) -->|Outlook im Web, E-Mail| EX
     FS -.->|Migration| SPO
-    CL -.->|Office-Aktivierung| ENTRA
     DC -.->|Entra Connect| ENTRA
     EX -.->|Exchange Hybrid| EXO
     style M365 stroke-dasharray: 5 5
 ```
 
-Das Deployment baut alles im Lab auf. Der Microsoft-365-Demo-Tenant (gestrichelt) gehört nicht dazu und wird manuell eingerichtet; die gestrichelten Verbindungen entstehen bei der Aktivierung oder als Übung.
+Das Deployment baut alles im Lab auf. Der Microsoft-365-Demo-Tenant (gestrichelt) gehört nicht dazu und wird manuell eingerichtet; die gestrichelten Verbindungen entstehen als Übung.
 
 - **Die Firma:** eine fiktive Werbeagentur, auf Deutsch die Mustermann Medien GmbH mit Standorten in Berlin und Hamburg, auf Englisch die Contoso Ltd in London und Manchester.
 - **Die Mitarbeitenden:** 28 Benutzer mit Postfach, Abteilung, Vorgesetzten und Telefonnummern, darunter die 16 bekannten Microsoft-Demo-Personas wie Adele Vance oder Megan Bowen.
