@@ -36,11 +36,11 @@ Prerequisites, parameters and first steps after the deployment. Placeholders: `<
    | `officeProductId` | no | `O365ProPlusRetail` (default, Apps for enterprise) or `O365BusinessRetail` (Apps for business) |
    | `clientImageSku` / `clientVmSize` | no | Windows 11 image (default `win11-25h2-ent`) and VM size of the client |
    | `clientRemoteDesktopManager` | no | Remote Desktop Manager with connections to all lab servers on the client, default `true`. Caution: every user on the client can then read the password of `azadmin` |
+   | `clientWingetPackages` | no | Tools via winget on the client, machine-wide in the latest version and updated daily. Default `Microsoft.VisualStudioCode`, `[]` = none |
    | `deployFileServer` | no | Deploy the file server `<K>-FS01`, default `true` |
    | `fileServerDataPercent` | no | Amount of sample documents as a percentage of the data disk (256 GB), default `90` (around 230 GB), `0` = none |
    | `fileServerVmSize` / `fileServerFinalVmSize` | no | Size during generation (default `Standard_D4s_v5`) and permanent size afterwards (default `Standard_B2s_v2`, empty = keep). On a redeployment pass `fileServerVmSize = Standard_B2s_v2`, otherwise the file server is briefly scaled up again |
    | `enableLetsEncrypt` / `letsEncryptStaging` | no | Certificate on/off, test CA for test deployments |
-   | `wingetPackages` | no | Additional tools via winget, default `Microsoft.VisualStudioCode` |
 
 3. The deployment takes **about 1–1.5 hours**, slightly longer with a second DC: Exchange only starts once DC02 is fully ready (SYSVOL, DNS, replication in both directions). In testing it took around 65 minutes, 31 of them for Exchange setup alone. The Exchange server then restarts and installs all updates in the background, including the Exchange security update via Microsoft Update. The DCs start their update run only at the very end of the deployment, once Exchange, client and file server are finished; this way no DC restart hits a VM that is just joining. Allow another 30–60 minutes. The file server's sample data is generated for at most 60 minutes during the deployment, the rest in the background: with `Standard_D4s_v5`, 60 GB were done after just over 30 minutes in testing; for around 230 GB expect about two hours. Afterwards the file server shrinks itself to `Standard_B2s_v2` and restarts once to do so.
 

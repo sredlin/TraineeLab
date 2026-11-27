@@ -49,9 +49,6 @@ param enableLetsEncrypt bool
 @description('Let\'s-Encrypt-Staging (Test-CA) statt Produktion verwenden.')
 param letsEncryptStaging bool
 
-@description('Optionale winget-Pakete.')
-param wingetPackages array
-
 @description('Sprache der Lab-Daten (de, en): Gebietsschema der VM.')
 param labLanguage string
 
@@ -191,7 +188,7 @@ resource initializeExchangeServer 'Microsoft.Compute/virtualMachines/runCommands
     source: {
       script: loadTextContent('../../scripts/Initialize-ExchangeServer.ps1')
     }
-    // Leere Werte wuerden als Parameter ohne Argument uebergeben, daher WingetPackages und IsoSha256 nur bei Bedarf.
+    // Ein leerer Wert wuerde als Parameter ohne Argument uebergeben, daher IsoSha256 nur bei Bedarf.
     parameters: concat([
       {
         name: 'PublicDomainName'
@@ -216,11 +213,6 @@ resource initializeExchangeServer 'Microsoft.Compute/virtualMachines/runCommands
       {
         name: 'LabLanguage'
         value: labLanguage
-      }
-    ], empty(wingetPackages) ? [] : [
-      {
-        name: 'WingetPackages'
-        value: join(wingetPackages, ',')
       }
     ], empty(exchangeIsoSha256) ? [] : [
       {

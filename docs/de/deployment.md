@@ -36,11 +36,11 @@ Voraussetzungen, Parameter und erste Schritte nach dem Deployment. Platzhalter: 
    | `officeProductId` | nein | `O365ProPlusRetail` (Standard, Apps for enterprise) oder `O365BusinessRetail` (Apps for business) |
    | `clientImageSku` / `clientVmSize` | nein | Windows-11-Image (Standard `win11-25h2-ent`) und VM-Größe des Clients |
    | `clientRemoteDesktopManager` | nein | Remote Desktop Manager mit Verbindungen zu allen Lab-Servern auf dem Client, Standard `true`. Achtung: Jeder Benutzer am Client kann dann das Passwort von `azadmin` auslesen |
+   | `clientWingetPackages` | nein | Tools per winget auf dem Client, maschinenweit in der neuesten Version und täglich aktualisiert. Standard `Microsoft.VisualStudioCode`, `[]` = keine |
    | `deployFileServer` | nein | Fileserver `<K>-FS01` bereitstellen, Standard `true` |
    | `fileServerDataPercent` | nein | Umfang der Beispieldokumente in Prozent der Datendisk (256 GB), Standard `90` (rund 230 GB), `0` = keine |
    | `fileServerVmSize` / `fileServerFinalVmSize` | nein | Größe während der Erzeugung (Standard `Standard_D4s_v5`) und Dauergröße danach (Standard `Standard_B2s_v2`, leer = bleibt). Bei einem erneuten Deployment `fileServerVmSize = Standard_B2s_v2` übergeben, sonst wird der Fileserver kurz wieder vergrößert |
    | `enableLetsEncrypt` / `letsEncryptStaging` | nein | Zertifikat an/aus, Test-CA für Testdeployments |
-   | `wingetPackages` | nein | zusätzliche Tools per winget, Standard `Microsoft.VisualStudioCode` |
 
 3. Das Deployment dauert **ca. 1–1,5 Stunden**, mit zweitem DC etwas länger: Exchange beginnt erst, wenn DC02 vollständig bereit ist (SYSVOL, DNS, Replikation in beide Richtungen). Im Test waren es rund 65 Minuten, davon allein 31 Minuten Exchange-Setup. Danach startet der Exchange-Server neu und installiert im Hintergrund alle Updates, inklusive Exchange-Sicherheitsupdate über Microsoft Update. Die DCs starten ihren Update-Lauf erst ganz am Ende des Deployments, wenn Exchange, Client und Fileserver fertig sind; so trifft kein DC-Neustart eine VM, die gerade beitritt. Rechne mit weiteren 30–60 Minuten. Die Beispieldaten des Fileservers entstehen höchstens 60 Minuten lang im Deployment, der Rest im Hintergrund: Mit `Standard_D4s_v5` waren 60 GB im Test nach gut 30 Minuten fertig, für rund 230 GB sind etwa zwei Stunden zu erwarten. Danach verkleinert sich der Fileserver selbst auf `Standard_B2s_v2` und startet dafür einmal neu.
 

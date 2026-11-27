@@ -128,6 +128,16 @@ Restart-Computer
 
 4. Fragt RDM beim Verbinden nach einem Passwort, stimmt das gespeicherte nicht mehr, zum Beispiel weil `azadmin` ein neues Passwort hat. Siehe [Betrieb](operations.md#server-vom-client-aus-erreichen-remote-desktop-manager).
 
+## VS Code oder andere winget-Pakete fehlen auf dem Client
+
+1. Installation beim Deployment: `C:\ExchangeLab\Logs\Initialize-LabClient-Prepare.log` enthält je Paket eine Zeile `winget: <ID> -> <Status>`. Das Ergebnis steht zusätzlich in `C:\ExchangeLab\winget-result.txt`, bei einem Fehler gibt es `C:\ExchangeLab\winget-failed.txt` mit der Ursache.
+2. Spätere Läufe des Tasks `TraineeLab-WinGetUpdate`: `C:\ExchangeLab\Logs\Update-WinGetTool.log`.
+3. Nachholen (PowerShell als Administrator), danach das Log prüfen:
+
+   ```powershell
+   Start-ScheduledTask -TaskName TraineeLab-WinGetUpdate
+   ```
+
 ## Beispieldaten fehlen oder wachsen nicht mehr
 
 Stand auf `<K>-FS01` (PowerShell als Administrator):

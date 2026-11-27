@@ -172,6 +172,8 @@ Describe 'Argumente geplanter Tasks und Hilfsprozesse' {
         @{ Source = 'Initialize-FileServer.ps1'; Function = 'Register-ResizeTask'; Target = 'Resize-FileServer.ps1' }
         @{ Source = 'Initialize-FileServer.ps1'; Function = 'Register-LabUpdateTask'; Target = 'Update-LabServer.ps1' }
         @{ Source = 'Initialize-ExchangeServer.ps1'; Function = 'Invoke-WinGetInstall'; Target = 'Initialize-ExchangeServer.ps1#WinGetHelperScript' }
+        @{ Source = 'Initialize-LabClient.ps1'; Function = 'Invoke-WinGetTool'; Target = 'Initialize-LabClient.ps1#WinGetHelperScript' }
+        @{ Source = 'Initialize-LabClient.ps1'; Function = 'Register-WinGetUpdateTask'; Target = 'Initialize-LabClient.ps1#WinGetHelperScript' }
         @{ Source = 'Start-LabUpdate.ps1'; Function = ''; Target = 'Update-LabServer.ps1' }
         @{ Source = 'New-SampleDocuments.ps1'; Function = 'Invoke-MainPhase'; Target = 'New-SampleDocuments.ps1' }
         @{ Source = 'New-SampleDocuments.ps1'; Function = 'Register-ContinuationTask'; Target = 'New-SampleDocuments.ps1' }

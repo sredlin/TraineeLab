@@ -33,6 +33,20 @@ if ($Lab.RemoteDesktopManager) {
     }
 }
 
+if ($Lab.WingetPackages) {
+    Invoke-Check 'cl.winget' {
+        $failed = Join-Path $LabRoot 'winget-failed.txt'
+        if (Test-Path -Path $failed) { return 'FAIL', "winget: $(Get-Content -Path $failed -Raw)" }
+        $resultFile = Join-Path $LabRoot 'winget-result.txt'
+        if (-not (Test-Path -Path $resultFile)) { return 'FAIL', 'winget-result.txt fehlt' }
+        $ok = @(Get-Content -Path $resultFile | Where-Object { $_ -like '*|Ok' } | ForEach-Object { $_.Split('|')[0] })
+        $missing = @($Lab.WingetPackages.Split(',') | Where-Object { $ok -notcontains $_ })
+        if ($missing) { return 'FAIL', "nicht installiert: $($missing -join ', ')" }
+        if (-not (Get-ScheduledTask -TaskName 'TraineeLab-WinGetUpdate' -ErrorAction SilentlyContinue)) { return 'FAIL', 'Task TraineeLab-WinGetUpdate fehlt' }
+        'OK', "$($ok -join ', '), Task TraineeLab-WinGetUpdate"
+    }
+}
+
 Invoke-Check 'cl.rdp' {
     $members = @(Get-LocalGroupMember -SID 'S-1-5-32-555' | ForEach-Object { $_.SID.Value })
     if (-not ($members | Where-Object { $_ -like 'S-1-5-21-*-513' })) { return 'FAIL', 'Domaenen-Benutzer fehlen in Remotedesktopbenutzer' }

@@ -66,6 +66,18 @@ So ist es aufgebaut:
 
 **RDM-Version aktualisieren (Repository):** In `scripts/Initialize-LabClient.ps1` stehen die Pins `$RdmInstaller` (URL und SHA256 aus [productinfo.json](https://devolutions.net/productinfo.json), Abschnitt `RDMWindows.Current`, x64-MSI), `$RdmModule` (Version aus der PowerShell Gallery) und `$DotNetDesktopRuntime`. Die Updatesuche in RDM ist per Richtlinie aus, weil Lab-Benutzer keine Adminrechte haben. Auf einem laufenden Client installiert ein Administrator ein neues MSI von Hand.
 
+## Tools auf dem Client (winget)
+
+Auf `<K>-CL01` installiert das Deployment die winget-Pakete aus `clientWingetPackages` maschinenweit in der neuesten Version, Standard ist Visual Studio Code.
+
+- Der Task `TraineeLab-WinGetUpdate` (SYSTEM) aktualisiert sie beim Start der VM und täglich um 12:00 Uhr. Läufe, die der Auto-Shutdown verpasst, holt er nach. Log: `C:\ExchangeLab\Logs\Update-WinGetTool.log`.
+- VS Code zeigt keine Update-Meldung (Richtlinie `UpdateMode = none`), weil Lab-Benutzer ohne Adminrechte das systemweite VS Code nicht aktualisieren können.
+- Ist ein Programm beim Update geöffnet, kann das Update scheitern. Der nächste Lauf versucht es erneut.
+- Sofort aktualisieren (PowerShell als Administrator): `Start-ScheduledTask -TaskName TraineeLab-WinGetUpdate`.
+- Paketliste auf einem laufenden Client ändern: `C:\ProgramData\TraineeLab\WinGet\Packages.txt`, eine winget-ID pro Zeile (nur Administratoren). Der nächste Lauf installiert neue Einträge.
+
+Remote Desktop Manager bleibt bewusst bei der festen Version (siehe oben): Das Modul `Devolutions.PowerShell`, das die Verbindungen anlegt, muss zur RDM-Version passen.
+
 ## Lab prüfen
 
 Ein Werkzeug prüft das ganze Lab von außen (Azure CLI, angemeldet mit Run-Command-Rechten auf der Ressourcengruppe):
