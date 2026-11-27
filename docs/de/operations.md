@@ -12,7 +12,7 @@ Wichtig sind `rdpHost` (Exchange-Server), `clientRdpHost` (Windows-11-Client) un
 
 ## Starten und Stoppen
 
-Die Exchange-VM, der optionale zweite DC, der Client und der Fileserver fahren täglich zur Abschaltzeit (`autoShutdownTime`, Standard 19:00) herunter. **Der erste DC (`vm-<k>-dc01`) läuft immer durch und wird nie im Portal gestoppt.** Warum, steht im [readme](../readme.md#kosten-und-abschalten).
+Die Exchange-VM, der optionale zweite DC, der Client und der Fileserver fahren täglich zur Abschaltzeit (`autoShutdownTime`, Standard 19:00) herunter. **Der erste DC (`vm-<k>-dc01`) läuft immer durch und wird nie im Portal gestoppt.** Warum, steht in der [Architektur](architecture.md#kosten-und-abschalten).
 
 Morgens starten:
 
@@ -102,7 +102,7 @@ az vm run-command invoke -g rg-exlab-<k> -n vm-<k>-ex01 --command-id RunPowerShe
   --scripts "Get-Content C:\ExchangeLab\Logs\Update-LabServer.log -Tail 20"
 ```
 
-Alle Logs liegen auf jeder VM unter `C:\ExchangeLab\Logs`. Welcher Schritt wo protokolliert wird, steht im [readme](../readme.md#ablauf-und-logs). Die Run Commands des Fileservers heißen `Initialize-FileServer`, `New-SampleDocuments`, `Wait-DomainController` und `Complete-FileServer`:
+Alle Logs liegen auf jeder VM unter `C:\ExchangeLab\Logs`. Welcher Schritt wo protokolliert wird, steht in der [Architektur](architecture.md#ablauf-und-logs). Die Run Commands des Fileservers heißen `Initialize-FileServer`, `New-SampleDocuments`, `Wait-DomainController` und `Complete-FileServer`:
 
 ```bash
 az vm run-command list -g rg-exlab-<k> --vm-name vm-<k>-fs01 --query "[].{name:name, state:provisioningState}" -o table
