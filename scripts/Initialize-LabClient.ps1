@@ -6,8 +6,8 @@
     Phase 'Prepare' (Azure Managed Run Command als LocalSystem, vor dem Domaenenbeitritt, parallel zum DC-Aufbau):
       - aktive Nutzungszeit 06-23 Uhr per Richtlinie: Windows Update startet waehrend des Aufbaus und
         tagsueber nicht neu, Neustarts fallen auf das abendliche Herunterfahren
-      - BlockAADWorkplaceJoin: Die Office-Aktivierung mit dem Firmenkonto registriert den Lab-Client nicht
-        im Entra ID der Firma
+      - BlockAADWorkplaceJoin: Die Office-Aktivierung mit dem Konto aus dem Microsoft-365-Demo-Tenant
+        registriert den Lab-Client nicht in Entra ID
       - Sprache nach LabLanguage: de = Sprachpaket de-DE als Anzeigesprache, en = Oberflaeche en-US mit
         Formaten en-GB; Zeitzone, Gebietsschema, deutsche Tastatur
       - Microsoft 365 Apps (de-de bzw. en-gb, 64 Bit, Monthly Enterprise Channel) per Office Deployment Tool,
@@ -638,8 +638,8 @@ function Publish-ClientDesktop {
             FileServer = '\\{0}, Basisordner H: = \\{0}\Home$\<Benutzer>'
             Body = @(
                 'OFFICE AKTIVIEREN'
-                '  Beim ersten Start von Word oder Outlook mit dem eigenen Firmenkonto anmelden (Lizenz der Firma).'
-                '  Eine Registrierung des Lab-Clients in der Firma ist per Richtlinie blockiert.'
+                '  Beim ersten Start von Word oder Outlook mit dem Konto aus dem Microsoft-365-Demo-Tenant anmelden.'
+                '  Eine Registrierung des Lab-Clients in Entra ID ist per Richtlinie blockiert.'
                 '  Meldet Office eine fehlende Lizenz, das Lab mit officeProductId = O365BusinessRetail neu bereitstellen.'
                 ''
                 'OUTLOOK'
@@ -665,8 +665,8 @@ function Publish-ClientDesktop {
             FileServer = '\\{0}, home folder H: = \\{0}\Home$\<user>'
             Body = @(
                 'ACTIVATE OFFICE'
-                '  On the first start of Word or Outlook, sign in with your own work account (company licence).'
-                '  Registering the lab client with your company is blocked by policy.'
+                '  On the first start of Word or Outlook, sign in with your account from the Microsoft 365 demo tenant.'
+                '  Registering the lab client in Entra ID is blocked by policy.'
                 '  If Office reports a missing licence, redeploy the lab with officeProductId = O365BusinessRetail.'
                 ''
                 'OUTLOOK'

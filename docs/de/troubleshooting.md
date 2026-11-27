@@ -1,6 +1,8 @@
 # Troubleshooting
 
-Platzhalter wie in [betrieb.md](betrieb.md). „EMS“ = Exchange Management Shell auf `<K>-EX01`, als Administrator gestartet.
+[English](../en/troubleshooting.md) · **Deutsch**
+
+Platzhalter wie in [Betrieb](operations.md). „EMS“ = Exchange Management Shell auf `<K>-EX01`, als Administrator gestartet.
 
 ## Deployment ist fehlgeschlagen
 
@@ -33,7 +35,7 @@ Typische Ursachen:
   Resolve-DnsName -Name <k>.<zone> -Type NS -Server 1.1.1.1
   ```
 
-- **Zertifikat abgelaufen:** `C:\ExchangeLab\Logs\Invoke-LabMaintenance.log` lesen. Wartung von Hand anstoßen: `Start-ScheduledTask -TaskName ExchangeLab-Maintenance`. Hilft das nicht, die manuelle Erneuerung aus dem [readme](../readme.md#zertifikat) nutzen.
+- **Zertifikat abgelaufen:** `C:\ExchangeLab\Logs\Invoke-LabMaintenance.log` lesen. Wartung von Hand anstoßen: `Start-ScheduledTask -TaskName ExchangeLab-Maintenance`. Hilft das nicht, die manuelle Erneuerung aus der [Architektur](architecture.md#zertifikat) nutzen.
 
 ## Exchange-Dienste laufen nach dem Start nicht
 
@@ -87,7 +89,7 @@ Get-Message -Queue "<K>-EX01\<Queue-Identität>" | Format-List FromAddress, Reci
 
 ## Office meldet „Nicht lizenziertes Produkt“
 
-- Mit dem **Firmenkonto** angemeldet, nicht mit dem Lab-Konto? Das Lab-Konto hat keine Microsoft-365-Lizenz.
+- Mit dem Konto aus dem **Microsoft-365-Demo-Tenant** angemeldet, nicht mit dem Lab-Konto? Das Lab-Konto hat keine Microsoft-365-Lizenz.
 - Lizenzstatus anzeigen (PowerShell als Administrator):
 
   ```powershell
@@ -124,7 +126,7 @@ Restart-Computer
    pwsh -NoProfile -ExecutionPolicy Bypass -File C:\ProgramData\TraineeLab\RemoteDesktopManager\Register-LabWorkspace.ps1
    ```
 
-4. Fragt RDM beim Verbinden nach einem Passwort, stimmt das gespeicherte nicht mehr, zum Beispiel weil `azadmin` ein neues Passwort hat. Siehe [Betrieb](betrieb.md#server-vom-client-aus-erreichen-remote-desktop-manager).
+4. Fragt RDM beim Verbinden nach einem Passwort, stimmt das gespeicherte nicht mehr, zum Beispiel weil `azadmin` ein neues Passwort hat. Siehe [Betrieb](operations.md#server-vom-client-aus-erreichen-remote-desktop-manager).
 
 ## Beispieldaten fehlen oder wachsen nicht mehr
 

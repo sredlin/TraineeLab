@@ -1,233 +1,302 @@
 # Trainee Lab (Azure)
 
 [![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2Fsredlin%2FTraineeLab%2Fmaster%2Fazuredeploy.json)
-[![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-unterst%C3%BCtzen-FFDD00?logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/sredlin)
+[![GitHub Sponsors](https://img.shields.io/badge/GitHub%20Sponsors-sponsor-EA4AAA?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/sredlin)
+[![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-support-FFDD00?logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/sredlin)
 
-Lab-Umgebung für die Ausbildung: ein **Domain Controller**, ein **Exchange Server SE** und ein **Fileserver** auf getrennten VMs mit Windows Server 2025, dazu ein **Windows-11-Client** mit Microsoft 365 Apps. Nach dem Deployment ist alles fertig eingerichtet: Split DNS, Let's-Encrypt-Zertifikat, URLs, Accepted Domain, Postfächer für 28 Lab-Benutzer (darunter die 16 Microsoft-Demo-Personas wie Adele Vance oder Megan Bowen) und Beispielempfänger (Verteiler, freigegebene Postfächer, Räume, Kontakte). Der Fileserver bringt Freigaben mit AGDLP-Berechtigungen und Word-, Excel-, PowerPoint- und PDF-Dateien einer fiktiven Werbeagentur bis 90 % seiner Datendisk (rund 230 GB) mit, samt absichtlicher Altlasten. Das Lab gibt es auf Deutsch (Mustermann Medien GmbH, Berlin und Hamburg) oder Englisch (Contoso Ltd, London und Manchester), Parameter `labLanguage`. Alles zusammen ist Ausgangspunkt für Übungen bis hin zur Migration nach SharePoint Online.
+*A complete Microsoft company environment for learning and practice, deployed to Azure in one click.*
 
-## Architektur
+Eine komplette Microsoft-Firmenumgebung zum Lernen und Üben, per Klick in Azure.
+
+**[English](#english) · [Deutsch](#deutsch)**
+
+## Contents / Inhalt
+
+- [English](#english)
+  - [What is it for?](#what-is-it-for)
+  - [Who is it for?](#who-is-it-for)
+  - [What everyone gets](#what-everyone-gets)
+  - [What is inside?](#what-is-inside)
+  - [What can you practise?](#what-can-you-practise)
+  - [Quick start](#quick-start)
+  - [Costs](#costs)
+  - [Documentation](#documentation)
+  - [Support the project](#support-the-project)
+  - [Licence](#licence)
+- [Deutsch](#deutsch)
+  - [Wozu das Ganze?](#wozu-das-ganze)
+  - [Für wen?](#für-wen)
+  - [Was alle davon haben](#was-alle-davon-haben)
+  - [Was steckt drin?](#was-steckt-drin)
+  - [Was lässt sich üben?](#was-lässt-sich-üben)
+  - [Schnellstart](#schnellstart)
+  - [Kosten](#kosten)
+  - [Dokumentation](#dokumentation)
+  - [Unterstützen](#unterstützen)
+  - [Lizenz](#lizenz)
+
+## English
+
+Trainee Lab builds the IT of a fictional company in Azure, fully set up: Active Directory, Exchange Server, a file server and a Windows 11 workstation with Microsoft 365 Apps. Staff, mailboxes, department folders and twelve years of company documents are already in place. Here you can practise, experiment, break things and start over, without any production system noticing.
+
+### What is it for?
+
+Anyone learning IT infrastructure needs an environment where mistakes are allowed. Real systems are off limits for that. Building a lab by hand takes trainers a lot of time and ends up slightly different for every trainee. On top of that, such a lab is only set up technically: it has no history and has never been lived in. There are no colleagues, no folders and permissions that have grown over the years, no old files.
+
+Trainee Lab solves this:
+
+- **The same environment, every time.** Every deployment delivers the same starting point, with no manual work. All trainees start equal, results are comparable.
+- **Breaking things is allowed.** If the lab is misconfigured, delete it and deploy it again. Everything is back to day one.
+- **Lived-in, not empty.** Instead of an empty domain there is a company with twelve years of history: sites, staff, distribution groups, shares, documents and the typical legacy issues of environments that have grown over time.
+- **One lab per trainee**, independent of everyone else.
+
+### Who is it for?
+
+#### Trainees
+
+- A company you can get your hands on: colleagues with mailboxes, departments, distribution groups, meeting rooms, shares and plenty of documents.
+- Start like in the office: sign in to your own Windows 11 workstation with Outlook, Word and co., and continue from there to all servers.
+- Experiment without fear: whatever breaks is back after a rebuild.
+- Real tasks rather than dry runs: grown permissions, old files and data protection issues are waiting to be cleaned up.
+
+#### Microsoft enthusiasts
+
+- Current on-premises stack: Active Directory, Exchange Server SE, Windows Server 2025, Windows 11 with Microsoft 365 Apps.
+- Own public mail domain with a real certificate from Let's Encrypt, just like a real company.
+- Entirely as code in the repository: see how such an environment can be built automatically.
+- Starting point for the journey to the cloud: Entra Connect, Exchange Hybrid, SharePoint Online.
+
+### What everyone gets
+
+- **Safely isolated:** Each lab runs in its own Azure resource group, with no connection to the production environment or the company tenant, and can only be reached from approved IP addresses.
+- **Few permissions needed:** No Entra roles in the production tenant, only permissions on your own resource group and the shared DNS zone. Trainees hold Entra admin roles only in the Microsoft 365 demo tenant.
+- **Builds and checks itself:** The lab is set up without intervention and can be checked automatically for completeness at the end.
+- **Costs under control:** The servers shut down by themselves in the evening, and the file server shrinks after setup.
+- **Current and supported:** Exchange Server SE, Windows Server 2025, Windows 11.
+- **English or German:** company, staff, documents and workstation in English (Contoso Ltd) or German (Mustermann Medien GmbH).
+- **Licences:** Azure is billed pay-as-you-go, including the Windows Server licences. Windows 11 and Microsoft 365 Apps are covered by the Microsoft 365 E5 licence in the demo tenant (a CDX tenant or, alternatively, a Microsoft 365 E5 trial), and Exchange runs as a 180-day trial without a product key. Details in [Deployment](docs/en/deployment.md#prerequisites).
+
+### What is inside?
 
 ```mermaid
 flowchart LR
-    Internet((Internet)) -->|"443/80 (Web-Quelle), 25 (SMTP-Quelle)\n3389 (RDP-Quelle)"| PIP[pip-&lt;k&gt;-ex01]
-    Internet -->|"3389 (RDP-Quelle)"| PIPCL[pip-&lt;k&gt;-cl01]
-    subgraph RG[Ressourcengruppe]
-        subgraph VNET[vnet-exlab-&lt;k&gt; 10.0.0.0/16]
-            subgraph SNET[snet-servers 10.0.1.0/24 + NSG]
-                DC[vm-&lt;k&gt;-dc01<br/>10.0.1.4<br/>AD DS + DNS]
-                DC2[vm-&lt;k&gt;-dc02 optional<br/>10.0.1.6<br/>AD DS + DNS]
-                EX[vm-&lt;k&gt;-ex01<br/>10.0.1.5<br/>Exchange SE]
-                CL[vm-&lt;k&gt;-cl01<br/>10.0.1.10<br/>Windows 11 + M365 Apps]
-                FS[vm-&lt;k&gt;-fs01<br/>10.0.1.7<br/>Dateiserver + FSRM]
-            end
-        end
-        ZONE[DNS-Zone &lt;k&gt;.&lt;zone&gt;]
+    subgraph LAB[Your own lab in Azure]
+        CL[Windows 11 workstation<br/>domain-joined<br/>Microsoft 365 Apps]
+        FS[File server<br/>Shares, documents]
+        DC[Domain controller<br/>Active Directory, DNS]
+        EX[Exchange Server SE<br/>Email, calendar]
+        CL --> FS
+        CL --> DC
+        CL --> EX
+        FS --> DC
+        EX --> DC
     end
-    PIP --- EX
-    PIPCL --- CL
-    EX -->|LDAP/Kerberos/DNS| DC
-    CL -->|Outlook MAPI/HTTP, Autodiscover| EX
-    CL -->|SMB: Freigaben, H:| FS
-    FS -->|LDAP/Kerberos/DNS| DC
-    DC <-->|AD-Replikation| DC2
-    PARENT[&lt;zone&gt;<br/>rg-publicdns] -->|NS-Delegation| ZONE
+    subgraph M365["Microsoft 365 demo tenant (set up manually)"]
+        SPO[SharePoint Online]
+        ENTRA[Entra ID]
+        MORE["Intune, Purview, ..."]
+        EXO[Exchange Online]
+    end
+    TRAINEE((Trainee)) -->|Remote Desktop| CL
+    INTERNET((Internet)) -->|Outlook on the web, email| EX
+    FS -.->|Migration| SPO
+    DC -.->|Entra Connect| ENTRA
+    EX -.->|Exchange Hybrid| EXO
+    style M365 stroke-dasharray: 5 5
 ```
 
-`<k>` = Kürzel des Azubis (3 Buchstaben), `<zone>` = übergeordnete DNS-Zone (Parameter `parentDnsZoneName`, Name vom Ausbilder).
+The deployment builds everything inside the lab. The Microsoft 365 demo tenant (dashed) is not part of it and is set up manually; the dashed connections are set up as exercises.
 
-| Ressource | Details |
-| --- | --- |
-| Domain Controller | `Standard_B2ms`, Windows Server 2025, Forest `<k>.intern` (Functional Level 2016), NTDS/SYSVOL auf eigener Datendisk (Host-Cache None), keine Public IP |
-| Zweiter DC (optional) | `deploySecondDc = true`: `<K>-DC02` mit gleicher Ausstattung, wird parallel zum ersten DC aufgebaut und heraufgestuft, DNS des VNets zeigt dann auf beide DCs |
-| Exchange-Server | `Standard_E4s_v5` (32 GB RAM), Windows Server 2025, Exchange Server SE (Mailbox), OS- und Datendisk **Premium SSD**, DB und Logs auf ReFS-Datendisk |
-| Windows-11-Client | `deployClient = true` (Standard): `<K>-CL01`, `Standard_B2ms`, Windows 11 Enterprise mit deutscher Oberfläche (`labLanguage = en`: englische Oberfläche mit britischen Formaten, Tastatur immer Deutsch), Microsoft 365 Apps (de-de bzw. en-gb, ohne Access/Publisher/Teams), Domänenmitglied in `OU=Computers` der Zentrale, eigene Public IP für RDP, aktualisiert sich selbst (Neustarts nur außerhalb 06–23 Uhr). Einstieg ins Lab: Devolutions Remote Desktop Manager Free mit fertigen RDP-Verbindungen zu allen Lab-Servern (Domain-Admin, für jeden Benutzer am Client) |
-| Fileserver | `deployFileServer = true` (Standard): `<K>-FS01`, Windows Server 2025, keine Public IP. Erzeugt die Beispieldaten mit `Standard_D4s_v5` und verkleinert sich danach selbst auf `Standard_B2s_v2` (bietet der Azure-Cluster diese Größe nicht an, auf `Standard_D2s_v5`). Datendisk `F:` mit 256 GB Standard SSD. Freigaben `Abteilungen`, `Projekte`, `Archiv`, `Scans` und `Home$` (englisch `Departments`, `Projects`, `Archive`, `Scans`, `Home$`) mit zugriffsbasierter Aufzählung und AGDLP-Gruppen, Basisordner `H:`, FSRM. Beispieldokumente bis 90 % der Datendisk (rund 230 GB) einer fiktiven Agentur (zwölf Jahre Projekte, Buchhaltung, Personal, Corporate Design, Logos für das Entra-Branding) mit fiktiven personenbezogenen Daten und absichtlichen Altlasten. Definiert in `scripts/data/<Sprache>/FileServer.psd1` und `scripts/data/<Sprache>/corpus` |
-| Netzwerk | ein VNet, ein Subnet, eine NSG (kein Allow-All, SMTP getrennt von HTTP/HTTPS), Standard-Public-IPs für Exchange und Client |
-| DNS | öffentliche Zone `<k>.<zone>` (mail, autodiscover, MX, SPF, DMARC `p=none`) mit Delegation in `<zone>`; intern Split DNS und Reverse-Zone `1.0.10.in-addr.arpa` auf dem DC |
-| AD | OU-Baum `LEARN-<k>` (Branch Berlin/Hamburg bzw. London/Manchester, Administration) und gleichnamige AD-Standorte mit Subnetzen, 28 Lab-Benutzer mit Postfach, Adresse `@<k>.<zone>`, Vorgesetzten, Firma, Land, Telefon, Mobil und Fax. Rufnummern nur fiktiv: Deutsch aus den Bereichen der Bundesnetzagentur für Medienproduktionen (030 23125, 040 66969, 0171 39200), Englisch aus den Ofcom-Drama-Nummern (020 7946 0, 0161 496 0, 07700 900). AD-Papierkorb aktiv |
-| Beispielempfänger | Verteiler `geschaeftsleitung`, `marketing-berlin`, `marketing-hamburg`, `vertrieb`, `alle`; freigegebene Postfächer `info`, `buchhaltung` (Vollzugriff mit Automapping, Senden als); Räume `raum-berlin`, `raum-hamburg`; zwei externe Kontakte mit Telefon und Fax. Englisch: `management`, `marketing-london`, `marketing-manchester`, `sales`, `all-staff`; `info`, `accounts`; `room-london`, `room-manchester`. Postfachsprache und Ordnernamen passend zur Lab-Sprache. Definiert in `scripts/data/<Sprache>/LabUsers.psd1` |
-| Verwaltung | Remote Desktop Manager auf dem Client als Einstieg zu allen Servern; DNS-Konsole und GPMC zusätzlich auf dem Exchange-Server; GPO `LAB - Outlook klassisch` (englisch `LAB - Classic Outlook`) an `LEARN-<k>` blendet das neue Outlook aus (unterstützt kein Exchange on Premises) |
+- **The company:** a fictional advertising agency; in English Contoso Ltd with offices in London and Manchester, in German Mustermann Medien GmbH in Berlin and Hamburg.
+- **The staff:** 28 users with mailbox, department, manager and phone numbers, including the 16 well-known Microsoft demo personas such as Adele Vance or Megan Bowen.
+- **The servers:**
+  - Domain controller with Active Directory and DNS, optionally a second one for resilience
+  - Exchange Server SE with mailboxes, distribution groups, shared mailboxes, meeting rooms and Outlook on the web
+  - File server with department, project, archive and scan shares plus personal home folders
+  - Domain-joined Windows 11 workstation with Microsoft 365 Apps, Outlook ready to use and Remote Desktop Manager to reach all servers
+- **The data:** around 230 GB of Word, Excel, PowerPoint and PDF files from twelve years of company history, from client projects through accounting and HR to corporate design.
+- **The legacy issues:** built in on purpose, as in any environment that has grown over time: copies and old versions, permissions for individual users instead of groups, job applications readable by everyone, permissions of an intern deleted long ago, a private folder no admin can access, and a scan share with full control for everyone.
 
-## Voraussetzungen
+### What can you practise?
 
-- **Rechte:** Owner auf der eigenen Ziel-Ressourcengruppe (für die Rollenzuweisungen der Managed Identities von Exchange-Server und Fileserver) und *DNS Zone Contributor* auf `rg-publicdns`. Eine Entra-/Global-Admin-Rolle ist **nicht** nötig. Ohne Owner: Parameter `enableLetsEncrypt = false` und `fileServerFinalVmSize` leer (der Fileserver verkleinert sich dann nicht selbst).
-- **Kürzel** darf noch nicht als Subdomain in `<zone>` existieren.
-- **Übergeordnete Zone:** Existiert `<zone>` in der Ressourcengruppe `parentDnsZoneResourceGroup`, bleibt sie unverändert, das Deployment ergänzt nur den NS-Eintrag `<k>`. Fehlt sie, wird sie angelegt. Die Ressourcengruppe selbst muss existieren. Eine neu angelegte Zone muss einmalig beim Registrar delegiert werden, sonst schlägt Let's Encrypt fehl.
-- **Kontingent:** 8 vCPU in der Region (4 × BS-Familie für DC und Client, 4 × ESv5-Familie), mit zweitem DC 10 vCPU (6 × BS-Familie). Ohne Client 2 vCPU weniger. Der Fileserver braucht während der Erzeugung der Beispieldaten zusätzlich 4 × DSv5-Familie, danach 2 × BSv2-Familie: insgesamt also 12 vCPU, mit zweitem DC 14. Reicht das Kontingent nicht, `fileServerVmSize = Standard_B2s_v2` setzen; die Beispieldaten entstehen dann über viele Stunden im Hintergrund.
-- **Windows-11-Lizenz (Client):** Windows 11 auf Azure braucht Multitenant Hosting Rights, laut Microsoft z. B. Windows Enterprise E3/E5 oder VDA pro Benutzer (Lizenzgrundlage u. a. auch M365 E3/E5/F3 und Business Premium), alternativ ein Dev/Test-Angebot der Subscription. Ohne passende Lizenz `deployClient = false` setzen.
-- **Office-Lizenz (Client):** Microsoft 365 Apps aktiviert der Azubi mit seinem Firmenkonto (eine von fünf Installationen). `officeProductId` muss zur Lizenz passen: `O365ProPlusRetail` für Apps for enterprise (M365 E3/E5), `O365BusinessRetail` für Apps for business (Business Standard/Premium).
-- **Remote Desktop Manager (Client):** Devolutions RDM Free ist laut Devolutions für eine Einzelperson lizenziert, auch beruflich. Der Lab-Client hat mehrere Benutzer und eine gemeinsame Verbindungsliste. Wer das nicht möchte, setzt `clientRemoteDesktopManager = false`.
+From your own data centre to the cloud, for example:
 
-## Bereitstellen
+- **Active Directory:** manage users, groups and OUs, Group Policy, sites, a second domain controller and resilience, restore deleted objects
+- **DNS and certificates:** internal and public name resolution, renew and bind certificates
+- **Exchange:** mailboxes, distribution groups, shared mailboxes and rooms, permissions, updates
+- **File server:** shares and permissions following AGDLP, find, assess and fix legacy issues, data protection
+- **Hybrid:** Entra Connect to synchronise with the Microsoft 365 demo tenant (not the company tenant), Exchange Hybrid and mailbox migration to Exchange Online
+- **Cloud migration:** move files from the file server to SharePoint Online
+- **Extensible:** further hybrid and Microsoft 365 topics such as Intune, Purview and much more
 
-1. **Deploy to Azure** klicken, Ressourcengruppe wählen (z. B. `rg-exlab-<k>`).
-2. Parameter ausfüllen:
+### Quick start
 
-   | Parameter | Pflicht | Bedeutung |
-   | --- | --- | --- |
-   | `trainee` | ja | Kürzel, 3 Buchstaben |
-   | `labLanguage` | nein | Sprache der Lab-Daten: `de` (Standard, Mustermann Medien GmbH, Berlin und Hamburg) oder `en` (Contoso Ltd, London und Manchester). Bestimmt Benutzer, Gruppen, Freigaben, Beispieldokumente, Gebietsschema der VMs und Postfachsprache |
-   | `adminPassword` | ja | Passwort für `azadmin` (lokal, Domain-Admin, DSRM) |
-   | `labUserPassword` | ja | Passwort der 28 Lab-Benutzer, bewusst ein anderes als `adminPassword` |
-   | `allowedRdpSourcePrefix` | ja | eigene öffentliche IP, z. B. `203.0.113.10/32` |
-   | `parentDnsZoneName` | ja | übergeordnete DNS-Zone `<zone>`, Name vom Ausbilder |
-   | `parentDnsZoneResourceGroup` | nein | Ressourcengruppe der übergeordneten Zone, Standard `rg-publicdns` |
-   | `exchangePublishedSourcePrefix` | nein | Quelle für 443/80, leer = wie RDP |
-   | `smtpSourcePrefix` | nein | Quelle für 25, leer = wie 443/80. Für eingehende Mails erst nach dem Update-Lauf auf `Internet` stellen |
-   | `autoShutdownTime` | nein | tägliches Herunterfahren von Exchange-VM, Client, Fileserver und zweitem DC (`HHmm`), Standard `1900`, leer = aus |
-   | `deploySecondDc` | nein | zweiten Domain Controller `<K>-DC02` bereitstellen, Standard `false` |
-   | `deployClient` | nein | Windows-11-Client `<K>-CL01` bereitstellen, Standard `true` |
-   | `officeProductId` | nein | `O365ProPlusRetail` (Standard, Apps for enterprise) oder `O365BusinessRetail` (Apps for business) |
-   | `clientImageSku` / `clientVmSize` | nein | Windows-11-Image (Standard `win11-25h2-ent`) und VM-Größe des Clients |
-   | `clientRemoteDesktopManager` | nein | Remote Desktop Manager mit Verbindungen zu allen Lab-Servern auf dem Client, Standard `true`. Achtung: Jeder Benutzer am Client kann dann das Passwort von `azadmin` auslesen |
-   | `deployFileServer` | nein | Fileserver `<K>-FS01` bereitstellen, Standard `true` |
-   | `fileServerDataPercent` | nein | Umfang der Beispieldokumente in Prozent der Datendisk (256 GB), Standard `90` (rund 230 GB), `0` = keine |
-   | `fileServerVmSize` / `fileServerFinalVmSize` | nein | Größe während der Erzeugung (Standard `Standard_D4s_v5`) und Dauergröße danach (Standard `Standard_B2s_v2`, leer = bleibt). Bei einem erneuten Deployment `fileServerVmSize = Standard_B2s_v2` übergeben, sonst wird der Fileserver kurz wieder vergrößert |
-   | `enableLetsEncrypt` / `letsEncryptStaging` | nein | Zertifikat an/aus, Test-CA für Testdeployments |
-   | `wingetPackages` | nein | zusätzliche Tools per winget, Standard `Microsoft.VisualStudioCode` |
+1. **Prepare:** an Azure subscription with permissions on your own resource group, initials and DNS zone from your trainer, your own public IP address and an account with a Microsoft 365 E5 licence in the demo tenant (CDX or Microsoft 365 E5 trial).
+2. **Deploy:** click *Deploy to Azure* at the top and fill in the form.
+3. **Wait:** the lab builds itself without intervention, including updates and sample data. This takes several hours, so it is best to start in the morning.
+4. **Get going:** sign in to the Windows 11 workstation via Remote Desktop; from there you can reach all servers.
 
-3. Das Deployment dauert **ca. 1–1,5 Stunden**, mit zweitem DC etwas länger: Exchange beginnt erst, wenn DC02 vollständig bereit ist (SYSVOL, DNS, Replikation in beide Richtungen). Im Test waren es rund 65 Minuten, davon allein 31 Minuten Exchange-Setup. Danach startet der Exchange-Server neu und installiert im Hintergrund alle Updates, inklusive Exchange-Sicherheitsupdate über Microsoft Update. Die DCs starten ihren Update-Lauf erst ganz am Ende des Deployments, wenn Exchange, Client und Fileserver fertig sind; so trifft kein DC-Neustart eine VM, die gerade beitritt. Rechne mit weiteren 30–60 Minuten. Die Beispieldaten des Fileservers entstehen höchstens 60 Minuten lang im Deployment, der Rest im Hintergrund: Mit `Standard_D4s_v5` waren 60 GB im Test nach gut 30 Minuten fertig, für rund 230 GB sind etwa zwei Stunden zu erwarten. Danach verkleinert sich der Fileserver selbst auf `Standard_B2s_v2` und startet dafür einmal neu.
+All prerequisites, settings and first steps: [Deployment](docs/en/deployment.md).
 
-   **Startzeit:** Mit der Standard-Abschaltzeit 19:00 das Deployment bis etwa **17:30** starten. Die Abschaltung unterbricht kein Deployment-Modul, aber laufende Hintergrundarbeiten (Updates, Beispieldaten). Diese setzen nach dem nächsten Start fort, fertig ist das Lab dann erst am nächsten Tag.
+### Costs
 
-4. **Prüfen:** `./tools/Test-LabDeployment.ps1 -ResourceGroup rg-exlab-<k> -Wait` prüft Deployment, DNS-Delegation, alle VMs und die Hintergrundarbeiten und wartet, bis diese fertig sind. Exit-Code 0 heißt: Lab vollständig und fehlerfrei. Details in [docs/betrieb.md](docs/betrieb.md#lab-prüfen).
+The lab runs in your own Azure subscription and incurs costs as long as it exists. The largest item is the Exchange server. To keep it affordable:
 
-### Ablauf und Logs
+- Exchange server, workstation and file server shut down by themselves every evening. Servers that are shut down only cost their storage.
+- The domain controller is small and deliberately keeps running so that Active Directory stays stable.
+- The file server only runs with more power during setup and shrinks itself afterwards.
+- When the lab is no longer needed, it is deleted completely.
 
-| Schritt | Wo | Log auf der VM |
+Budgets, early shutdown and removal: [Operations](docs/en/operations.md#keep-an-eye-on-costs).
+
+### Documentation
+
+| Document | For | Contents |
 | --- | --- | --- |
-| Forest anlegen, Neustart, Split DNS | DC | `C:\ExchangeLab\Logs\Install-DomainController-*.log` |
-| Warten auf DC01, Heraufstufung (optional) | DC02 | `C:\ExchangeLab\Logs\Wait-DomainController.log`, `Install-DomainController-*.log` |
-| Heraufstufung nach Neustart (Windows-Wartung hat einen Neustart vorgemerkt oder ein Versuch ist gescheitert, höchstens 3 Neustarts) | DC | `C:\ExchangeLab\Logs\Install-DomainController-Promote.log` |
-| Schranke: DC02 vollständig bereit, erst dann VNet-DNS und Exchange (optional) | DC01 | `C:\ExchangeLab\Logs\Wait-SecondDomainController.log` |
-| Voraussetzungen, ISO, Zertifikat (parallel) | Exchange | `C:\ExchangeLab\Logs\Initialize-ExchangeServer.log` |
-| Sprachpaket, Microsoft 365 Apps, Remote Desktop Manager (parallel) | Client | `C:\ExchangeLab\Logs\Initialize-LabClient-Prepare.log` |
-| Warten auf DC, Domänenbeitritt, RDP für Lab-Benutzer, Verbindungen im Remote Desktop Manager | Client | `C:\ExchangeLab\Logs\Wait-DomainController.log`, `Initialize-LabClient-Complete.log` |
-| Arbeitsbereich „Lab-Server“ einbinden (Active Setup, erste Anmeldung jedes Benutzers) | Client | `%LOCALAPPDATA%\TraineeLab\Register-LabWorkspace.log` |
-| Warten auf DC, Domänenbeitritt | Exchange | `C:\ExchangeLab\Logs\Wait-DomainController.log` |
-| Exchange-Setup und Konfiguration | Exchange | `C:\ExchangeLab\Logs\Install-ExchangeServer-*.log`, `C:\ExchangeSetupLogs\` |
-| Datendisk, Regionaleinstellungen, Ordnergerüst (parallel) | Fileserver | `C:\ExchangeLab\Logs\Initialize-FileServer-Prepare.log` |
-| Beispieldokumente (höchstens 60 Minuten, Rest per Task `TraineeLab-SampleDocuments`) | Fileserver | `C:\ExchangeLab\Logs\New-SampleDocuments*.log`, Stand in `C:\ExchangeLab\sample-documents.json` |
-| Warten auf DC, Domänenbeitritt, Rollen, Gruppen, Berechtigungen, Freigaben, Altlasten | Fileserver | `C:\ExchangeLab\Logs\Wait-DomainController.log`, `Initialize-FileServer-Complete.log` |
-| Verkleinerung nach Beispieldaten und Updates (Task `TraineeLab-FileServerResize`) | Fileserver | `C:\ExchangeLab\Logs\Resize-FileServer.log` |
-| Updates nach der Installation (DCs erst am Ende des Deployments, Run Command `Start-LabUpdate`) | alle Server | `C:\ExchangeLab\Logs\Update-LabServer.log`, auf den DCs auch `Start-LabUpdate.log` |
-| tägliche Wartung (Log-Bereinigung, Zertifikat) | Exchange | `C:\ExchangeLab\Logs\Invoke-LabMaintenance.log` |
+| [Deployment](docs/en/deployment.md) | anyone setting up a lab | prerequisites, permissions, licences, parameters, duration, first steps |
+| [Architecture](docs/en/architecture.md) | Microsoft enthusiasts, the technically curious | design, network, servers, sequence and logs, supportability, certificate |
+| [Operations](docs/en/operations.md) | trainees, trainers | start and stop, new IP address, check the lab, file server, costs, removal |
+| [Troubleshooting](docs/en/troubleshooting.md) | trainees, trainers | help when something does not work |
+| [Development](docs/en/development.md) | contributors | repository layout, build, tests, acceptance |
+| [Text corpus](scripts/data/README.md) (German) | contributors | rules for the sample documents |
 
-Status von außen: `az vm run-command show -g <rg> --vm-name vm-<k>-ex01 --name Install-ExchangeServer --instance-view`.
+### Support the project
 
-## Nach dem Deployment
+The lab is free and open source. If you would like to support its further development, you can do so via [GitHub Sponsors](https://github.com/sponsors/sredlin) or [Buy Me a Coffee](https://buymeacoffee.com/sredlin). Thank you!
 
-- **Einstieg über den Client:** RDP auf `clientRdpHost`, z. B. als `<K>\mmustermann` (englisch `<K>\fbloggs`). Von dort geht es per **Remote Desktop Manager** (Desktop oder Startmenü, Arbeitsbereich „Lab-Server“) ohne Passworteingabe als `<K>\azadmin` auf `<K>-DC01`, `<K>-EX01`, `<K>-FS01` und, falls bereitgestellt, `<K>-DC02`. Den Arbeitsbereich bindet Active Setup bei der ersten Anmeldung jedes Benutzers ein. **Sicherheitshinweis:** RDM verschlüsselt die gespeicherten Passwörter mit einem eingebauten Schlüssel, deshalb kann jeder Benutzer des Clients das Passwort von `azadmin` auslesen. Am Client ist die Trennung von `labUserPassword` und `adminPassword` damit aufgehoben. Das ist eine bewusste Entscheidung für den Lab-Komfort; abschalten mit `clientRemoteDesktopManager = false`.
-- **RDP direkt:** Der Exchange-Server ist auch direkt per Public IP erreichbar (Ausgabe `rdpHost`, als `<K>\azadmin`). DNS-Konsole, GPMC und AD-Verwaltung sind dort installiert.
-- **Client:** Beim ersten Start von Word oder Outlook mit dem eigenen Firmenkonto anmelden, damit sich Office aktiviert. Die Registrierung des Lab-Clients im Entra ID der Firma ist per Richtlinie (`BlockAADWorkplaceJoin`) blockiert. Outlook (klassisch) legt das Profil per Autodiscover selbst an. Meldet Office eine fehlende Lizenz, passt `officeProductId` nicht zur Lizenz.
-- **Lab-Info:** Auf dem Desktop des Exchange-Servers liegen `Lab-Info.txt` (Domain, URLs, alle Benutzer und Beispielempfänger, Zertifikat, Logs) und Verknüpfungen zu OWA, ECP und den Logs.
-- **Fileserver:** RDP vom Client aus auf `<K>-FS01` (keine Public IP). Dort zeigt `Lab-Info.txt` Freigaben, Gruppen und den Stand der Beispieldaten. Auf dem Client sind die Freigaben unter `\\<K>-FS01\Abteilungen`, `\Projekte`, `\Archiv` und `\Scans` (englisch `\Departments`, `\Projects`, `\Archive`, `\Scans`) erreichbar, der Basisordner als `H:`. Ob die Beispieldaten fertig sind, steht in `C:\ExchangeLab\sample-documents.json` (`State` = `fertig`), siehe auch [Betrieb](docs/betrieb.md#fileserver-beispieldaten-und-vm-größe).
-- **OWA/ECP:** `https://mail.<k>.<zone>/owa` bzw. `/ecp`, z. B. als `mmustermann@<k>.<zone>` bzw. `fbloggs@<k>.<zone>`.
-- **Diagnose:** In `C:\ExchangeLab\Tools` liegen `HealthChecker.ps1`, `SetupAssist.ps1` und `SetupLogReviewer.ps1` aus [CSS-Exchange](https://github.com/microsoft/CSS-Exchange) (festes Release, SHA256-geprüft). Aufruf in der Exchange Management Shell als Administrator.
-- **Eingehende Mails aus dem Internet:** erst wenn `Update-LabServer.log` fertig ist, die NSG-Regel `Allow-Exchange-SMTP` auf Quelle `Internet` stellen.
-- **OWA/Outlook von überall:** `Allow-Exchange-Web` nur kurzzeitig auf `Internet` stellen. Damit ist auch ECP mit der Anmeldung des Domain-Admins öffentlich erreichbar.
-- **Kennwörter** von `azadmin` und den Lab-Benutzern laufen nicht ab (Lab-Kompromiss, sonst nach 42 Tagen).
-- **Gelöschte AD-Objekte** lassen sich über den AD-Papierkorb wiederherstellen (Active Directory-Verwaltungscenter).
-- **Ausgehende Mails** an fremde Domains gehen aus Azure nur supportet über einen Smart Host (Send Connector mit Relay). Das ist bewusst nicht vorkonfiguriert.
+### Licence
 
-## Kosten und Abschalten
+[MIT](LICENSE). The lab downloads Exchange Server, Microsoft 365 Apps, CSS-Exchange and other software from the vendors at runtime. Their licence terms apply.
 
-- Die **Exchange-VM** fährt täglich um `autoShutdownTime` (Standard 19:00) herunter und wird deallokiert. Morgens im Portal starten. Der Schedule entsteht erst nach der Installation, das Exchange-Setup wird also nicht unterbrochen. Den Update-Lauf danach kann er aber unterbrechen, deshalb nicht kurz vor der Abschaltzeit deployen.
-- Den **DC nie im Portal stoppen oder deallokieren.** Laut Microsoft setzt das Deallokieren die VM-Generation-ID zurück, der DC verwirft seinen RID-Pool und markiert SYSVOL als nicht-autoritativ. Mit nur einem DC gibt es keinen Partner, von dem SYSVOL kommen könnte, dann fehlen NETLOGON und die Gruppenrichtlinien, bis jemand von Hand eingreift. Der DC (`Standard_B2ms`) ist günstig und läuft deshalb durch. Neustarts nur im Gast.
-- **Mit zweitem DC:** `<K>-DC02` fährt zusammen mit der Exchange-VM herunter. Beim Start holt er sich SYSVOL vom durchlaufenden `<K>-DC01`. Der erste DC bleibt die Ausnahme und läuft immer. Werden beide DCs gleichzeitig deallokiert, gibt es keinen autoritativen Partner mehr und SYSVOL muss von Hand repariert werden.
-- **Client:** `<K>-CL01` fährt ebenfalls zur Abschaltzeit herunter. Windows-Updates installiert er selbst, Neustarts dafür fallen auf das Herunterfahren oder liegen außerhalb 06–23 Uhr.
-- **Fileserver:** `<K>-FS01` fährt ebenfalls zur Abschaltzeit herunter. Sind die Beispieldaten bis dahin nicht fertig, setzt der Task `TraineeLab-SampleDocuments` nach dem nächsten Start fort. Deshalb möglichst morgens deployen. `Standard_D4s_v5` kostet pro Stunde etwa viermal so viel wie `Standard_B2s_v2`, läuft aber nur bis zur automatischen Verkleinerung. Die 256-GB-Datendisk kostet auch bei deallokierter VM.
-- **Budget:** optional im Portal unter Ressourcengruppe → *Kostenverwaltung* → *Budgets* mit E-Mail-Benachrichtigung anlegen. Nicht im Template, weil Budgets ein Startdatum im laufenden Monat brauchen und Redeploys in späteren Monaten sonst scheitern können.
+## Deutsch
 
-## Supportbarkeit
+Das Trainee Lab baut in Azure die IT einer fiktiven Firma auf, fertig eingerichtet: Active Directory, Exchange Server, Fileserver und einen Windows-11-Arbeitsplatz mit Microsoft 365 Apps. Mitarbeitende, Postfächer, Abteilungsordner und zwölf Jahre Firmendokumente sind schon da. Hier darf geübt, ausprobiert, kaputtgemacht und neu aufgesetzt werden, ohne dass ein produktives System etwas davon merkt.
 
-| Thema | Stand |
-| --- | --- |
-| Exchange | Exchange Server SE. Exchange 2016/2019 sind seit 14.10.2025 ohne Support |
-| Betriebssystem | Windows Server 2025 Datacenter (unterstützt für Exchange SE und als DC) |
-| Trennung | Exchange nicht auf dem DC (Microsoft-Empfehlung) |
-| Azure | Alle Exchange-Volumes (DB, Logs, Transport-DB) auf Premium Storage. Das ist Voraussetzung für Support von Exchange auf Azure-VMs |
-| AD | Forest-/Domain Functional Level 2016, DC-Datenbank auf Datendisk ohne Schreibcache |
-| Updates | Patch-Modus `Manual`: Nach dem ersten automatischen Lauf sind Updates Aufgabe der Administratoren (Exchange-SUs über Microsoft Update) |
-| Lizenz | Exchange SE braucht eine Subscription-Lizenz oder Software Assurance. Ohne Product Key läuft der Server 180 Tage als Testversion |
-| Sizing | 32 GB RAM liegen unter der Microsoft-Empfehlung von 128 GB. Das reicht fürs Lab, nicht für Produktion |
-| PowerShell 7 | Wird auf dem Exchange-Server als Laufzeit für winget installiert, weil die winget-CLI im SYSTEM-Kontext nicht supportet ist und `Microsoft.WinGet.Client` nur unter PowerShell 7 läuft. Exchange nutzt weiterhin ausschließlich Windows PowerShell 5.1; ein Parallelbetrieb ist laut Microsoft zulässig. Auf dem Client ist PowerShell 7 die Laufzeit für das RDM-Modul `Devolutions.PowerShell` |
-| Remote Desktop Manager | Devolutions RDM Free mit .NET Desktop Runtime 10 auf dem Client, feste Versionen mit Hash-Prüfung (`scripts/Initialize-LabClient.ps1`). Free ist laut Devolutions für eine Einzelperson lizenziert. Updates sind per Richtlinie ausgeblendet, die Version pflegt das Repository |
+### Wozu das Ganze?
 
-## Zertifikat
+Wer IT-Infrastruktur lernt, braucht eine Umgebung, in der Fehler erlaubt sind. Echte Systeme sind dafür tabu. Ein Lab von Hand aufzubauen kostet Ausbilder viel Zeit und sieht am Ende bei jedem Azubi ein bisschen anders aus. Außerdem ist so ein Lab nur technisch eingerichtet: Es hat keine Geschichte und hat nie gelebt. Es gibt keine Kollegen, keine über Jahre gewachsenen Ordner und Berechtigungen, keine alten Dateien.
 
-Das Wildcard-Zertifikat `*.<k>.<zone>` kommt von Let's Encrypt. Die DNS-Challenge erfolgt über die Managed Identity der Exchange-VM, die nur *DNS Zone Contributor* auf der eigenen Zone hat. Die Dateien liegen in `C:\Certificates`, nur für Administratoren lesbar. Das PFX-Passwort ist der Posh-ACME-Standard `poshacme`.
+Das Trainee Lab löst das:
 
-- Gültigkeit 90 Tage. Let's Encrypt erlaubt 50 Zertifikate pro Woche für `<zone>` insgesamt, also für alle Azubis zusammen. Für Testdeployments deshalb `letsEncryptStaging = true` setzen.
-- **Erneuerung automatisch:** Der Task `ExchangeLab-Maintenance` (täglich 12:00, bei ausgeschalteter VM nach dem Start) erneuert das Zertifikat, sobald es fällig ist, und bindet es an IIS und SMTP. Derselbe Task löscht IIS- und Exchange-Diagnoselogs, die älter als 14 Tage sind. Message-Tracking-Logs bleiben unberührt.
-- Manuell erneuern, falls der Task fehlschlägt (auf dem Exchange-Server, PowerShell als Administrator):
+- **Immer wieder dieselbe Umgebung.** Jedes Deployment liefert denselben Ausgangsstand, ohne Handarbeit. Alle Azubis starten gleich, Ergebnisse sind vergleichbar.
+- **Kaputtmachen erlaubt.** Ist das Lab verkonfiguriert, wird es gelöscht und neu bereitgestellt. Danach ist alles wieder wie am ersten Tag.
+- **Gelebt statt leer.** Statt einer leeren Domäne gibt es eine Firma mit zwölf Jahren Geschichte: Standorte, Mitarbeitende, Verteiler, Freigaben, Dokumente und die typischen Altlasten gewachsener Umgebungen.
+- **Ein eigenes Lab pro Azubi**, unabhängig von allen anderen.
 
-```powershell
-$env:POSHACME_HOME = 'C:\ProgramData\Posh-ACME'
-Import-Module Posh-ACME
-$cert = Submit-Renewal -Force
-Copy-Item $cert.PfxFullChain C:\Certificates\ -Force
-# danach in der Exchange Management Shell:
-$pfx = 'C:\Certificates\fullchain.pfx'
-$new = Import-ExchangeCertificate -FileData ([IO.File]::ReadAllBytes($pfx)) -Password (ConvertTo-SecureString 'poshacme' -AsPlainText -Force) -PrivateKeyExportable $true
-Enable-ExchangeCertificate -Thumbprint $new.Thumbprint -Services IIS,SMTP -Force
+### Für wen?
+
+#### Auszubildende
+
+- Eine Firma zum Anfassen: Kolleginnen und Kollegen mit Postfach, Abteilungen, Verteiler, Besprechungsräume, Freigaben und jede Menge Dokumente.
+- Einstieg wie im Büro: Anmeldung am eigenen Windows-11-Arbeitsplatz mit Outlook, Word und Co., von dort weiter auf alle Server.
+- Ausprobieren ohne Angst: Was kaputtgeht, ist nach einem Neuaufbau wieder da.
+- Echte Aufgaben statt Trockenübung: gewachsene Berechtigungen, alte Dateien und Datenschutzprobleme warten aufs Aufräumen.
+
+#### Microsoft-Interessierte
+
+- Aktueller On-Premises-Stack: Active Directory, Exchange Server SE, Windows Server 2025, Windows 11 mit Microsoft 365 Apps.
+- Eigene öffentliche Maildomain mit echtem Zertifikat von Let's Encrypt, wie in einer richtigen Firma.
+- Komplett als Code im Repository: nachvollziehbar, wie sich eine solche Umgebung automatisch aufbauen lässt.
+- Ausgangslage für den Weg in die Cloud: Entra Connect, Exchange Hybrid, SharePoint Online.
+
+### Was alle davon haben
+
+- **Sicher abgeschottet:** Jedes Lab läuft in einer eigenen Azure-Ressourcengruppe, ohne Verbindung zur Produktivumgebung und zum Firmen-Tenant, und ist nur von freigegebenen IP-Adressen erreichbar.
+- **Wenig Rechte nötig:** Keine Entra-Rollen im Produktiv-Tenant, nur Rechte auf die eigene Ressourcengruppe und die gemeinsame DNS-Zone. Entra-Admin-Rollen hat der Azubi nur im Microsoft-365-Demo-Tenant.
+- **Baut und prüft sich selbst:** Das Lab entsteht ohne Eingriff und lässt sich am Ende automatisch auf Vollständigkeit prüfen.
+- **Kosten im Griff:** Die Server schalten sich abends selbst ab, der Fileserver verkleinert sich nach dem Aufbau.
+- **Aktuell und supportet:** Exchange Server SE, Windows Server 2025, Windows 11.
+- **Englisch oder Deutsch:** Firma, Mitarbeitende, Dokumente und Arbeitsplatz wahlweise auf Englisch (Contoso Ltd) oder Deutsch (Mustermann Medien GmbH).
+- **Lizenzen:** Azure wird nach Verbrauch abgerechnet (Pay-as-you-go), die Windows-Server-Lizenzen sind darin enthalten. Windows 11 und Microsoft 365 Apps deckt die Microsoft-365-E5-Lizenz im Demo-Tenant ab (CDX-Tenant oder alternativ ein Microsoft 365 E5 Trial), Exchange läuft ohne Product Key 180 Tage als Testversion. Details in der [Bereitstellung](docs/de/deployment.md#voraussetzungen).
+
+### Was steckt drin?
+
+```mermaid
+flowchart LR
+    subgraph LAB[Eigenes Lab in Azure]
+        CL[Windows-11-Arbeitsplatz<br/>Domänenmitglied<br/>Microsoft 365 Apps]
+        FS[Fileserver<br/>Freigaben, Dokumente]
+        DC[Domain Controller<br/>Active Directory, DNS]
+        EX[Exchange Server SE<br/>E-Mail, Kalender]
+        CL --> FS
+        CL --> DC
+        CL --> EX
+        FS --> DC
+        EX --> DC
+    end
+    subgraph M365["Microsoft-365-Demo-Tenant (manuell eingerichtet)"]
+        SPO[SharePoint Online]
+        ENTRA[Entra ID]
+        MORE["Intune, Purview, ..."]
+        EXO[Exchange Online]
+    end
+    AZUBI((Azubi)) -->|Remote Desktop| CL
+    INTERNET((Internet)) -->|Outlook im Web, E-Mail| EX
+    FS -.->|Migration| SPO
+    DC -.->|Entra Connect| ENTRA
+    EX -.->|Exchange Hybrid| EXO
+    style M365 stroke-dasharray: 5 5
 ```
 
-## Betrieb
+Das Deployment baut alles im Lab auf. Der Microsoft-365-Demo-Tenant (gestrichelt) gehört nicht dazu und wird manuell eingerichtet; die gestrichelten Verbindungen entstehen als Übung.
 
-- [Betrieb](docs/betrieb.md): Starten und Stoppen, neue eigene IP, Status, Beispieldaten und Größe des Fileservers, Kosten, Abbau.
-- [Troubleshooting](docs/troubleshooting.md): fehlgeschlagenes Deployment, Zertifikat, SYSVOL-Reparatur, Warteschlangen, Outlook und Office, Beispieldaten und Fileserver.
+- **Die Firma:** eine fiktive Werbeagentur, auf Deutsch die Mustermann Medien GmbH mit Standorten in Berlin und Hamburg, auf Englisch die Contoso Ltd in London und Manchester.
+- **Die Mitarbeitenden:** 28 Benutzer mit Postfach, Abteilung, Vorgesetzten und Telefonnummern, darunter die 16 bekannten Microsoft-Demo-Personas wie Adele Vance oder Megan Bowen.
+- **Die Server:**
+  - Domain Controller mit Active Directory und DNS, auf Wunsch ein zweiter für Ausfallsicherheit
+  - Exchange Server SE mit Postfächern, Verteilern, freigegebenen Postfächern, Besprechungsräumen und Outlook im Web
+  - Fileserver mit Abteilungs-, Projekt-, Archiv- und Scan-Freigaben sowie persönlichen Basisordnern
+  - Windows-11-Arbeitsplatz als Domänenmitglied mit Microsoft 365 Apps, fertig eingerichtetem Outlook und Remote Desktop Manager für den Weg zu allen Servern
+- **Die Daten:** rund 230 GB Word-, Excel-, PowerPoint- und PDF-Dateien aus zwölf Jahren Firmengeschichte, von Kundenprojekten über Buchhaltung und Personal bis zum Corporate Design.
+- **Die Altlasten:** absichtlich eingebaut, wie in jeder gewachsenen Umgebung: Kopien und alte Versionen, Rechte für einzelne Benutzer statt Gruppen, Bewerbungen für alle lesbar, Rechte eines längst gelöschten Praktikanten, ein privater Ordner, auf den kein Admin zugreifen kann, und eine Scan-Freigabe mit Vollzugriff für jeden.
 
-## Aufräumen
+### Was lässt sich üben?
 
-Beim Löschen eines Labs immer auch die Delegation entfernen, sonst bleibt ein verwaister NS-Eintrag stehen (Gefahr einer Subdomain-Übernahme):
+Vom eigenen Rechenzentrum bis in die Cloud, zum Beispiel:
 
-```bash
-az group delete -n rg-exlab-<k>
-az network dns record-set ns delete -g rg-publicdns -z <zone> -n <k>
-```
+- **Active Directory:** Benutzer, Gruppen und OUs verwalten, Gruppenrichtlinien, Standorte, zweiter Domain Controller und Ausfallsicherheit, gelöschte Objekte wiederherstellen
+- **DNS und Zertifikate:** interne und öffentliche Namensauflösung, Zertifikate erneuern und einbinden
+- **Exchange:** Postfächer, Verteiler, freigegebene Postfächer und Räume, Berechtigungen, Updates
+- **Fileserver:** Freigaben und Berechtigungen nach AGDLP, Altlasten finden, bewerten und beheben, Datenschutz
+- **Hybrid:** Entra Connect zur Synchronisierung mit dem Microsoft-365-Demo-Tenant (nicht dem Firmen-Tenant), Exchange Hybrid und Postfachmigration nach Exchange Online
+- **Cloud-Migration:** Dateien vom Fileserver nach SharePoint Online bringen
+- **Erweiterbar:** weitere Hybrid- und Microsoft-365-Themen wie Intune, Purview und vieles mehr
 
-## Entwicklung
+### Schnellstart
 
-- Quellcode: `infra/` (Bicep) und `scripts/` (PowerShell, nur ASCII, Windows PowerShell 5.1). Die Skripte werden per `loadTextContent` ins Template eingebettet, es gibt keine Downloads aus dem Repo.
-- `azuredeploy.json` wird **generiert**, nie von Hand bearbeiten:
+1. **Vorbereiten:** Azure-Subscription mit Rechten auf eine eigene Ressourcengruppe, Kürzel und DNS-Zone vom Ausbilder, die eigene öffentliche IP-Adresse und ein Konto mit Microsoft-365-E5-Lizenz im Demo-Tenant (CDX oder Microsoft 365 E5 Trial).
+2. **Bereitstellen:** Oben auf *Deploy to Azure* klicken und das Formular ausfüllen.
+3. **Abwarten:** Das Lab baut sich ohne Eingriff auf, inklusive Updates und Beispieldaten. Das dauert mehrere Stunden, deshalb am besten morgens starten.
+4. **Loslegen:** Per Remote Desktop am Windows-11-Arbeitsplatz anmelden, von dort geht es zu allen Servern.
 
-```bash
-az bicep build --file infra/main.bicep --outfile azuredeploy.json
-```
+Alle Voraussetzungen, Einstellungen und ersten Schritte: [Bereitstellung](docs/de/deployment.md).
 
-- Lab-Daten je Sprache in `scripts/data/<Sprache>` (`de`, `en`): `LabUsers.psd1`, `FileServer.psd1` und der Textkorpus `corpus`. Beide Sprachen haben denselben Aufbau, die Tests prüfen das.
-- Beispieldokumente: Drehbuch und Texte liegen lesbar in `scripts/data/<Sprache>/corpus` (Regeln in [scripts/data/README.md](scripts/data/README.md)), der Generator in `scripts/New-SampleDocuments.ps1`. Daraus entstehen die eingebetteten Artefakte `scripts/SampleCorpus.<Sprache>.gz` (userData der VM, je Sprache höchstens 64 KB Base64) und `scripts/Start-SampleDocuments.ps1` (gepackter Generator). Nach jeder Änderung neu bauen, die Tests prüfen den Abgleich:
+### Kosten
 
-```powershell
-./tools/Build-SampleArtifacts.ps1
-```
+Das Lab läuft in der eigenen Azure-Subscription und kostet, solange es existiert. Größter Posten ist der Exchange-Server. Damit es günstig bleibt:
 
-- Generator lokal ausprobieren (Windows PowerShell 5.1, ohne Azure):
+- Exchange-Server, Arbeitsplatz und Fileserver schalten sich jeden Abend selbst ab. Abgeschaltete Server kosten nur noch ihren Speicher.
+- Der Domain Controller ist klein und läuft bewusst durch, damit das Active Directory stabil bleibt.
+- Der Fileserver arbeitet nur beim Aufbau mit mehr Leistung und verkleinert sich danach selbst.
+- Wird das Lab nicht mehr gebraucht, wird es komplett gelöscht.
 
-```powershell
-.\scripts\New-SampleDocuments.ps1 -TargetPath C:\Temp\Daten -TargetSizeMB 500 -LabRoot C:\Temp\Lab `
-    -CorpusPath .\scripts\data\de\corpus -LabUsersPath .\scripts\data\de\LabUsers.psd1 -ReferenceDate 2026-11-24
-```
+Budgets, vorzeitiges Abschalten und Abbau: [Betrieb](docs/de/operations.md#kosten-im-blick-behalten).
 
-- Prüfungen (laufen auch in der CI, unter Linux mit pwsh 7 und unter Windows PowerShell 5.1). `tests/Haertung.Tests.ps1` prüft die Fehlerklassen der Testdeployments: Run-Command-Parameter gegen die Skripte, Argumente geplanter Tasks, Formatstrings der Lab-Info, stderr nativer Befehle unter 5.1, Zeitlimits, DPAPI:
+### Dokumentation
 
-```powershell
-'scripts', 'tools' | ForEach-Object { Invoke-ScriptAnalyzer -Path $_ -Recurse -Settings ./PSScriptAnalyzerSettings.psd1 }
-Invoke-Pester -Path tests
-```
+| Dokument | Für | Inhalt |
+| --- | --- | --- |
+| [Bereitstellung](docs/de/deployment.md) | alle, die ein Lab aufsetzen | Voraussetzungen, Rechte, Lizenzen, Parameter, Dauer, erste Schritte |
+| [Architektur](docs/de/architecture.md) | Microsoft-Interessierte, Technikinteressierte | Aufbau, Netzwerk, Server, Ablauf und Logs, Supportbarkeit, Zertifikat |
+| [Betrieb](docs/de/operations.md) | Azubis, Ausbilder | Starten und Stoppen, neue IP-Adresse, Lab prüfen, Fileserver, Kosten, Abbau |
+| [Troubleshooting](docs/de/troubleshooting.md) | Azubis, Ausbilder | Hilfe, wenn etwas nicht läuft |
+| [Entwicklung](docs/de/development.md) | Mitwirkende | Aufbau des Repositorys, Build, Tests, Abnahme |
+| [Textkorpus](scripts/data/README.md) | Mitwirkende | Regeln für die Beispieldokumente |
 
-- Vor jeder Abnahme und nach jeder Versionsänderung prüft `./tools/Test-Downloads.ps1` alle festgelegten Downloads (Hash, Größe) und Modulversionen. Blockiert das eigene Netz GitHub-Downloads, mit `-ResourceGroup <rg> -VmName <vm>` von einer Lab-VM aus.
-- Abnahme einer Änderung: DE- und EN-Lab parallel bereitstellen (beide mit DC02, Client, Fileserver), ohne Eingriff, danach `./tools/Test-LabDeployment.ps1 -ResourceGroup <rg> -Wait` mit Exit-Code 0 auf beiden.
+### Unterstützen
 
-## Hinweis für Betreiber
+Das Lab ist kostenlos und quelloffen. Wer die Weiterentwicklung unterstützen möchte, kann das über [GitHub Sponsors](https://github.com/sponsors/sredlin) oder [Buy Me a Coffee](https://buymeacoffee.com/sredlin) tun. Danke!
 
-Ältere Versionen dieses Templates haben ein Service-Principal-Secret für Let's Encrypt im Klartext übergeben. Das Secret steht in der Deployment-Historie aller damit erstellten Ressourcengruppen. **Secret rotieren oder den Service Principal löschen**, falls noch nicht geschehen.
-
-## Unterstützen
-
-Das Lab ist kostenlos und quelloffen. Wer die Weiterentwicklung unterstützen möchte, kann das über [Buy Me a Coffee](https://buymeacoffee.com/sredlin) tun. Danke!
-
-## Lizenz
+### Lizenz
 
 [MIT](LICENSE). Exchange Server, Microsoft 365 Apps, CSS-Exchange und weitere Software lädt das Lab zur Laufzeit von den Herstellern. Dafür gelten deren Lizenzbedingungen.

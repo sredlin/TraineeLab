@@ -91,7 +91,7 @@ param clientVmSize string = 'Standard_B2ms'
 @description('SKU des Windows-11-Images (Publisher MicrosoftWindowsDesktop, Offer windows-11).')
 param clientImageSku string = 'win11-25h2-ent'
 
-@description('Microsoft 365 Apps auf dem Client: O365ProPlusRetail = Apps for enterprise (M365 E3/E5), O365BusinessRetail = Apps for business (Business Standard/Premium). Aktiviert wird mit dem Firmenkonto.')
+@description('Microsoft 365 Apps auf dem Client: O365ProPlusRetail = Apps for enterprise (M365 E3/E5), O365BusinessRetail = Apps for business (Business Standard/Premium). Aktiviert wird mit einem Konto aus dem Microsoft-365-Demo-Tenant.')
 @allowed([
   'O365ProPlusRetail'
   'O365BusinessRetail'
@@ -104,7 +104,7 @@ param clientRemoteDesktopManager bool = true
 @description('Fileserver <K>-FS01 bereitstellen: Freigaben mit AGDLP-Berechtigungen, Basisordner, FSRM und absichtliche Altlasten fuer Uebungen. Keine Public IP.')
 param deployFileServer bool = true
 
-@description('VM-Groesse des Fileservers. Mehr vCPUs erzeugen die Beispieldokumente schneller (siehe readme). Startet er mit einer B-Groesse, bleibt sie.')
+@description('VM-Groesse des Fileservers. Mehr vCPUs erzeugen die Beispieldokumente schneller (siehe docs/de/deployment.md). Startet er mit einer B-Groesse, bleibt sie.')
 @allowed([
   'Standard_B2s_v2'
   'Standard_B2ms'
