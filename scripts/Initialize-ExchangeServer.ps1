@@ -15,7 +15,7 @@
       - PowerShell 7 (LTS) als Laufzeit fuer winget: Die winget-CLI ist im SYSTEM-Kontext nicht
         supportet, das Modul Microsoft.WinGet.Client laeuft nur unter PowerShell 7.
         Exchange nutzt weiterhin nur Windows PowerShell 5.1 (Side-by-Side ist zulaessig).
-      - winget: VC++ 2012/2013, IIS URL Rewrite und optionale Tools,
+      - winget: VC++ 2012/2013 und IIS URL Rewrite,
         Fallback fuer die Exchange-Voraussetzungen: Microsoft-Download mit SHA256-Pruefung
       - CSS-Exchange-Diagnose (HealthChecker, SetupAssist, SetupLogReviewer) nach C:\ExchangeLab\Tools
       - Exchange-SE-ISO laden (SHA256-Pruefung, Neudownload bei Abweichung) und entpacken,
@@ -37,9 +37,6 @@ param(
 
     [Parameter(Mandatory)]
     [string] $SubscriptionId,
-
-    # Komma-getrennte winget-Paket-IDs fuer optionale Tools.
-    [string] $WingetPackages = '',
 
     [ValidateSet('true', 'false')]
     [string] $EnableLetsEncrypt = 'true',
@@ -389,12 +386,10 @@ function Invoke-WinGetInstall {
 }
 
 function Install-LabSoftware {
-    $optional = @($WingetPackages.Split(',') | ForEach-Object { $_.Trim() } | Where-Object { $_ })
     $status = @{}
     try {
         Install-PowerShell7
-        $requiredIds = @($RequiredPackages | ForEach-Object { $_.Id })
-        $status = Invoke-WinGetInstall -Ids ($requiredIds + $optional)
+        $status = Invoke-WinGetInstall -Ids @($RequiredPackages | ForEach-Object { $_.Id })
     }
     catch {
         Write-LabLog "WARNUNG: winget nicht nutzbar: $($_.Exception.Message)"
@@ -404,12 +399,6 @@ function Install-LabSoftware {
         if ($status[$package.Id] -ne 'Ok') {
             Write-LabLog "$($package.Id) nicht per winget installiert, nutze Microsoft-Download."
             Install-PackageFromDownload -Package $package
-        }
-    }
-    foreach ($id in $optional) {
-        if ($status[$id] -ne 'Ok') {
-            # Optionale Tools duerfen das Lab nicht blockieren.
-            Write-LabLog "WARNUNG: optionales Paket $id nicht installiert."
         }
     }
 }

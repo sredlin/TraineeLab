@@ -119,7 +119,7 @@ Restart-Computer
 ## Remote Desktop Manager zeigt keine Lab-Verbindungen
 
 1. Ist RDM installiert? In `C:\ExchangeLab\Logs\Initialize-LabClient-Prepare.log` stehen die Schritte .NET Desktop Runtime, Remote Desktop Manager, PowerShell 7 und Modul. Bei einem Fehler gibt es zusätzlich `C:\ExchangeLab\rdm-failed.txt` mit der Ursache.
-2. Wurde die Datenquelle angelegt? `Initialize-LabClient-Complete.log` nennt `RDM-Datenquelle ... angelegt` mit allen Servern.
+2. Wurde die Datenquelle angelegt? `Initialize-LabClient-Complete.log` nennt `RDM-Datenquelle ... angelegt` mit allen Servern sowie OWA und ECP. Fehlt nur ein Web-Eintrag, steht die Ursache in der Zeile `WARNUNG: RDM-Web-Eintrag nicht angelegt`.
 3. Fehlt nur bei einem Benutzer der Arbeitsbereich „Lab-Server“: `%LOCALAPPDATA%\TraineeLab\Register-LabWorkspace.log` prüfen und das Einbinden als dieser Benutzer von Hand wiederholen (RDM vorher schließen):
 
    ```powershell
@@ -127,6 +127,16 @@ Restart-Computer
    ```
 
 4. Fragt RDM beim Verbinden nach einem Passwort, stimmt das gespeicherte nicht mehr, zum Beispiel weil `azadmin` ein neues Passwort hat. Siehe [Betrieb](operations.md#server-vom-client-aus-erreichen-remote-desktop-manager).
+
+## VS Code oder andere winget-Pakete fehlen auf dem Client
+
+1. Installation beim Deployment: `C:\ExchangeLab\Logs\Initialize-LabClient-Prepare.log` enthält je Paket eine Zeile `winget: <ID> -> <Status>`. Das Ergebnis steht zusätzlich in `C:\ExchangeLab\winget-result.txt`, bei einem Fehler gibt es `C:\ExchangeLab\winget-failed.txt` mit der Ursache.
+2. Spätere Läufe des Tasks `TraineeLab-WinGetUpdate`: `C:\ExchangeLab\Logs\Update-WinGetTool.log`.
+3. Nachholen (PowerShell als Administrator), danach das Log prüfen:
+
+   ```powershell
+   Start-ScheduledTask -TaskName TraineeLab-WinGetUpdate
+   ```
 
 ## Beispieldaten fehlen oder wachsen nicht mehr
 

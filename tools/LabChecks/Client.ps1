@@ -29,7 +29,26 @@ if ($Lab.RemoteDesktopManager) {
         if (Test-Path -Path $failed) { return 'FAIL', "Remote Desktop Manager: $(Get-Content -Path $failed -Raw)" }
         $exe = Get-ChildItem -Path (Join-Path $env:ProgramFiles 'Devolutions') -Filter 'RemoteDesktopManager.exe' -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
         if (-not $exe) { return 'FAIL', 'RemoteDesktopManager.exe fehlt' }
-        'OK', "Version $($exe.VersionInfo.ProductVersion)"
+        $workspace = Join-Path $env:ProgramData 'TraineeLab\RemoteDesktopManager\Lab-Server.xml'
+        if (-not (Test-Path -Path $workspace)) { return 'FAIL', 'Lab-Server.xml fehlt' }
+        $xml = Get-Content -Path $workspace -Raw
+        $missing = @('OWA', 'ECP' | Where-Object { $xml -notmatch "<Name>$_</Name>" })
+        if ($missing) { return 'FAIL', "Web-Eintraege fehlen in Lab-Server.xml: $($missing -join ', ')" }
+        'OK', "Version $($exe.VersionInfo.ProductVersion), Lab-Server mit OWA und ECP"
+    }
+}
+
+if ($Lab.WingetPackages) {
+    Invoke-Check 'cl.winget' {
+        $failed = Join-Path $LabRoot 'winget-failed.txt'
+        if (Test-Path -Path $failed) { return 'FAIL', "winget: $(Get-Content -Path $failed -Raw)" }
+        $resultFile = Join-Path $LabRoot 'winget-result.txt'
+        if (-not (Test-Path -Path $resultFile)) { return 'FAIL', 'winget-result.txt fehlt' }
+        $ok = @(Get-Content -Path $resultFile | Where-Object { $_ -like '*|Ok' } | ForEach-Object { $_.Split('|')[0] })
+        $missing = @($Lab.WingetPackages.Split(',') | Where-Object { $ok -notcontains $_ })
+        if ($missing) { return 'FAIL', "nicht installiert: $($missing -join ', ')" }
+        if (-not (Get-ScheduledTask -TaskName 'TraineeLab-WinGetUpdate' -ErrorAction SilentlyContinue)) { return 'FAIL', 'Task TraineeLab-WinGetUpdate fehlt' }
+        'OK', "$($ok -join ', '), Task TraineeLab-WinGetUpdate"
     }
 }
 

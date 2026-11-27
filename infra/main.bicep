@@ -63,11 +63,6 @@ param enableLetsEncrypt bool = true
 @description('Let\'s-Encrypt-Staging (Test-CA) verwenden, z. B. fuer Testdeployments.')
 param letsEncryptStaging bool = false
 
-@description('Optionale Tools per winget auf dem Exchange-Server.')
-param wingetPackages array = [
-  'Microsoft.VisualStudioCode'
-]
-
 @description('VM-Groesse der Domain Controller.')
 @allowed([
   'Standard_B2ms'
@@ -100,6 +95,11 @@ param officeProductId string = 'O365ProPlusRetail'
 
 @description('Devolutions Remote Desktop Manager Free auf dem Client mit fertigen RDP-Verbindungen zu allen Lab-Servern (Domain-Admin, fuer jeden Benutzer am Client). Das Admin-Passwort ist dort fuer alle Benutzer auslesbar; RDM Free ist laut Devolutions fuer eine Einzelperson lizenziert.')
 param clientRemoteDesktopManager bool = true
+
+@description('Tools per winget auf dem Client, maschinenweit in der jeweils neuesten Version. Ein taeglicher Task (TraineeLab-WinGetUpdate) haelt sie aktuell. Leer = keine.')
+param clientWingetPackages array = [
+  'Microsoft.VisualStudioCode'
+]
 
 @description('Fileserver <K>-FS01 bereitstellen: Freigaben mit AGDLP-Berechtigungen, Basisordner, FSRM und absichtliche Altlasten fuer Uebungen. Keine Public IP.')
 param deployFileServer bool = true
@@ -282,7 +282,6 @@ module exchangeServer 'modules/exchange-server.bicep' = {
     exchangeIsoSha256: exchangeIsoSha256
     enableLetsEncrypt: enableLetsEncrypt
     letsEncryptStaging: letsEncryptStaging
-    wingetPackages: wingetPackages
     labLanguage: labLanguage
   }
   // Zertifikat braucht Zone (Rollenzuweisung) und funktionierende Delegation.
@@ -404,6 +403,7 @@ module client 'modules/client.bicep' = if (deployClient) {
     imageSku: clientImageSku
     officeProductId: officeProductId
     installRemoteDesktopManager: clientRemoteDesktopManager
+    wingetPackages: clientWingetPackages
     labLanguage: labLanguage
   }
 }

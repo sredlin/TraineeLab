@@ -43,6 +43,9 @@ param officeProductId string
 @description('Devolutions Remote Desktop Manager mit .NET Desktop Runtime, PowerShell 7 und RDM-Modul installieren.')
 param installRemoteDesktopManager bool
 
+@description('winget-Paket-IDs, die maschinenweit installiert und taeglich aktualisiert werden.')
+param wingetPackages array
+
 @description('Sprache der Lab-Daten (de, en): Sprachpaket, Formate, Office-Sprache.')
 param labLanguage string
 
@@ -146,7 +149,8 @@ resource prepareClient 'Microsoft.Compute/virtualMachines/runCommands@2025-04-01
     source: {
       script: loadTextContent('../../scripts/Initialize-LabClient.ps1')
     }
-    parameters: [
+    // Ein leerer Wert wuerde als Parameter ohne Argument uebergeben, daher WingetPackages nur bei Bedarf.
+    parameters: concat([
       {
         name: 'Phase'
         value: 'Prepare'
@@ -163,10 +167,15 @@ resource prepareClient 'Microsoft.Compute/virtualMachines/runCommands@2025-04-01
         name: 'LabLanguage'
         value: labLanguage
       }
-    ]
+    ], empty(wingetPackages) ? [] : [
+      {
+        name: 'WingetPackages'
+        value: join(wingetPackages, ',')
+      }
+    ])
     asyncExecution: false
-    // Sprachpaket bis 2 x 35 min, Office bis 60 min (eigene Zeitlimits im Skript), dazu RDM.
-    timeoutInSeconds: 9000
+    // Sprachpaket bis 2 x 35 min, Office bis 60 min (eigene Zeitlimits im Skript), dazu RDM und winget.
+    timeoutInSeconds: 9900
     treatFailureAsDeploymentFailure: true
   }
 }

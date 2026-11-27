@@ -95,6 +95,8 @@ function Get-LabContext {
         Client               = [bool]$p.deployClient.value
         FileServer           = [bool]$p.deployFileServer.value
         RemoteDesktopManager = [bool]$p.clientRemoteDesktopManager.value
+        # Als Zeichenkette: Das Pruefskript bekommt nur einfache Werte (ConvertTo-PsLiteral).
+        WingetPackages       = (@($p.clientWingetPackages.value) | Where-Object { $_ }) -join ','
         LetsEncrypt          = [bool]$p.enableLetsEncrypt.value
         FileServerPercent    = [int]$p.fileServerDataPercent.value
         FileServerResizeTo   = $resizeTo
@@ -148,6 +150,7 @@ function Get-VmTarget {
     $common = @{
         Language = $Lab.Language; Domain = $Lab.Domain; Public = $Lab.Public; Trainee = $Lab.Trainee; ExchangeIp = '10.0.1.5'
         DcCount = $dcCount; LetsEncrypt = $Lab.LetsEncrypt; FileServerPercent = $Lab.FileServerPercent; RemoteDesktopManager = $Lab.RemoteDesktopManager
+        WingetPackages = $Lab.WingetPackages
     }
     $targets = @(
         @{ Vm = "vm-$($Lab.Trainee)-dc01"; Role = 'DomainController'; Extra = @{ FirstDc = $true } }

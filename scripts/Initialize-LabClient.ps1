@@ -14,6 +14,10 @@
         ohne Access, Publisher, Teams, Skype/Lync, Groove und Bing
       - Devolutions Remote Desktop Manager Free mit .NET Desktop Runtime 10, Richtlinien (kein Onboarding,
         keine Update-/Konto-Hinweise), PowerShell 7 und dem Modul Devolutions.PowerShell
+      - winget-Pakete (Parameter WingetPackages, Standard VS Code) maschinenweit in der neuesten Version ueber das
+        Modul Microsoft.WinGet.Client unter PowerShell 7 (die winget-CLI ist im SYSTEM-Kontext nicht supportet).
+        Der Task TraineeLab-WinGetUpdate haelt sie aktuell (beim Start und taeglich 12:00). VS Code meldet per
+        Richtlinie keine Updates, weil Lab-Benutzer ohne Adminrechte sie nicht installieren koennen.
 
     Phase 'Complete' (Run Command nach dem Domaenenbeitritt):
       - wartet, bis Domaenenbeitritt und Secure Channel stehen
@@ -22,10 +26,11 @@
         Zugangsdaten; Active Setup bindet sie bei der ersten Anmeldung jedes Benutzers als Arbeitsbereich ein.
         RDM verschluesselt Passwoerter mit einem eingebauten Schluessel: Jeder Benutzer des Clients kann das
         Admin-Passwort auslesen (bewusste Entscheidung fuer den Lab-Komfort).
+        Dazu Web-Eintraege OWA und ECP ohne Zugangsdaten, sie oeffnen im Standardbrowser.
       - Lab-Info.txt und OWA-Verknuepfung auf dem oeffentlichen Desktop
 
-    Fehler bei Sprachpaket, Office und Remote Desktop Manager sind nicht fatal: Das Lab bleibt nutzbar, das Log
-    nennt die Ursache.
+    Fehler bei Sprachpaket, Office, Remote Desktop Manager und winget-Paketen sind nicht fatal: Das Lab bleibt
+    nutzbar, das Log nennt die Ursache.
     Das Skript ist idempotent und enthaelt bewusst nur ASCII-Zeichen (Windows PowerShell 5.1).
 #>
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', 'AdminPasswordB64', Justification = 'Run Command uebergibt Parameter nur als String; Wert ist Base64 und kommt aus protectedParameters.')]
@@ -45,6 +50,9 @@ param(
 
     [ValidateSet('Install', 'Skip')]
     [string] $RemoteDesktopManager = 'Install',
+
+    # Komma-getrennte winget-Paket-IDs, maschinenweit installiert und per Task aktuell gehalten.
+    [string] $WingetPackages = '',
 
     # Nur Phase 'Complete':
     [string] $DomainName,
@@ -107,6 +115,15 @@ $RdmModule = @{
     Version = '2026.3.4'
 }
 
+# winget-Pakete: Modul Microsoft.WinGet.Client in fester Version (gleicher Pin wie in Initialize-ExchangeServer.ps1),
+# die Pakete selbst immer in der neuesten Version. Skript und Paketliste liegen fuer den Update-Task in einem
+# Ordner, den nur SYSTEM und Administratoren aendern duerfen (der Task laeuft als SYSTEM).
+$WinGetClientVersion = '1.29.380'
+$WinGetDir = Join-Path $env:ProgramData 'TraineeLab\WinGet'
+$WinGetToolFile = Join-Path $WinGetDir 'WinGetTool.ps1'
+$WinGetIdFile = Join-Path $WinGetDir 'Packages.txt'
+$WinGetUpdateTaskName = 'TraineeLab-WinGetUpdate'
+
 # Sprache je Lab-Sprache. Englisch: Oberflaeche en-US bleibt (kein Sprachpaket, schneller), Formate en-GB.
 # Tastatur in beiden Faellen Deutsch, weil die Azubis an deutschen Tastaturen sitzen.
 $ClientLanguage = @{
@@ -122,8 +139,9 @@ $RdmWorkspaceFile = Join-Path $RdmDataDir 'Lab-Server.xml'
 $RdmActiveSetupKey = 'HKLM:\SOFTWARE\Microsoft\Active Setup\Installed Components\TraineeLab-RemoteDesktopManager'
 
 # Laeuft unter PowerShell 7 als SYSTEM: legt die XML-Datenquelle mit den Verbindungen neu an.
-# Server und Passwort kommen per Umgebungsvariable (nicht in der Kommandozeile, Windows PowerShell 5.1
-# wuerde die Anfuehrungszeichen im JSON beim Aufruf von pwsh verlieren).
+# Server, Web-Eintraege und Passwort kommen per Umgebungsvariable (nicht in der Kommandozeile, Windows
+# PowerShell 5.1 wuerde die Anfuehrungszeichen im JSON beim Aufruf von pwsh verlieren). Ein fehlerhafter
+# Web-Eintrag meldet WEBERROR, die RDP-Verbindungen bleiben.
 $RdmCreateWorkspaceScript = @'
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
@@ -139,6 +157,18 @@ foreach ($server in ($env:TRAINEELAB_RDM_SERVERS | ConvertFrom-Json)) {
     $entry = $entry | Set-RDMEntryDomain -Domain $server.Domain -PassThru
     $entry = $entry | Set-RDMEntryPassword -Password $password -PassThru
     Set-RDMEntry -InputObject $entry
+}
+foreach ($web in ($env:TRAINEELAB_RDM_WEB | ConvertFrom-Json)) {
+    try {
+        # Ohne Zugangsdaten, extern im Standardbrowser des Benutzers.
+        $entry = New-RDMEntry -Name $web.Name -Host $web.Url -Type WebBrowser
+        $entry.WebBrowserUrl = $web.Url
+        $entry.OpenEmbedded = $false
+        Set-RDMEntry -InputObject $entry
+    }
+    catch {
+        'WEBERROR|{0}: {1}' -f $web.Name, $_.Exception.Message
+    }
 }
 'ENTRIES|' + ((Get-RDMEntry | ForEach-Object { $_.Name }) -join ',')
 '@
@@ -165,6 +195,88 @@ catch {
     Add-Content -Path $log -Value ('{0:yyyy-MM-dd HH:mm:ss} FEHLER: {1}' -f (Get-Date), $_.Exception.Message)
     exit 1
 }
+'@
+
+# Laeuft unter PowerShell 7 als SYSTEM: installiert die Pakete aus IdFile maschinenweit, mit -Update bringt es
+# installierte Pakete auf die neueste Version (Task TraineeLab-WinGetUpdate, Ausgabe dann in LogFile).
+# Ausgabe fuer den Aufrufer: RESULT|<id>|<status>|<detail> und INFO|<text>.
+$WinGetHelperScript = @'
+param(
+    [Parameter(Mandatory)][string] $IdFile,
+    [Parameter(Mandatory)][string] $ModuleVersion,
+    [switch] $Update,
+    [string] $LogFile = ''
+)
+$ErrorActionPreference = 'Stop'
+$ProgressPreference = 'SilentlyContinue'
+$failed = 0
+
+function Write-Log([string] $Message) {
+    if ($LogFile) { Add-Content -Path $LogFile -Value ('{0:yyyy-MM-dd HH:mm:ss} {1}' -f (Get-Date), $Message) }
+}
+
+function Write-Result([string] $Id, [string] $Status, [string] $Detail) {
+    'RESULT|{0}|{1}|{2}' -f $Id, $Status, $Detail
+    if ($Status -eq 'Ok') { Write-Log "${Id}: $Detail" }
+    else {
+        $script:failed++
+        Write-Log "WARNUNG: $Id -> $Status ($Detail)"
+    }
+}
+
+function Invoke-Package([string] $Id) {
+    $installed = @(Get-WinGetPackage -Id $Id -MatchOption EqualsCaseInsensitive) | Select-Object -First 1
+    if ($installed -and -not ($Update -and $installed.IsUpdateAvailable)) {
+        Write-Result -Id $Id -Status 'Ok' -Detail "Version $($installed.InstalledVersion)"
+        return
+    }
+    if ($installed) {
+        $result = Update-WinGetPackage -Id $Id -Source winget -MatchOption EqualsCaseInsensitive -Mode Silent -Force
+        $action = "aktualisiert von $($installed.InstalledVersion)"
+    }
+    else {
+        $result = Install-WinGetPackage -Id $Id -Source winget -MatchOption EqualsCaseInsensitive -Mode Silent -Scope SystemOrUnknown -Force
+        $action = 'installiert'
+    }
+    Write-Result -Id $Id -Status $result.Status -Detail "$action, Installer-Code $($result.InstallerErrorCode)"
+}
+
+$ids = @(Get-Content -Path $IdFile | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+Write-Log ('Start, Pakete: {0}' -f ($ids -join ', '))
+try {
+    if (-not (Get-Module -ListAvailable -Name Microsoft.WinGet.Client | Where-Object { $_.Version -eq [version]$ModuleVersion })) {
+        Install-PSResource -Name Microsoft.WinGet.Client -Version $ModuleVersion -Scope AllUsers -TrustRepository
+    }
+    Import-Module -Name Microsoft.WinGet.Client -RequiredVersion $ModuleVersion
+}
+catch {
+    $message = "Modul Microsoft.WinGet.Client $ModuleVersion nicht verfuegbar: $($_.Exception.Message)"
+    foreach ($id in $ids) { Write-Result -Id $id -Status 'Error' -Detail $message }
+    exit 1
+}
+
+$repaired = $false
+foreach ($id in $ids) {
+    try {
+        Invoke-Package -Id $id
+        continue
+    }
+    catch { $message = $_.Exception.Message }
+    if (-not $repaired) {
+        # winget (App Installer) fuer SYSTEM nicht nutzbar, z. B. auf einem frischen Image: einmal reparieren.
+        $repaired = $true
+        "INFO|${id}: $message - starte Repair-WinGetPackageManager"
+        Write-Log "${id}: $message - starte Repair-WinGetPackageManager"
+        try {
+            Repair-WinGetPackageManager -AllUsers -Force -Latest | Out-Null
+            Invoke-Package -Id $id
+            continue
+        }
+        catch { $message = $_.Exception.Message }
+    }
+    Write-Result -Id $id -Status 'Error' -Detail $message
+}
+if ($failed) { exit 1 }
 '@
 
 New-Item -Path $LogDir, $InstallDir -ItemType Directory -Force | Out-Null
@@ -224,6 +336,20 @@ function Write-Utf8File {
     param([Parameter(Mandatory)][string] $Path, [Parameter(Mandatory)][string] $Content)
     # Mit BOM, damit Editor und Windows PowerShell 5.1 Umlaute korrekt lesen.
     [IO.File]::WriteAllText($Path, $Content, (New-Object -TypeName System.Text.UTF8Encoding -ArgumentList $true))
+}
+
+function Initialize-ReadOnlyFolderAcl {
+    # Nur SYSTEM und Administratoren aendern, Benutzer lesen: Aus diesen Ordnern startet SYSTEM Skripte. Ohne eigene
+    # ACL erbten Ordner z. B. unter C:\ das Aendern-Recht der authentifizierten Benutzer.
+    param([Parameter(Mandatory)][string] $Path)
+    $inherit = [Security.AccessControl.InheritanceFlags]'ContainerInherit, ObjectInherit'
+    $acl = New-Object -TypeName System.Security.AccessControl.DirectorySecurity
+    $acl.SetAccessRuleProtection($true, $false)
+    foreach ($entry in @(@('S-1-5-18', 'FullControl'), @('S-1-5-32-544', 'FullControl'), @('S-1-5-32-545', 'ReadAndExecute'))) {
+        $sid = New-Object -TypeName System.Security.Principal.SecurityIdentifier -ArgumentList $entry[0]
+        $acl.AddAccessRule((New-Object -TypeName System.Security.AccessControl.FileSystemAccessRule -ArgumentList $sid, $entry[1], $inherit, 'None', 'Allow'))
+    }
+    Set-Acl -Path $Path -AclObject $acl
 }
 
 #region Phase Prepare
@@ -490,11 +616,81 @@ function Install-RemoteDesktopManager {
     }
 }
 
+function Initialize-VSCodePolicy {
+    # Das systemweite VS Code kann sich ohne Adminrechte nicht aktualisieren, das uebernimmt der Update-Task.
+    $key = 'HKLM:\SOFTWARE\Policies\Microsoft\VSCode'
+    New-Item -Path $key -Force | Out-Null
+    Set-ItemProperty -Path $key -Name 'UpdateMode' -Value 'none' -Type String
+    Write-LabLog "VS-Code-Richtlinie UpdateMode = none gesetzt, Updates per Task $WinGetUpdateTaskName."
+}
+
+function Invoke-WinGetTool {
+    # Ergebnis: Hashtable Paket-ID -> Status (Ok, Error, InstallError, ...).
+    $arguments = @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', $WinGetToolFile, '-IdFile', $WinGetIdFile, '-ModuleVersion', $WinGetClientVersion)
+    $output = (Invoke-NativeCommand -FilePath $PwshExe -ArgumentList $arguments -NoThrow).Output
+    $status = @{}
+    foreach ($text in $output) {
+        if ($text -like 'RESULT|*') {
+            $parts = $text.Split('|', 4)
+            $status[$parts[1]] = $parts[2]
+            Write-LabLog "winget: $($parts[1]) -> $($parts[2]) ($($parts[3]))"
+        }
+        elseif ($text) {
+            Write-LabLog "winget-Hilfsskript: $($text -replace '^INFO\|', '')"
+        }
+    }
+    return $status
+}
+
+function Register-WinGetUpdateTask {
+    $logFile = Join-Path $LogDir 'Update-WinGetTool.log'
+    $action = New-ScheduledTaskAction -Execute $PwshExe -Argument "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"$WinGetToolFile`" -IdFile `"$WinGetIdFile`" -ModuleVersion $WinGetClientVersion -Update -LogFile `"$logFile`""
+    # Beim Start vor den ersten Anmeldungen und mittags; StartWhenAvailable holt Laeufe nach, die der
+    # Auto-Shutdown verpasst hat.
+    $startup = New-ScheduledTaskTrigger -AtStartup
+    $startup.Delay = 'PT5M'
+    $daily = New-ScheduledTaskTrigger -Daily -At '12:00'
+    $principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
+    $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Hours 1) -StartWhenAvailable
+    Register-ScheduledTask -TaskName $WinGetUpdateTaskName -Action $action -Trigger $startup, $daily -Principal $principal -Settings $settings -Force | Out-Null
+    Write-LabLog "Task $WinGetUpdateTaskName registriert (beim Start und taeglich 12:00, Log $logFile)."
+}
+
+function Install-WinGetTool {
+    $ids = @($WingetPackages.Split(',') | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+    if (-not $ids) {
+        Write-LabLog 'Keine winget-Pakete angegeben.'
+        return
+    }
+    $marker = Join-Path $LabRoot 'winget-failed.txt'
+    try {
+        Install-PowerShell7
+        New-Item -Path $WinGetDir -ItemType Directory -Force | Out-Null
+        Initialize-ReadOnlyFolderAcl -Path $WinGetDir
+        Set-Content -Path $WinGetToolFile -Value $WinGetHelperScript -Encoding ASCII
+        Set-Content -Path $WinGetIdFile -Value $ids -Encoding ASCII
+        if ($ids -contains 'Microsoft.VisualStudioCode') { Initialize-VSCodePolicy }
+        Write-LabLog "Installiere per winget: $($ids -join ', ')."
+        $status = Invoke-WinGetTool
+        Set-Content -Path (Join-Path $LabRoot 'winget-result.txt') -Value @($ids | ForEach-Object { '{0}|{1}' -f $_, $status[$_] }) -Encoding ASCII
+        # Auch bei Fehlern: Der Task installiert fehlende Pakete beim naechsten Lauf nach.
+        Register-WinGetUpdateTask
+        $failed = @($ids | Where-Object { $status[$_] -ne 'Ok' })
+        if ($failed) { throw "nicht installiert: $($failed -join ', ')" }
+        Remove-Item -Path $marker -Force -ErrorAction SilentlyContinue
+    }
+    catch {
+        Write-LabLog "WARNUNG: winget-Pakete nicht vollstaendig installiert: $($_.Exception.Message)"
+        Set-Content -Path $marker -Value $_.Exception.Message -Encoding ASCII
+    }
+}
+
 function Invoke-PreparePhase {
     Initialize-ClientPolicy
     Initialize-ClientLanguage
     Install-OfficeApp
     Install-RemoteDesktopManager
+    Install-WinGetTool
 }
 
 #endregion
@@ -554,17 +750,17 @@ function Get-LabServerList {
     @($DcComputerName, $SecondDcComputerName, $ExchangeComputerName, $FileServerComputerName) | Where-Object { $_ }
 }
 
+function Get-ExchangeWebEntry {
+    # OWA und ECP ueber den oeffentlichen Namen (passt zum Zertifikat), fuer RDM, Lab-Info und Desktop.
+    foreach ($app in 'owa', 'ecp') {
+        [pscustomobject]@{ Name = $app.ToUpperInvariant(); Url = 'https://mail.{0}/{1}' -f $PublicDomainName, $app }
+    }
+}
+
 function Initialize-RdmDataAcl {
     # Ordner: Benutzer lesen nur (das Registrierungsskript liegt hier). Die XML-Datei braucht Aendern: RDM schreibt
     # sie beim Laden jedes Benutzers neu (ChangeMasterKey), auch wenn sich der Inhalt nicht aendert.
-    $inherit = [Security.AccessControl.InheritanceFlags]'ContainerInherit, ObjectInherit'
-    $acl = New-Object -TypeName System.Security.AccessControl.DirectorySecurity
-    $acl.SetAccessRuleProtection($true, $false)
-    foreach ($entry in @(@('S-1-5-18', 'FullControl'), @('S-1-5-32-544', 'FullControl'), @('S-1-5-32-545', 'ReadAndExecute'))) {
-        $sid = New-Object -TypeName System.Security.Principal.SecurityIdentifier -ArgumentList $entry[0]
-        $acl.AddAccessRule((New-Object -TypeName System.Security.AccessControl.FileSystemAccessRule -ArgumentList $sid, $entry[1], $inherit, 'None', 'Allow'))
-    }
-    Set-Acl -Path $RdmDataDir -AclObject $acl
+    Initialize-ReadOnlyFolderAcl -Path $RdmDataDir
 
     $fileAcl = Get-Acl -Path $RdmWorkspaceFile
     $fileAcl.SetAccessRuleProtection($false, $false)
@@ -574,7 +770,8 @@ function Initialize-RdmDataAcl {
 }
 
 function Publish-RemoteConnection {
-    # Ergebnis: Liste der Server im RDM, leer = nicht eingerichtet. Fehler sind nicht fatal (Komfortfunktion).
+    # Ergebnis: Namen der Eintraege im RDM (Server, dann OWA/ECP), leer = nicht eingerichtet. Fehler sind nicht
+    # fatal (Komfortfunktion).
     $moduleDir = Join-Path $env:ProgramFiles ('PowerShell\Modules\{0}\{1}' -f $RdmModule.Name, $RdmModule.Version)
     if (-not ((Test-Path -Path $RdmExe) -and (Test-Path -Path $PwshExe) -and (Test-Path -Path $moduleDir))) {
         Write-LabLog 'Remote Desktop Manager nicht installiert (abgewaehlt oder Fehler in Phase Prepare), keine Verbindungen.'
@@ -592,21 +789,27 @@ function Publish-RemoteConnection {
         $helper = Join-Path $InstallDir 'New-LabRdmWorkspace.ps1'
         Set-Content -Path $helper -Value $RdmCreateWorkspaceScript -Encoding ASCII
         $env:TRAINEELAB_RDM_FILE = $RdmWorkspaceFile
+        $web = @(Get-ExchangeWebEntry)
         $env:TRAINEELAB_RDM_SERVERS = ConvertTo-Json -InputObject $servers -Compress
+        $env:TRAINEELAB_RDM_WEB = ConvertTo-Json -InputObject $web -Compress
         $env:TRAINEELAB_RDM_PASSWORD = ConvertFrom-Base64String $AdminPasswordB64
         try {
             $result = Invoke-NativeCommand -FilePath $PwshExe -ArgumentList @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', $helper) -NoThrow
-            $output = $result.Output
+            $output = @($result.Output | ForEach-Object { "$_" })
             $exitCode = $result.ExitCode
         }
         finally {
-            Remove-Item -Path Env:TRAINEELAB_RDM_PASSWORD, Env:TRAINEELAB_RDM_SERVERS, Env:TRAINEELAB_RDM_FILE -ErrorAction SilentlyContinue
+            Remove-Item -Path Env:TRAINEELAB_RDM_PASSWORD, Env:TRAINEELAB_RDM_SERVERS, Env:TRAINEELAB_RDM_WEB, Env:TRAINEELAB_RDM_FILE -ErrorAction SilentlyContinue
         }
-        $created = @($output | ForEach-Object { "$_" } | Where-Object { $_ -like 'ENTRIES|*' })
+        $created = @($output | Where-Object { $_ -like 'ENTRIES|*' })
         if ($exitCode -ne 0 -or -not $created) {
             throw "Anlegen der Verbindungen fehlgeschlagen (Exit-Code $exitCode): $($output -join ' ')"
         }
-        Write-LabLog "RDM-Datenquelle $RdmWorkspaceFile angelegt: $($created[0].Substring(8))"
+        $entryNames = $created[0].Substring(8).Split(',')
+        Write-LabLog "RDM-Datenquelle $RdmWorkspaceFile angelegt: $($entryNames -join ', ')"
+        foreach ($line in $output | Where-Object { $_ -like 'WEBERROR|*' }) {
+            Write-LabLog "WARNUNG: RDM-Web-Eintrag nicht angelegt: $($line.Substring(9))"
+        }
 
         $registerScript = Join-Path $RdmDataDir 'Register-LabWorkspace.ps1'
         Set-Content -Path $registerScript -Value $RdmRegisterWorkspaceScript -Encoding ASCII
@@ -619,7 +822,7 @@ function Publish-RemoteConnection {
         Set-ItemProperty -Path $RdmActiveSetupKey -Name 'Version' -Value '1,0,0,0'
         Set-ItemProperty -Path $RdmActiveSetupKey -Name 'IsInstalled' -Value 1 -Type DWord
         Write-LabLog 'Active Setup bindet den Arbeitsbereich Lab-Server bei der ersten Anmeldung jedes Benutzers ein.'
-        return $servers.Name
+        return @($servers.Name) + @($web.Name | Where-Object { $entryNames -contains $_ })
     }
     catch {
         Write-LabLog "WARNUNG: Verbindungen im Remote Desktop Manager nicht eingerichtet: $($_.Exception.Message)"
@@ -630,7 +833,8 @@ function Publish-RemoteConnection {
 function Publish-ClientDesktop {
     param([string[]] $RdmServers = @())
     $desktop = Join-Path $env:PUBLIC 'Desktop'
-    $owaUrl = "https://mail.$PublicDomainName/owa"
+    $web = @(Get-ExchangeWebEntry)
+    $owaUrl = ($web | Where-Object { $_.Name -eq 'OWA' }).Url
     $text = @{
         de = @{
             Installed = 'installiert'; Missing = 'FEHLT, siehe C:\ExchangeLab\office-failed.txt'; None = 'keiner'
@@ -657,6 +861,7 @@ function Publish-ClientDesktop {
                 '  ACHTUNG: Jeder Benutzer dieses Clients kann das hinterlegte Admin-Passwort auslesen (Lab-Komfort).'
                 '  RDM Free ist laut Devolutions fuer eine Einzelperson lizenziert.'
             )
+            RdmWeb = '  OWA und ECP oeffnen im Standardbrowser, Anmeldung dort von Hand (OWA mit dem eigenen Lab-Benutzer).'
             NoRdm = '  nicht eingerichtet (Parameter clientRemoteDesktopManager oder Fehler, siehe Logs)'
         }
         en = @{
@@ -684,6 +889,7 @@ function Publish-ClientDesktop {
                 '  WARNING: every user of this client can read the stored admin password (lab convenience).'
                 '  According to Devolutions, RDM Free is licensed for a single person.'
             )
+            RdmWeb = '  OWA and ECP open in the default browser, sign in there by hand (OWA with your own lab user).'
             NoRdm = '  not set up (parameter clientRemoteDesktopManager or an error, see logs)'
         }
     }[$LabLanguage]
@@ -693,13 +899,15 @@ function Publish-ClientDesktop {
         ''
         "Domain:       $DomainName (NetBIOS $NetbiosName)"
         ($text.Logon -f $NetbiosName, $ClientLanguage.SampleUser)
-        "OWA:          $owaUrl"
+    ) + @($web | ForEach-Object { '{0,-14}{1}' -f "$($_.Name):", $_.Url }) + @(
         "Office:       Microsoft 365 Apps $officeStatus"
         "Fileserver:   $(if ($FileServerComputerName) { $text.FileServer -f $FileServerComputerName } else { $text.None })"
         ''
     ) + $text.Body
     if ($RdmServers) {
-        $lines += @($text.Rdm[0], ($text.Rdm[1] -f ($RdmServers -join ', ')), ($text.Rdm[2] -f "$NetbiosName\$AdminUser"), $text.Rdm[3], $text.Rdm[4])
+        $lines += @($text.Rdm[0], ($text.Rdm[1] -f ($RdmServers -join ', ')), ($text.Rdm[2] -f "$NetbiosName\$AdminUser"))
+        if ($RdmServers | Where-Object { $web.Name -contains $_ }) { $lines += $text.RdmWeb }
+        $lines += @($text.Rdm[3], $text.Rdm[4])
     }
     else {
         $lines += $text.NoRdm

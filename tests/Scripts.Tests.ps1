@@ -389,7 +389,20 @@ Describe 'azuredeploy.json' {
         $template.parameters.clientRemoteDesktopManager.defaultValue | Should -BeTrue
         $clientModule = ($template.resources | Where-Object name -EQ 'client').properties.template
         $prepare = $clientModule.resources | Where-Object { $_.type -eq 'Microsoft.Compute/virtualMachines/runCommands' -and $_.name -match 'Initialize-LabClient' }
-        $prepare.properties.parameters.name | Should -Contain 'RemoteDesktopManager'
+        # Parameterliste ist ein ARM-Ausdruck (concat), WingetPackages wird nur bei Bedarf angehaengt.
+        ($prepare.properties.parameters | ConvertTo-Json -Depth 20) | Should -Match '(["'']|\\u0027)RemoteDesktopManager(["'']|\\u0027)'
+    }
+
+    It 'installiert winget-Pakete auf dem Client, nicht auf dem Exchange-Server' {
+        $template.parameters.clientWingetPackages.defaultValue | Should -Contain 'Microsoft.VisualStudioCode'
+        $template.parameters.PSObject.Properties.Name | Should -Not -Contain 'wingetPackages'
+        $clientModule = ($template.resources | Where-Object name -EQ 'client').properties.template
+        $prepare = $clientModule.resources | Where-Object { $_.type -eq 'Microsoft.Compute/virtualMachines/runCommands' -and $_.name -match 'Initialize-LabClient' }
+        ($prepare.properties.parameters | ConvertTo-Json -Depth 20) | Should -Match '(["'']|\\u0027)WingetPackages(["'']|\\u0027)'
+        $exchangeModule = ($template.resources | Where-Object name -EQ 'exchange-server').properties.template
+        $initialize = $exchangeModule.resources | Where-Object { $_.type -eq 'Microsoft.Compute/virtualMachines/runCommands' -and $_.name -match 'Initialize-ExchangeServer' }
+        $initialize | Should -Not -BeNullOrEmpty
+        ($initialize.properties.parameters | ConvertTo-Json -Depth 20) | Should -Not -Match 'WingetPackages'
     }
 
     It 'uebergibt das Admin-Passwort fuer die RDM-Verbindungen nur geschuetzt an Complete-LabClient' {
@@ -571,6 +584,56 @@ Describe 'Remote Desktop Manager auf dem Client' {
 
     It 'installiert das RDM-Modul in fester Version' {
         $clientScript | Should -Match "Name\s*=\s*'Devolutions\.PowerShell'\s+Version\s*=\s*'\d+\.\d+\.\d+'"
+    }
+
+    It 'legt OWA und ECP als Web-Eintraege ohne Zugangsdaten im Standardbrowser an' {
+        $helper = [regex]::Match($clientScript, "(?s)\`$RdmCreateWorkspaceScript = @'(.*?)\n'@").Groups[1].Value
+        $helper | Should -Match '-Type WebBrowser'
+        $helper | Should -Match 'WebBrowserUrl = \$web\.Url'
+        $helper | Should -Match 'OpenEmbedded = \$false'
+        $helper.Substring($helper.IndexOf('TRAINEELAB_RDM_WEB')) | Should -Not -Match 'Password|UserName'
+    }
+
+    It 'bildet die OWA- und ECP-Adressen aus dem oeffentlichen Namen' {
+        . ([scriptblock]::Create([regex]::Match($clientScript, '(?s)function Get-ExchangeWebEntry \{.*?\n\}').Value))
+        $PublicDomainName = 'k.lab.example.com'
+        $entries = @(Get-ExchangeWebEntry)
+        $entries.Name | Should -Be @('OWA', 'ECP')
+        $entries.Url | Should -Be @("https://mail.$PublicDomainName/owa", "https://mail.$PublicDomainName/ecp")
+    }
+}
+
+Describe 'winget-Pakete auf dem Client' {
+    BeforeAll {
+        $clientScript = Get-Content -Path (Join-Path $repoRoot 'scripts/Initialize-LabClient.ps1') -Raw
+        $exchangeScript = Get-Content -Path (Join-Path $repoRoot 'scripts/Initialize-ExchangeServer.ps1') -Raw
+        function Get-ClientFunctionText([string] $Name) { [regex]::Match($clientScript, "(?s)function $Name \{.*?\n\}").Value }
+    }
+
+    It 'nutzt denselben Microsoft.WinGet.Client-Pin wie der Exchange-Server' {
+        $pattern = "\`$WinGetClientVersion\s*=\s*'(\d+\.\d+\.\d+)'"
+        $clientPin = [regex]::Match($clientScript, $pattern)
+        $clientPin.Success | Should -BeTrue
+        $clientPin.Groups[1].Value | Should -Be ([regex]::Match($exchangeScript, $pattern).Groups[1].Value)
+    }
+
+    It 'legt Hilfsskript und Paketliste fuer den SYSTEM-Task in einem schreibgeschuetzten Ordner ab' {
+        $clientScript | Should -Match "\`$WinGetDir\s*=\s*Join-Path \`$env:ProgramData"
+        Get-ClientFunctionText 'Install-WinGetTool' | Should -Match 'Initialize-ReadOnlyFolderAcl -Path \$WinGetDir'
+    }
+
+    It 'registriert den Update-Task beim Start und taeglich, mit Nachholen' {
+        $register = Get-ClientFunctionText 'Register-WinGetUpdateTask'
+        $register | Should -Match 'New-ScheduledTaskTrigger -AtStartup'
+        $register | Should -Match "New-ScheduledTaskTrigger -Daily -At '12:00'"
+        $register | Should -Match '-StartWhenAvailable'
+        $register | Should -Match "-UserId 'SYSTEM'"
+        $register | Should -Match ' -Update '
+    }
+
+    It 'schaltet die Update-Meldung von VS Code per Richtlinie ab' {
+        Get-ClientFunctionText 'Initialize-VSCodePolicy' | Should -Match "-Name 'UpdateMode' -Value 'none'"
+        Get-ClientFunctionText 'Install-WinGetTool' | Should -Match "-contains 'Microsoft\.VisualStudioCode'"
     }
 }
 

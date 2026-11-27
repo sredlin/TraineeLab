@@ -54,6 +54,8 @@ The rules `Allow-Exchange-Web` and `Allow-Exchange-SMTP` use the same source by 
 
 Devolutions Remote Desktop Manager Free is installed on `<K>-CL01` (parameter `clientRemoteDesktopManager`, default `true`). Desktop or Start menu → *Remote Desktop Manager*. The **Lab-Server** workspace contains `<K>-DC01`, `<K>-EX01`, `<K>-FS01` and, if deployed, `<K>-DC02`. A double-click connects as `<K>\azadmin` without a password prompt.
 
+The workspace also has the web entries **OWA** (`https://mail.<k>.<zone>/owa`) and **ECP** (`/ecp`). They open in the default browser and contain no credentials: in OWA everyone signs in with their own lab user, in the ECP with an Exchange administrator such as `<K>\azadmin`.
+
 How it is set up:
 
 - The connections are stored in a shared file `C:\ProgramData\TraineeLab\RemoteDesktopManager\Lab-Server.xml`. It is recreated in the *Complete* phase of the deployment.
@@ -65,6 +67,18 @@ How it is set up:
 **Admin password changed:** In RDM select the connections → *Edit* → *Credentials* and enter the new password. Since the file is shared, this applies to all users.
 
 **Update the RDM version (repository):** `scripts/Initialize-LabClient.ps1` contains the pins `$RdmInstaller` (URL and SHA256 from [productinfo.json](https://devolutions.net/productinfo.json), section `RDMWindows.Current`, x64 MSI), `$RdmModule` (version from the PowerShell Gallery) and `$DotNetDesktopRuntime`. The update check in RDM is disabled by policy because lab users have no admin rights. On a running client, an administrator installs a new MSI by hand.
+
+## Tools on the client (winget)
+
+On `<K>-CL01`, the deployment installs the winget packages from `clientWingetPackages` machine-wide in the latest version; the default is Visual Studio Code.
+
+- The task `TraineeLab-WinGetUpdate` (SYSTEM) updates them when the VM starts and daily at 12:00. It catches up on runs missed because of the auto-shutdown. Log: `C:\ExchangeLab\Logs\Update-WinGetTool.log`.
+- VS Code shows no update prompt (policy `UpdateMode = none`), because lab users without admin rights cannot update the system-wide VS Code.
+- If a program is open during the update, the update can fail. The next run tries again.
+- Update immediately (PowerShell as administrator): `Start-ScheduledTask -TaskName TraineeLab-WinGetUpdate`.
+- Change the package list on a running client: `C:\ProgramData\TraineeLab\WinGet\Packages.txt`, one winget ID per line (administrators only). The next run installs new entries.
+
+Remote Desktop Manager deliberately stays on the pinned version (see above): the module `Devolutions.PowerShell`, which creates the connections, has to match the RDM version.
 
 ## Check the lab
 
@@ -83,7 +97,7 @@ It reads the language and options from the last lab deployment and checks:
 | DCs | DC role and services, `dc-ready.txt`, SYSVOL/NETLOGON, forwarders, SRV records of all DCs, split DNS, PTR, AD sites, replication, lab users with company/fax/city |
 | Exchange | installation, services, mailboxes and sample recipients, mailbox language, certificate on 443 (Let's Encrypt, enabled for SMTP), OWA URLs and `healthcheck.htm`, maintenance task |
 | File server | phase Complete, shares with access-based enumeration, legacy issues, sample data finished and data drive filled |
-| Client | domain and secure channel, display language, Microsoft 365 Apps, Remote Desktop Manager, RDP for domain users |
+| Client | domain and secure channel, display language, Microsoft 365 Apps, Remote Desktop Manager with OWA and ECP, winget packages and update task, RDP for domain users |
 | all VMs | no `WARNUNG:`/`FEHLER:` (warning/error) in `C:\ExchangeLab\Logs`, locale, update run finished, `Lab-Info.txt` without open placeholders |
 
 Each check is `OK`, `FAIL` or `PENDING` (background work still running). Exit code 0 = all OK, 1 = error, 2 = not finished yet. The check scripts per role are in `tools/LabChecks`. If a VM is stopped (shutdown time), the tool reports `PENDING` until it is running again.
