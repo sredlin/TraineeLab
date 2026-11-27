@@ -69,7 +69,7 @@ Trainee Lab solves this:
 ### What everyone gets
 
 - **Safely isolated:** Each lab runs in its own Azure resource group, with no connection to the production environment or the company tenant, and can only be reached from approved IP addresses.
-- **Few permissions needed:** No Global Administrator rights, only permissions on your own resource group and the shared DNS zone.
+- **Few permissions needed:** No Entra roles in the production tenant, only permissions on your own resource group and the shared DNS zone. Trainees hold Entra admin roles only in the Microsoft 365 demo tenant.
 - **Builds and checks itself:** The lab is set up without intervention and can be checked automatically for completeness at the end.
 - **Costs under control:** The servers shut down by themselves in the evening, and the file server shrinks after setup.
 - **Current and supported:** Exchange Server SE, Windows Server 2025, Windows 11.
@@ -113,7 +113,7 @@ From your own data centre to the cloud, for example:
 - **DNS and certificates:** internal and public name resolution, renew and bind certificates
 - **Exchange:** mailboxes, distribution groups, shared mailboxes and rooms, permissions, updates
 - **File server:** shares and permissions following AGDLP, find, assess and fix legacy issues, data protection
-- **Hybrid:** Entra Connect to synchronise with your own Microsoft 365 test tenant (not the company tenant), Exchange Hybrid and mailbox migration to Exchange Online
+- **Hybrid:** Entra Connect to synchronise with the Microsoft 365 demo tenant (not the company tenant), Exchange Hybrid and mailbox migration to Exchange Online
 - **Cloud migration:** move files from the file server to SharePoint Online
 
 ### Quick start
@@ -189,7 +189,7 @@ Das Trainee Lab löst das:
 ### Was alle davon haben
 
 - **Sicher abgeschottet:** Jedes Lab läuft in einer eigenen Azure-Ressourcengruppe, ohne Verbindung zur Produktivumgebung und zum Firmen-Tenant, und ist nur von freigegebenen IP-Adressen erreichbar.
-- **Wenig Rechte nötig:** Keine Global-Admin-Rechte, nur Rechte auf die eigene Ressourcengruppe und die gemeinsame DNS-Zone.
+- **Wenig Rechte nötig:** Keine Entra-Rollen im Produktiv-Tenant, nur Rechte auf die eigene Ressourcengruppe und die gemeinsame DNS-Zone. Entra-Admin-Rollen hat der Azubi nur im Microsoft-365-Demo-Tenant.
 - **Baut und prüft sich selbst:** Das Lab entsteht ohne Eingriff und lässt sich am Ende automatisch auf Vollständigkeit prüfen.
 - **Kosten im Griff:** Die Server schalten sich abends selbst ab, der Fileserver verkleinert sich nach dem Aufbau.
 - **Aktuell und supportet:** Exchange Server SE, Windows Server 2025, Windows 11.
@@ -233,7 +233,7 @@ Vom eigenen Rechenzentrum bis in die Cloud, zum Beispiel:
 - **DNS und Zertifikate:** interne und öffentliche Namensauflösung, Zertifikate erneuern und einbinden
 - **Exchange:** Postfächer, Verteiler, freigegebene Postfächer und Räume, Berechtigungen, Updates
 - **Fileserver:** Freigaben und Berechtigungen nach AGDLP, Altlasten finden, bewerten und beheben, Datenschutz
-- **Hybrid:** Entra Connect zur Synchronisierung mit einem eigenen Microsoft-365-Testtenant (nicht dem Firmen-Tenant), Exchange Hybrid und Postfachmigration nach Exchange Online
+- **Hybrid:** Entra Connect zur Synchronisierung mit dem Microsoft-365-Demo-Tenant (nicht dem Firmen-Tenant), Exchange Hybrid und Postfachmigration nach Exchange Online
 - **Cloud-Migration:** Dateien vom Fileserver nach SharePoint Online bringen
 
 ### Schnellstart
