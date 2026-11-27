@@ -212,7 +212,7 @@ az bicep build --file infra/main.bicep --outfile azuredeploy.json
 - Prüfungen (laufen auch in der CI, unter Linux mit pwsh 7 und unter Windows PowerShell 5.1). `tests/Haertung.Tests.ps1` prüft die Fehlerklassen der Testdeployments: Run-Command-Parameter gegen die Skripte, Argumente geplanter Tasks, Formatstrings der Lab-Info, stderr nativer Befehle unter 5.1, Zeitlimits, DPAPI:
 
 ```powershell
-Invoke-ScriptAnalyzer -Path scripts, tools -Recurse -Settings ./PSScriptAnalyzerSettings.psd1
+'scripts', 'tools' | ForEach-Object { Invoke-ScriptAnalyzer -Path $_ -Recurse -Settings ./PSScriptAnalyzerSettings.psd1 }
 Invoke-Pester -Path tests
 ```
 
