@@ -2,7 +2,7 @@
 
 [![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2Fsredlin%2FTraineeLab%2Fmaster%2Fazuredeploy.json)
 [![GitHub Sponsors](https://img.shields.io/badge/GitHub%20Sponsors-sponsor-EA4AAA?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/sredlin)
-[![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-unterst%C3%BCtzen-FFDD00?logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/sredlin)
+[![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-support-FFDD00?logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/sredlin)
 
 *A complete Microsoft company environment for learning and practice, deployed to Azure in one click.*
 
@@ -21,7 +21,6 @@ Eine komplette Microsoft-Firmenumgebung zum Lernen und Üben, per Klick in Azure
   - [Quick start](#quick-start)
   - [Costs](#costs)
   - [Documentation](#documentation)
-  - [Note for operators](#note-for-operators)
   - [Support the project](#support-the-project)
   - [Licence](#licence)
 - [Deutsch](#deutsch)
@@ -33,7 +32,6 @@ Eine komplette Microsoft-Firmenumgebung zum Lernen und Üben, per Klick in Azure
   - [Schnellstart](#schnellstart)
   - [Kosten](#kosten)
   - [Dokumentation](#dokumentation)
-  - [Hinweis für Betreiber](#hinweis-für-betreiber)
   - [Unterstützen](#unterstützen)
   - [Lizenz](#lizenz)
 
@@ -148,10 +146,6 @@ Budgets, early shutdown and removal: [Operations](docs/en/operations.md#keep-an-
 | [Troubleshooting](docs/en/troubleshooting.md) | trainees, trainers | help when something does not work |
 | [Development](docs/en/development.md) | contributors | repository layout, build, tests, acceptance |
 | [Text corpus](scripts/data/README.md) (German) | contributors | rules for the sample documents |
-
-### Note for operators
-
-Older versions of this template passed a service principal secret for Let's Encrypt in plain text. The secret is stored in the deployment history of all resource groups created with those versions. **Rotate the secret or delete the service principal** if you have not already done so.
 
 ### Support the project
 
@@ -272,10 +266,6 @@ Budgets, vorzeitiges Abschalten und Abbau: [Betrieb](docs/de/operations.md#koste
 | [Troubleshooting](docs/de/troubleshooting.md) | Azubis, Ausbilder | Hilfe, wenn etwas nicht läuft |
 | [Entwicklung](docs/de/development.md) | Mitwirkende | Aufbau des Repositorys, Build, Tests, Abnahme |
 | [Textkorpus](scripts/data/README.md) | Mitwirkende | Regeln für die Beispieldokumente |
-
-### Hinweis für Betreiber
-
-Ältere Versionen dieses Templates haben ein Service-Principal-Secret für Let's Encrypt im Klartext übergeben. Das Secret steht in der Deployment-Historie aller damit erstellten Ressourcengruppen. **Secret rotieren oder den Service Principal löschen**, falls noch nicht geschehen.
 
 ### Unterstützen
 
