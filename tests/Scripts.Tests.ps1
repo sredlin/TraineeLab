@@ -585,6 +585,22 @@ Describe 'Remote Desktop Manager auf dem Client' {
     It 'installiert das RDM-Modul in fester Version' {
         $clientScript | Should -Match "Name\s*=\s*'Devolutions\.PowerShell'\s+Version\s*=\s*'\d+\.\d+\.\d+'"
     }
+
+    It 'legt OWA und ECP als Web-Eintraege ohne Zugangsdaten im Standardbrowser an' {
+        $helper = [regex]::Match($clientScript, "(?s)\`$RdmCreateWorkspaceScript = @'(.*?)\n'@").Groups[1].Value
+        $helper | Should -Match '-Type WebBrowser'
+        $helper | Should -Match 'WebBrowserUrl = \$web\.Url'
+        $helper | Should -Match 'OpenEmbedded = \$false'
+        $helper.Substring($helper.IndexOf('TRAINEELAB_RDM_WEB')) | Should -Not -Match 'Password|UserName'
+    }
+
+    It 'bildet die OWA- und ECP-Adressen aus dem oeffentlichen Namen' {
+        . ([scriptblock]::Create([regex]::Match($clientScript, '(?s)function Get-ExchangeWebEntry \{.*?\n\}').Value))
+        $PublicDomainName = 'k.lab.example.com'
+        $entries = @(Get-ExchangeWebEntry)
+        $entries.Name | Should -Be @('OWA', 'ECP')
+        $entries.Url | Should -Be @("https://mail.$PublicDomainName/owa", "https://mail.$PublicDomainName/ecp")
+    }
 }
 
 Describe 'winget-Pakete auf dem Client' {

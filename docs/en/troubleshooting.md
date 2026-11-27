@@ -119,7 +119,7 @@ Restart-Computer
 ## Remote Desktop Manager shows no lab connections
 
 1. Is RDM installed? `C:\ExchangeLab\Logs\Initialize-LabClient-Prepare.log` lists the steps .NET Desktop Runtime, Remote Desktop Manager, PowerShell 7 and module. On failure there is also `C:\ExchangeLab\rdm-failed.txt` with the cause.
-2. Was the data source created? `Initialize-LabClient-Complete.log` reports `RDM-Datenquelle ... angelegt` (RDM data source created) with all servers.
+2. Was the data source created? `Initialize-LabClient-Complete.log` reports `RDM-Datenquelle ... angelegt` (RDM data source created) with all servers plus OWA and ECP. If only a web entry is missing, the line `WARNUNG: RDM-Web-Eintrag nicht angelegt` (web entry not created) gives the cause.
 3. If the "Lab-Server" workspace is missing for one user only: check `%LOCALAPPDATA%\TraineeLab\Register-LabWorkspace.log` and repeat the registration by hand as that user (close RDM first):
 
    ```powershell

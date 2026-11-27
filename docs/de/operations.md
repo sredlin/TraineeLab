@@ -54,6 +54,8 @@ Die Regeln `Allow-Exchange-Web` und `Allow-Exchange-SMTP` nutzen standardmäßig
 
 Auf `<K>-CL01` ist Devolutions Remote Desktop Manager Free installiert (Parameter `clientRemoteDesktopManager`, Standard `true`). Desktop oder Startmenü → *Remote Desktop Manager*. Im Arbeitsbereich **Lab-Server** stehen `<K>-DC01`, `<K>-EX01`, `<K>-FS01` und, falls bereitgestellt, `<K>-DC02`. Ein Doppelklick verbindet als `<K>\azadmin`, ohne Passworteingabe.
 
+Dazu kommen die Web-Einträge **OWA** (`https://mail.<k>.<zone>/owa`) und **ECP** (`/ecp`). Sie öffnen im Standardbrowser und enthalten keine Zugangsdaten: In OWA meldet sich jeder mit dem eigenen Lab-Benutzer an, im ECP mit einem Exchange-Administrator wie `<K>\azadmin`.
+
 So ist es aufgebaut:
 
 - Die Verbindungen liegen in einer gemeinsamen Datei `C:\ProgramData\TraineeLab\RemoteDesktopManager\Lab-Server.xml`. Sie entsteht in der Phase *Complete* des Deployments neu.
@@ -95,7 +97,7 @@ Es liest Sprache und Optionen aus dem letzten Lab-Deployment und prüft:
 | DCs | DC-Rolle und Dienste, `dc-ready.txt`, SYSVOL/NETLOGON, Forwarder, SRV-Records aller DCs, Split DNS, PTR, AD-Standorte, Replikation, Lab-Benutzer mit Firma/Fax/Ort |
 | Exchange | Installation, Dienste, Postfächer und Beispielempfänger, Postfachsprache, Zertifikat auf 443 (Let's Encrypt, für SMTP aktiviert), OWA-URLs und `healthcheck.htm`, Wartungs-Task |
 | Fileserver | Phase Complete, Freigaben mit zugriffsbasierter Aufzählung, Altlasten, Beispieldaten fertig und Datenlaufwerk gefüllt |
-| Client | Domäne und Secure Channel, Anzeigesprache, Microsoft 365 Apps, Remote Desktop Manager, RDP für Domänen-Benutzer |
+| Client | Domäne und Secure Channel, Anzeigesprache, Microsoft 365 Apps, Remote Desktop Manager mit OWA und ECP, winget-Pakete und Update-Task, RDP für Domänen-Benutzer |
 | alle VMs | keine `WARNUNG:`/`FEHLER:` in `C:\ExchangeLab\Logs`, Gebietsschema, Update-Lauf fertig, `Lab-Info.txt` ohne offene Platzhalter |
 
 Jede Prüfung ist `OK`, `FAIL` oder `PENDING` (Hintergrundarbeit läuft noch). Exit-Code 0 = alles OK, 1 = Fehler, 2 = noch nicht fertig. Die Prüfskripte je Rolle liegen in `tools/LabChecks`. Ist eine VM gestoppt (Abschaltzeit), meldet das Werkzeug `PENDING`, bis sie wieder läuft.

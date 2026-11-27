@@ -119,7 +119,7 @@ Restart-Computer
 ## Remote Desktop Manager zeigt keine Lab-Verbindungen
 
 1. Ist RDM installiert? In `C:\ExchangeLab\Logs\Initialize-LabClient-Prepare.log` stehen die Schritte .NET Desktop Runtime, Remote Desktop Manager, PowerShell 7 und Modul. Bei einem Fehler gibt es zusätzlich `C:\ExchangeLab\rdm-failed.txt` mit der Ursache.
-2. Wurde die Datenquelle angelegt? `Initialize-LabClient-Complete.log` nennt `RDM-Datenquelle ... angelegt` mit allen Servern.
+2. Wurde die Datenquelle angelegt? `Initialize-LabClient-Complete.log` nennt `RDM-Datenquelle ... angelegt` mit allen Servern sowie OWA und ECP. Fehlt nur ein Web-Eintrag, steht die Ursache in der Zeile `WARNUNG: RDM-Web-Eintrag nicht angelegt`.
 3. Fehlt nur bei einem Benutzer der Arbeitsbereich „Lab-Server“: `%LOCALAPPDATA%\TraineeLab\Register-LabWorkspace.log` prüfen und das Einbinden als dieser Benutzer von Hand wiederholen (RDM vorher schließen):
 
    ```powershell

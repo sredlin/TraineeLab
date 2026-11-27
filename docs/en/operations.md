@@ -54,6 +54,8 @@ The rules `Allow-Exchange-Web` and `Allow-Exchange-SMTP` use the same source by 
 
 Devolutions Remote Desktop Manager Free is installed on `<K>-CL01` (parameter `clientRemoteDesktopManager`, default `true`). Desktop or Start menu → *Remote Desktop Manager*. The **Lab-Server** workspace contains `<K>-DC01`, `<K>-EX01`, `<K>-FS01` and, if deployed, `<K>-DC02`. A double-click connects as `<K>\azadmin` without a password prompt.
 
+The workspace also has the web entries **OWA** (`https://mail.<k>.<zone>/owa`) and **ECP** (`/ecp`). They open in the default browser and contain no credentials: in OWA everyone signs in with their own lab user, in the ECP with an Exchange administrator such as `<K>\azadmin`.
+
 How it is set up:
 
 - The connections are stored in a shared file `C:\ProgramData\TraineeLab\RemoteDesktopManager\Lab-Server.xml`. It is recreated in the *Complete* phase of the deployment.
@@ -95,7 +97,7 @@ It reads the language and options from the last lab deployment and checks:
 | DCs | DC role and services, `dc-ready.txt`, SYSVOL/NETLOGON, forwarders, SRV records of all DCs, split DNS, PTR, AD sites, replication, lab users with company/fax/city |
 | Exchange | installation, services, mailboxes and sample recipients, mailbox language, certificate on 443 (Let's Encrypt, enabled for SMTP), OWA URLs and `healthcheck.htm`, maintenance task |
 | File server | phase Complete, shares with access-based enumeration, legacy issues, sample data finished and data drive filled |
-| Client | domain and secure channel, display language, Microsoft 365 Apps, Remote Desktop Manager, RDP for domain users |
+| Client | domain and secure channel, display language, Microsoft 365 Apps, Remote Desktop Manager with OWA and ECP, winget packages and update task, RDP for domain users |
 | all VMs | no `WARNUNG:`/`FEHLER:` (warning/error) in `C:\ExchangeLab\Logs`, locale, update run finished, `Lab-Info.txt` without open placeholders |
 
 Each check is `OK`, `FAIL` or `PENDING` (background work still running). Exit code 0 = all OK, 1 = error, 2 = not finished yet. The check scripts per role are in `tools/LabChecks`. If a VM is stopped (shutdown time), the tool reports `PENDING` until it is running again.

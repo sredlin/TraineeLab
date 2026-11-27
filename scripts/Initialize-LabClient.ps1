@@ -26,6 +26,7 @@
         Zugangsdaten; Active Setup bindet sie bei der ersten Anmeldung jedes Benutzers als Arbeitsbereich ein.
         RDM verschluesselt Passwoerter mit einem eingebauten Schluessel: Jeder Benutzer des Clients kann das
         Admin-Passwort auslesen (bewusste Entscheidung fuer den Lab-Komfort).
+        Dazu Web-Eintraege OWA und ECP ohne Zugangsdaten, sie oeffnen im Standardbrowser.
       - Lab-Info.txt und OWA-Verknuepfung auf dem oeffentlichen Desktop
 
     Fehler bei Sprachpaket, Office, Remote Desktop Manager und winget-Paketen sind nicht fatal: Das Lab bleibt
@@ -138,8 +139,9 @@ $RdmWorkspaceFile = Join-Path $RdmDataDir 'Lab-Server.xml'
 $RdmActiveSetupKey = 'HKLM:\SOFTWARE\Microsoft\Active Setup\Installed Components\TraineeLab-RemoteDesktopManager'
 
 # Laeuft unter PowerShell 7 als SYSTEM: legt die XML-Datenquelle mit den Verbindungen neu an.
-# Server und Passwort kommen per Umgebungsvariable (nicht in der Kommandozeile, Windows PowerShell 5.1
-# wuerde die Anfuehrungszeichen im JSON beim Aufruf von pwsh verlieren).
+# Server, Web-Eintraege und Passwort kommen per Umgebungsvariable (nicht in der Kommandozeile, Windows
+# PowerShell 5.1 wuerde die Anfuehrungszeichen im JSON beim Aufruf von pwsh verlieren). Ein fehlerhafter
+# Web-Eintrag meldet WEBERROR, die RDP-Verbindungen bleiben.
 $RdmCreateWorkspaceScript = @'
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
@@ -155,6 +157,18 @@ foreach ($server in ($env:TRAINEELAB_RDM_SERVERS | ConvertFrom-Json)) {
     $entry = $entry | Set-RDMEntryDomain -Domain $server.Domain -PassThru
     $entry = $entry | Set-RDMEntryPassword -Password $password -PassThru
     Set-RDMEntry -InputObject $entry
+}
+foreach ($web in ($env:TRAINEELAB_RDM_WEB | ConvertFrom-Json)) {
+    try {
+        # Ohne Zugangsdaten, extern im Standardbrowser des Benutzers.
+        $entry = New-RDMEntry -Name $web.Name -Host $web.Url -Type WebBrowser
+        $entry.WebBrowserUrl = $web.Url
+        $entry.OpenEmbedded = $false
+        Set-RDMEntry -InputObject $entry
+    }
+    catch {
+        'WEBERROR|{0}: {1}' -f $web.Name, $_.Exception.Message
+    }
 }
 'ENTRIES|' + ((Get-RDMEntry | ForEach-Object { $_.Name }) -join ',')
 '@
@@ -736,6 +750,13 @@ function Get-LabServerList {
     @($DcComputerName, $SecondDcComputerName, $ExchangeComputerName, $FileServerComputerName) | Where-Object { $_ }
 }
 
+function Get-ExchangeWebEntry {
+    # OWA und ECP ueber den oeffentlichen Namen (passt zum Zertifikat), fuer RDM, Lab-Info und Desktop.
+    foreach ($app in 'owa', 'ecp') {
+        [pscustomobject]@{ Name = $app.ToUpperInvariant(); Url = 'https://mail.{0}/{1}' -f $PublicDomainName, $app }
+    }
+}
+
 function Initialize-RdmDataAcl {
     # Ordner: Benutzer lesen nur (das Registrierungsskript liegt hier). Die XML-Datei braucht Aendern: RDM schreibt
     # sie beim Laden jedes Benutzers neu (ChangeMasterKey), auch wenn sich der Inhalt nicht aendert.
@@ -749,7 +770,8 @@ function Initialize-RdmDataAcl {
 }
 
 function Publish-RemoteConnection {
-    # Ergebnis: Liste der Server im RDM, leer = nicht eingerichtet. Fehler sind nicht fatal (Komfortfunktion).
+    # Ergebnis: Namen der Eintraege im RDM (Server, dann OWA/ECP), leer = nicht eingerichtet. Fehler sind nicht
+    # fatal (Komfortfunktion).
     $moduleDir = Join-Path $env:ProgramFiles ('PowerShell\Modules\{0}\{1}' -f $RdmModule.Name, $RdmModule.Version)
     if (-not ((Test-Path -Path $RdmExe) -and (Test-Path -Path $PwshExe) -and (Test-Path -Path $moduleDir))) {
         Write-LabLog 'Remote Desktop Manager nicht installiert (abgewaehlt oder Fehler in Phase Prepare), keine Verbindungen.'
@@ -767,21 +789,27 @@ function Publish-RemoteConnection {
         $helper = Join-Path $InstallDir 'New-LabRdmWorkspace.ps1'
         Set-Content -Path $helper -Value $RdmCreateWorkspaceScript -Encoding ASCII
         $env:TRAINEELAB_RDM_FILE = $RdmWorkspaceFile
+        $web = @(Get-ExchangeWebEntry)
         $env:TRAINEELAB_RDM_SERVERS = ConvertTo-Json -InputObject $servers -Compress
+        $env:TRAINEELAB_RDM_WEB = ConvertTo-Json -InputObject $web -Compress
         $env:TRAINEELAB_RDM_PASSWORD = ConvertFrom-Base64String $AdminPasswordB64
         try {
             $result = Invoke-NativeCommand -FilePath $PwshExe -ArgumentList @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', $helper) -NoThrow
-            $output = $result.Output
+            $output = @($result.Output | ForEach-Object { "$_" })
             $exitCode = $result.ExitCode
         }
         finally {
-            Remove-Item -Path Env:TRAINEELAB_RDM_PASSWORD, Env:TRAINEELAB_RDM_SERVERS, Env:TRAINEELAB_RDM_FILE -ErrorAction SilentlyContinue
+            Remove-Item -Path Env:TRAINEELAB_RDM_PASSWORD, Env:TRAINEELAB_RDM_SERVERS, Env:TRAINEELAB_RDM_WEB, Env:TRAINEELAB_RDM_FILE -ErrorAction SilentlyContinue
         }
-        $created = @($output | ForEach-Object { "$_" } | Where-Object { $_ -like 'ENTRIES|*' })
+        $created = @($output | Where-Object { $_ -like 'ENTRIES|*' })
         if ($exitCode -ne 0 -or -not $created) {
             throw "Anlegen der Verbindungen fehlgeschlagen (Exit-Code $exitCode): $($output -join ' ')"
         }
-        Write-LabLog "RDM-Datenquelle $RdmWorkspaceFile angelegt: $($created[0].Substring(8))"
+        $entryNames = $created[0].Substring(8).Split(',')
+        Write-LabLog "RDM-Datenquelle $RdmWorkspaceFile angelegt: $($entryNames -join ', ')"
+        foreach ($line in $output | Where-Object { $_ -like 'WEBERROR|*' }) {
+            Write-LabLog "WARNUNG: RDM-Web-Eintrag nicht angelegt: $($line.Substring(9))"
+        }
 
         $registerScript = Join-Path $RdmDataDir 'Register-LabWorkspace.ps1'
         Set-Content -Path $registerScript -Value $RdmRegisterWorkspaceScript -Encoding ASCII
@@ -794,7 +822,7 @@ function Publish-RemoteConnection {
         Set-ItemProperty -Path $RdmActiveSetupKey -Name 'Version' -Value '1,0,0,0'
         Set-ItemProperty -Path $RdmActiveSetupKey -Name 'IsInstalled' -Value 1 -Type DWord
         Write-LabLog 'Active Setup bindet den Arbeitsbereich Lab-Server bei der ersten Anmeldung jedes Benutzers ein.'
-        return $servers.Name
+        return @($servers.Name) + @($web.Name | Where-Object { $entryNames -contains $_ })
     }
     catch {
         Write-LabLog "WARNUNG: Verbindungen im Remote Desktop Manager nicht eingerichtet: $($_.Exception.Message)"
@@ -805,7 +833,8 @@ function Publish-RemoteConnection {
 function Publish-ClientDesktop {
     param([string[]] $RdmServers = @())
     $desktop = Join-Path $env:PUBLIC 'Desktop'
-    $owaUrl = "https://mail.$PublicDomainName/owa"
+    $web = @(Get-ExchangeWebEntry)
+    $owaUrl = ($web | Where-Object { $_.Name -eq 'OWA' }).Url
     $text = @{
         de = @{
             Installed = 'installiert'; Missing = 'FEHLT, siehe C:\ExchangeLab\office-failed.txt'; None = 'keiner'
@@ -832,6 +861,7 @@ function Publish-ClientDesktop {
                 '  ACHTUNG: Jeder Benutzer dieses Clients kann das hinterlegte Admin-Passwort auslesen (Lab-Komfort).'
                 '  RDM Free ist laut Devolutions fuer eine Einzelperson lizenziert.'
             )
+            RdmWeb = '  OWA und ECP oeffnen im Standardbrowser, Anmeldung dort von Hand (OWA mit dem eigenen Lab-Benutzer).'
             NoRdm = '  nicht eingerichtet (Parameter clientRemoteDesktopManager oder Fehler, siehe Logs)'
         }
         en = @{
@@ -859,6 +889,7 @@ function Publish-ClientDesktop {
                 '  WARNING: every user of this client can read the stored admin password (lab convenience).'
                 '  According to Devolutions, RDM Free is licensed for a single person.'
             )
+            RdmWeb = '  OWA and ECP open in the default browser, sign in there by hand (OWA with your own lab user).'
             NoRdm = '  not set up (parameter clientRemoteDesktopManager or an error, see logs)'
         }
     }[$LabLanguage]
@@ -868,13 +899,15 @@ function Publish-ClientDesktop {
         ''
         "Domain:       $DomainName (NetBIOS $NetbiosName)"
         ($text.Logon -f $NetbiosName, $ClientLanguage.SampleUser)
-        "OWA:          $owaUrl"
+    ) + @($web | ForEach-Object { '{0,-14}{1}' -f "$($_.Name):", $_.Url }) + @(
         "Office:       Microsoft 365 Apps $officeStatus"
         "Fileserver:   $(if ($FileServerComputerName) { $text.FileServer -f $FileServerComputerName } else { $text.None })"
         ''
     ) + $text.Body
     if ($RdmServers) {
-        $lines += @($text.Rdm[0], ($text.Rdm[1] -f ($RdmServers -join ', ')), ($text.Rdm[2] -f "$NetbiosName\$AdminUser"), $text.Rdm[3], $text.Rdm[4])
+        $lines += @($text.Rdm[0], ($text.Rdm[1] -f ($RdmServers -join ', ')), ($text.Rdm[2] -f "$NetbiosName\$AdminUser"))
+        if ($RdmServers | Where-Object { $web.Name -contains $_ }) { $lines += $text.RdmWeb }
+        $lines += @($text.Rdm[3], $text.Rdm[4])
     }
     else {
         $lines += $text.NoRdm
