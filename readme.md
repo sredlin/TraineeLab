@@ -86,7 +86,6 @@ flowchart LR
         DC[Domain controller<br/>Active Directory, DNS]
         EX[Exchange Server SE<br/>Email, calendar]
         CL --> FS
-        CL --> DC
         CL --> EX
         FS --> DC
         EX --> DC
@@ -219,7 +218,6 @@ flowchart LR
         DC[Domain Controller<br/>Active Directory, DNS]
         EX[Exchange Server SE<br/>E-Mail, Kalender]
         CL --> FS
-        CL --> DC
         CL --> EX
         FS --> DC
         EX --> DC
