@@ -81,7 +81,7 @@ Trainee Lab solves this:
 ```mermaid
 flowchart LR
     subgraph LAB[Your own lab in Azure]
-        CL[Windows 11 workstation<br/>Microsoft 365 Apps]
+        CL[Windows 11 workstation<br/>domain-joined<br/>Microsoft 365 Apps]
         FS[File server<br/>Shares, documents]
         DC[Domain controller<br/>Active Directory, DNS]
         EX[Exchange Server SE<br/>Email, calendar]
@@ -114,7 +114,7 @@ The deployment builds everything inside the lab. The Microsoft 365 demo tenant (
   - Domain controller with Active Directory and DNS, optionally a second one for resilience
   - Exchange Server SE with mailboxes, distribution groups, shared mailboxes, meeting rooms and Outlook on the web
   - File server with department, project, archive and scan shares plus personal home folders
-  - Windows 11 workstation with Microsoft 365 Apps, Outlook ready to use and Remote Desktop Manager to reach all servers
+  - Domain-joined Windows 11 workstation with Microsoft 365 Apps, Outlook ready to use and Remote Desktop Manager to reach all servers
 - **The data:** around 230 GB of Word, Excel, PowerPoint and PDF files from twelve years of company history, from client projects through accounting and HR to corporate design.
 - **The legacy issues:** built in on purpose, as in any environment that has grown over time: copies and old versions, permissions for individual users instead of groups, job applications readable by everyone, permissions of an intern deleted long ago, a private folder no admin can access, and a scan share with full control for everyone.
 
@@ -215,7 +215,7 @@ Das Trainee Lab löst das:
 ```mermaid
 flowchart LR
     subgraph LAB[Eigenes Lab in Azure]
-        CL[Windows-11-Arbeitsplatz<br/>Microsoft 365 Apps]
+        CL[Windows-11-Arbeitsplatz<br/>Domänenmitglied<br/>Microsoft 365 Apps]
         FS[Fileserver<br/>Freigaben, Dokumente]
         DC[Domain Controller<br/>Active Directory, DNS]
         EX[Exchange Server SE<br/>E-Mail, Kalender]
@@ -248,7 +248,7 @@ Das Deployment baut alles im Lab auf. Der Microsoft-365-Demo-Tenant (gestrichelt
   - Domain Controller mit Active Directory und DNS, auf Wunsch ein zweiter für Ausfallsicherheit
   - Exchange Server SE mit Postfächern, Verteilern, freigegebenen Postfächern, Besprechungsräumen und Outlook im Web
   - Fileserver mit Abteilungs-, Projekt-, Archiv- und Scan-Freigaben sowie persönlichen Basisordnern
-  - Windows-11-Arbeitsplatz mit Microsoft 365 Apps, fertig eingerichtetem Outlook und Remote Desktop Manager für den Weg zu allen Servern
+  - Windows-11-Arbeitsplatz als Domänenmitglied mit Microsoft 365 Apps, fertig eingerichtetem Outlook und Remote Desktop Manager für den Weg zu allen Servern
 - **Die Daten:** rund 230 GB Word-, Excel-, PowerPoint- und PDF-Dateien aus zwölf Jahren Firmengeschichte, von Kundenprojekten über Buchhaltung und Personal bis zum Corporate Design.
 - **Die Altlasten:** absichtlich eingebaut, wie in jeder gewachsenen Umgebung: Kopien und alte Versionen, Rechte für einzelne Benutzer statt Gruppen, Bewerbungen für alle lesbar, Rechte eines längst gelöschten Praktikanten, ein privater Ordner, auf den kein Admin zugreifen kann, und eine Scan-Freigabe mit Vollzugriff für jeden.
 
