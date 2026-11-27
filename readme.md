@@ -74,7 +74,7 @@ Trainee Lab solves this:
 - **Costs under control:** The servers shut down by themselves in the evening, and the file server shrinks after setup.
 - **Current and supported:** Exchange Server SE, Windows Server 2025, Windows 11.
 - **English or German:** company, staff, documents and workstation in English (Contoso Ltd) or German (Mustermann Medien GmbH).
-- **Licences:** Azure is billed pay-as-you-go, including the Windows Server licences. Windows 11 and Microsoft 365 Apps are covered by the Microsoft 365 E5 licence in the CDX demo tenant, and Exchange runs as a 180-day trial without a product key. Details in [Deployment](docs/en/deployment.md#prerequisites).
+- **Licences:** Azure is billed pay-as-you-go, including the Windows Server licences. Windows 11 and Microsoft 365 Apps are covered by the Microsoft 365 E5 licence in the demo tenant (a CDX tenant or, alternatively, a Microsoft 365 E5 trial), and Exchange runs as a 180-day trial without a product key. Details in [Deployment](docs/en/deployment.md#prerequisites).
 
 ### What is inside?
 
@@ -132,7 +132,7 @@ From your own data centre to the cloud, for example:
 
 ### Quick start
 
-1. **Prepare:** an Azure subscription with permissions on your own resource group, initials and DNS zone from your trainer, your own public IP address and an account with a Microsoft 365 E5 licence in the CDX demo tenant.
+1. **Prepare:** an Azure subscription with permissions on your own resource group, initials and DNS zone from your trainer, your own public IP address and an account with a Microsoft 365 E5 licence in the demo tenant (CDX or Microsoft 365 E5 trial).
 2. **Deploy:** click *Deploy to Azure* at the top and fill in the form.
 3. **Wait:** the lab builds itself without intervention, including updates and sample data. This takes several hours, so it is best to start in the morning.
 4. **Get going:** sign in to the Windows 11 workstation via Remote Desktop; from there you can reach all servers.
@@ -208,7 +208,7 @@ Das Trainee Lab löst das:
 - **Kosten im Griff:** Die Server schalten sich abends selbst ab, der Fileserver verkleinert sich nach dem Aufbau.
 - **Aktuell und supportet:** Exchange Server SE, Windows Server 2025, Windows 11.
 - **Englisch oder Deutsch:** Firma, Mitarbeitende, Dokumente und Arbeitsplatz wahlweise auf Englisch (Contoso Ltd) oder Deutsch (Mustermann Medien GmbH).
-- **Lizenzen:** Azure wird nach Verbrauch abgerechnet (Pay-as-you-go), die Windows-Server-Lizenzen sind darin enthalten. Windows 11 und Microsoft 365 Apps deckt die Microsoft-365-E5-Lizenz im CDX-Demo-Tenant ab, Exchange läuft ohne Product Key 180 Tage als Testversion. Details in der [Bereitstellung](docs/de/deployment.md#voraussetzungen).
+- **Lizenzen:** Azure wird nach Verbrauch abgerechnet (Pay-as-you-go), die Windows-Server-Lizenzen sind darin enthalten. Windows 11 und Microsoft 365 Apps deckt die Microsoft-365-E5-Lizenz im Demo-Tenant ab (CDX-Tenant oder alternativ ein Microsoft 365 E5 Trial), Exchange läuft ohne Product Key 180 Tage als Testversion. Details in der [Bereitstellung](docs/de/deployment.md#voraussetzungen).
 
 ### Was steckt drin?
 
@@ -266,7 +266,7 @@ Vom eigenen Rechenzentrum bis in die Cloud, zum Beispiel:
 
 ### Schnellstart
 
-1. **Vorbereiten:** Azure-Subscription mit Rechten auf eine eigene Ressourcengruppe, Kürzel und DNS-Zone vom Ausbilder, die eigene öffentliche IP-Adresse und ein Konto mit Microsoft-365-E5-Lizenz im CDX-Demo-Tenant.
+1. **Vorbereiten:** Azure-Subscription mit Rechten auf eine eigene Ressourcengruppe, Kürzel und DNS-Zone vom Ausbilder, die eigene öffentliche IP-Adresse und ein Konto mit Microsoft-365-E5-Lizenz im Demo-Tenant (CDX oder Microsoft 365 E5 Trial).
 2. **Bereitstellen:** Oben auf *Deploy to Azure* klicken und das Formular ausfüllen.
 3. **Abwarten:** Das Lab baut sich ohne Eingriff auf, inklusive Updates und Beispieldaten. Das dauert mehrere Stunden, deshalb am besten morgens starten.
 4. **Loslegen:** Per Remote Desktop am Windows-11-Arbeitsplatz anmelden, von dort geht es zu allen Servern.
