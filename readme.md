@@ -115,6 +115,7 @@ From your own data centre to the cloud, for example:
 - **File server:** shares and permissions following AGDLP, find, assess and fix legacy issues, data protection
 - **Hybrid:** Entra Connect to synchronise with the Microsoft 365 demo tenant (not the company tenant), Exchange Hybrid and mailbox migration to Exchange Online
 - **Cloud migration:** move files from the file server to SharePoint Online
+- **Extensible:** further hybrid and Microsoft 365 topics such as Intune, Purview and much more
 
 ### Quick start
 
@@ -235,6 +236,7 @@ Vom eigenen Rechenzentrum bis in die Cloud, zum Beispiel:
 - **Fileserver:** Freigaben und Berechtigungen nach AGDLP, Altlasten finden, bewerten und beheben, Datenschutz
 - **Hybrid:** Entra Connect zur Synchronisierung mit dem Microsoft-365-Demo-Tenant (nicht dem Firmen-Tenant), Exchange Hybrid und Postfachmigration nach Exchange Online
 - **Cloud-Migration:** Dateien vom Fileserver nach SharePoint Online bringen
+- **Erweiterbar:** weitere Hybrid- und Microsoft-365-Themen wie Intune, Purview und vieles mehr
 
 ### Schnellstart
 
