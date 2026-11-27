@@ -1,6 +1,7 @@
 # Trainee Lab (Azure)
 
 [![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2Fsredlin%2FTraineeLab%2Fmaster%2Fazuredeploy.json)
+[![GitHub Sponsors](https://img.shields.io/badge/GitHub%20Sponsors-sponsor-EA4AAA?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/sredlin)
 [![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-unterst%C3%BCtzen-FFDD00?logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/sredlin)
 
 *A complete Microsoft company environment for learning and practice, deployed to Azure in one click.*
@@ -154,7 +155,7 @@ Older versions of this template passed a service principal secret for Let's Encr
 
 ### Support the project
 
-The lab is free and open source. If you would like to support its further development, you can do so via [Buy Me a Coffee](https://buymeacoffee.com/sredlin). Thank you!
+The lab is free and open source. If you would like to support its further development, you can do so via [GitHub Sponsors](https://github.com/sponsors/sredlin) or [Buy Me a Coffee](https://buymeacoffee.com/sredlin). Thank you!
 
 ### Licence
 
@@ -278,7 +279,7 @@ Budgets, vorzeitiges Abschalten und Abbau: [Betrieb](docs/de/operations.md#koste
 
 ### Unterstützen
 
-Das Lab ist kostenlos und quelloffen. Wer die Weiterentwicklung unterstützen möchte, kann das über [Buy Me a Coffee](https://buymeacoffee.com/sredlin) tun. Danke!
+Das Lab ist kostenlos und quelloffen. Wer die Weiterentwicklung unterstützen möchte, kann das über [GitHub Sponsors](https://github.com/sponsors/sredlin) oder [Buy Me a Coffee](https://buymeacoffee.com/sredlin) tun. Danke!
 
 ### Lizenz
 
