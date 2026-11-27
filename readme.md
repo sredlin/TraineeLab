@@ -41,13 +41,13 @@ Trainee Lab builds the IT of a fictional company in Azure, fully set up: Active 
 
 ### What is it for?
 
-Anyone learning IT infrastructure needs an environment where mistakes are allowed. Real systems are off limits for that. Building a lab by hand takes trainers a lot of time and ends up slightly different for every trainee.
+Anyone learning IT infrastructure needs an environment where mistakes are allowed. Real systems are off limits for that. Building a lab by hand takes trainers a lot of time and ends up slightly different for every trainee. On top of that, such a lab is only set up technically: it has no history and has never been lived in. There are no colleagues, no folders and permissions that have grown over the years, no old files.
 
 Trainee Lab solves this:
 
 - **The same environment, every time.** Every deployment delivers the same starting point, with no manual work. All trainees start equal, results are comparable.
 - **Breaking things is allowed.** If the lab is misconfigured, delete it and deploy it again. Everything is back to day one.
-- **Realistic, not empty.** Instead of an empty domain there is a company with sites, staff, distribution groups, shares, documents and the typical legacy issues of environments that have grown over time.
+- **Lived-in, not empty.** Instead of an empty domain there is a company with twelve years of history: sites, staff, distribution groups, shares, documents and the typical legacy issues of environments that have grown over time.
 - **One lab per trainee**, independent of everyone else.
 
 ### Who is it for?
@@ -161,13 +161,13 @@ Das Trainee Lab baut in Azure die IT einer fiktiven Firma auf, fertig eingericht
 
 ### Wozu das Ganze?
 
-Wer IT-Infrastruktur lernt, braucht eine Umgebung, in der Fehler erlaubt sind. Echte Systeme sind dafür tabu. Ein Lab von Hand aufzubauen kostet Ausbilder viel Zeit und sieht am Ende bei jedem Azubi ein bisschen anders aus.
+Wer IT-Infrastruktur lernt, braucht eine Umgebung, in der Fehler erlaubt sind. Echte Systeme sind dafür tabu. Ein Lab von Hand aufzubauen kostet Ausbilder viel Zeit und sieht am Ende bei jedem Azubi ein bisschen anders aus. Außerdem ist so ein Lab nur technisch eingerichtet: Es hat keine Geschichte und hat nie gelebt. Es gibt keine Kollegen, keine über Jahre gewachsenen Ordner und Berechtigungen, keine alten Dateien.
 
 Das Trainee Lab löst das:
 
 - **Immer wieder dieselbe Umgebung.** Jedes Deployment liefert denselben Ausgangsstand, ohne Handarbeit. Alle Azubis starten gleich, Ergebnisse sind vergleichbar.
 - **Kaputtmachen erlaubt.** Ist das Lab verkonfiguriert, wird es gelöscht und neu bereitgestellt. Danach ist alles wieder wie am ersten Tag.
-- **Realistisch statt leer.** Statt einer leeren Domäne gibt es eine Firma mit Standorten, Mitarbeitenden, Verteilern, Freigaben, Dokumenten und den typischen Altlasten gewachsener Umgebungen.
+- **Gelebt statt leer.** Statt einer leeren Domäne gibt es eine Firma mit zwölf Jahren Geschichte: Standorte, Mitarbeitende, Verteiler, Freigaben, Dokumente und die typischen Altlasten gewachsener Umgebungen.
 - **Ein eigenes Lab pro Azubi**, unabhängig von allen anderen.
 
 ### Für wen?
