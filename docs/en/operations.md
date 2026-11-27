@@ -2,7 +2,7 @@
 
 **English** · [Deutsch](../de/operations.md)
 
-Placeholders: `<k>` = your initials (lower case), `<K>` = your initials (upper case), `<zone>` = parent DNS zone provided by the trainer. The commands run in [Azure Cloud Shell](https://shell.azure.com) (Bash) or locally with Azure CLI.
+Placeholders: `<k>` = your initials (lower case), `<K>` = your initials (upper case), `<zone>` = parent DNS zone provided by the trainer, `<zone-rg>` = its resource group. The commands run in [Azure Cloud Shell](https://shell.azure.com) (Bash) or locally with Azure CLI.
 
 ## Show deployment outputs
 
@@ -162,5 +162,5 @@ Get-Content C:\ExchangeLab\Logs\New-SampleDocuments.log -Tail 10 -Wait
 
 ```bash
 az group delete -n rg-exlab-<k> --yes
-az network dns record-set ns delete -g rg-publicdns -z <zone> -n <k> --yes
+az network dns record-set ns delete -g <zone-rg> -z <zone> -n <k> --yes
 ```

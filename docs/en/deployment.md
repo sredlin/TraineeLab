@@ -2,11 +2,11 @@
 
 **English** · [Deutsch](../de/deployment.md)
 
-Prerequisites, parameters and first steps after the deployment. Placeholders: `<k>` = the trainee's initials (3 letters, lower case), `<K>` = initials in upper case, `<zone>` = parent DNS zone provided by the trainer. How the lab is built is described in [Architecture](architecture.md).
+Prerequisites, parameters and first steps after the deployment. Placeholders: `<k>` = the trainee's initials (3 letters, lower case), `<K>` = initials in upper case, `<zone>` = parent DNS zone provided by the trainer, `<zone-rg>` = its resource group, also provided by the trainer. How the lab is built is described in [Architecture](architecture.md).
 
 ## Prerequisites
 
-- **Permissions:** Owner on your own target resource group (for the role assignments of the managed identities of the Exchange server and file server) and *DNS Zone Contributor* on `rg-publicdns`. **No** Entra role is required in the production tenant, not even Global Administrator; trainees hold Entra admin roles only in the Microsoft 365 demo tenant. Without Owner: set the parameters `enableLetsEncrypt = false` and leave `fileServerFinalVmSize` empty (the file server then does not shrink itself).
+- **Permissions:** Owner on your own target resource group (for the role assignments of the managed identities of the Exchange server and file server) and *DNS Zone Contributor* on `<zone-rg>`. **No** Entra role is required in the production tenant, not even Global Administrator; trainees hold Entra admin roles only in the Microsoft 365 demo tenant. Without Owner: set the parameters `enableLetsEncrypt = false` and leave `fileServerFinalVmSize` empty (the file server then does not shrink itself).
 - **Initials** must not yet exist as a subdomain in `<zone>`.
 - **Parent zone:** If `<zone>` exists in the resource group `parentDnsZoneResourceGroup`, it is left unchanged; the deployment only adds the NS record `<k>`. If it is missing, it is created. The resource group itself must exist. A newly created zone has to be delegated once at the registrar, otherwise Let's Encrypt fails.
 - **Quota:** 8 vCPUs in the region (4 × BS family for DC and client, 4 × ESv5 family), with a second DC 10 vCPUs (6 × BS family). Without the client 2 vCPUs fewer. While generating the sample data, the file server additionally needs 4 × DSv5 family, afterwards 2 × BSv2 family: 12 vCPUs in total, 14 with a second DC. If the quota is not sufficient, set `fileServerVmSize = Standard_B2s_v2`; the sample data is then generated in the background over many hours.
@@ -27,7 +27,7 @@ Prerequisites, parameters and first steps after the deployment. Placeholders: `<
    | `labUserPassword` | yes | Password of the 28 lab users, deliberately different from `adminPassword` |
    | `allowedRdpSourcePrefix` | yes | Your own public IP, e.g. `203.0.113.10/32` |
    | `parentDnsZoneName` | yes | Parent DNS zone `<zone>`, name provided by the trainer |
-   | `parentDnsZoneResourceGroup` | no | Resource group of the parent zone, default `rg-publicdns` |
+   | `parentDnsZoneResourceGroup` | yes | Resource group `<zone-rg>` of the parent zone, name provided by the trainer |
    | `exchangePublishedSourcePrefix` | no | Source for 443/80, empty = same as RDP |
    | `smtpSourcePrefix` | no | Source for 25, empty = same as 443/80. For inbound mail, set to `Internet` only after the update run |
    | `autoShutdownTime` | no | Daily shutdown of Exchange VM, client, file server and second DC (`HHmm`), default `1900`, empty = off |

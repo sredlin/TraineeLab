@@ -2,7 +2,7 @@
 
 [English](../en/operations.md) · **Deutsch**
 
-Platzhalter: `<k>` = dein Kürzel (klein), `<K>` = dein Kürzel (groß), `<zone>` = übergeordnete DNS-Zone vom Ausbilder. Die Befehle laufen in der [Azure Cloud Shell](https://shell.azure.com) (Bash) oder lokal mit Azure CLI.
+Platzhalter: `<k>` = dein Kürzel (klein), `<K>` = dein Kürzel (groß), `<zone>` = übergeordnete DNS-Zone vom Ausbilder, `<zone-rg>` = deren Ressourcengruppe. Die Befehle laufen in der [Azure Cloud Shell](https://shell.azure.com) (Bash) oder lokal mit Azure CLI.
 
 ## Ausgaben des Deployments anzeigen
 
@@ -162,5 +162,5 @@ Get-Content C:\ExchangeLab\Logs\New-SampleDocuments.log -Tail 10 -Wait
 
 ```bash
 az group delete -n rg-exlab-<k> --yes
-az network dns record-set ns delete -g rg-publicdns -z <zone> -n <k> --yes
+az network dns record-set ns delete -g <zone-rg> -z <zone> -n <k> --yes
 ```

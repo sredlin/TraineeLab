@@ -2,11 +2,11 @@
 
 [English](../en/deployment.md) · **Deutsch**
 
-Voraussetzungen, Parameter und erste Schritte nach dem Deployment. Platzhalter: `<k>` = Kürzel des Azubis (3 Buchstaben, klein), `<K>` = Kürzel groß, `<zone>` = übergeordnete DNS-Zone vom Ausbilder. Wie das Lab aufgebaut ist, steht in der [Architektur](architecture.md).
+Voraussetzungen, Parameter und erste Schritte nach dem Deployment. Platzhalter: `<k>` = Kürzel des Azubis (3 Buchstaben, klein), `<K>` = Kürzel groß, `<zone>` = übergeordnete DNS-Zone vom Ausbilder, `<zone-rg>` = deren Ressourcengruppe, ebenfalls vom Ausbilder. Wie das Lab aufgebaut ist, steht in der [Architektur](architecture.md).
 
 ## Voraussetzungen
 
-- **Rechte:** Owner auf der eigenen Ziel-Ressourcengruppe (für die Rollenzuweisungen der Managed Identities von Exchange-Server und Fileserver) und *DNS Zone Contributor* auf `rg-publicdns`. Im Produktiv-Tenant ist **keine** Entra-Rolle nötig, auch kein Global Admin; Entra-Admin-Rollen hat der Azubi nur im Microsoft-365-Demo-Tenant. Ohne Owner: Parameter `enableLetsEncrypt = false` und `fileServerFinalVmSize` leer (der Fileserver verkleinert sich dann nicht selbst).
+- **Rechte:** Owner auf der eigenen Ziel-Ressourcengruppe (für die Rollenzuweisungen der Managed Identities von Exchange-Server und Fileserver) und *DNS Zone Contributor* auf `<zone-rg>`. Im Produktiv-Tenant ist **keine** Entra-Rolle nötig, auch kein Global Admin; Entra-Admin-Rollen hat der Azubi nur im Microsoft-365-Demo-Tenant. Ohne Owner: Parameter `enableLetsEncrypt = false` und `fileServerFinalVmSize` leer (der Fileserver verkleinert sich dann nicht selbst).
 - **Kürzel** darf noch nicht als Subdomain in `<zone>` existieren.
 - **Übergeordnete Zone:** Existiert `<zone>` in der Ressourcengruppe `parentDnsZoneResourceGroup`, bleibt sie unverändert, das Deployment ergänzt nur den NS-Eintrag `<k>`. Fehlt sie, wird sie angelegt. Die Ressourcengruppe selbst muss existieren. Eine neu angelegte Zone muss einmalig beim Registrar delegiert werden, sonst schlägt Let's Encrypt fehl.
 - **Kontingent:** 8 vCPU in der Region (4 × BS-Familie für DC und Client, 4 × ESv5-Familie), mit zweitem DC 10 vCPU (6 × BS-Familie). Ohne Client 2 vCPU weniger. Der Fileserver braucht während der Erzeugung der Beispieldaten zusätzlich 4 × DSv5-Familie, danach 2 × BSv2-Familie: insgesamt also 12 vCPU, mit zweitem DC 14. Reicht das Kontingent nicht, `fileServerVmSize = Standard_B2s_v2` setzen; die Beispieldaten entstehen dann über viele Stunden im Hintergrund.
@@ -27,7 +27,7 @@ Voraussetzungen, Parameter und erste Schritte nach dem Deployment. Platzhalter: 
    | `labUserPassword` | ja | Passwort der 28 Lab-Benutzer, bewusst ein anderes als `adminPassword` |
    | `allowedRdpSourcePrefix` | ja | eigene öffentliche IP, z. B. `203.0.113.10/32` |
    | `parentDnsZoneName` | ja | übergeordnete DNS-Zone `<zone>`, Name vom Ausbilder |
-   | `parentDnsZoneResourceGroup` | nein | Ressourcengruppe der übergeordneten Zone, Standard `rg-publicdns` |
+   | `parentDnsZoneResourceGroup` | ja | Ressourcengruppe `<zone-rg>` der übergeordneten Zone, Name vom Ausbilder |
    | `exchangePublishedSourcePrefix` | nein | Quelle für 443/80, leer = wie RDP |
    | `smtpSourcePrefix` | nein | Quelle für 25, leer = wie 443/80. Für eingehende Mails erst nach dem Update-Lauf auf `Internet` stellen |
    | `autoShutdownTime` | nein | tägliches Herunterfahren von Exchange-VM, Client, Fileserver und zweitem DC (`HHmm`), Standard `1900`, leer = aus |

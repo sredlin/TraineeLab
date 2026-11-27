@@ -29,10 +29,10 @@ flowchart LR
     CL -->|SMB: shares, H:| FS
     FS -->|LDAP/Kerberos/DNS| DC
     DC <-->|AD replication| DC2
-    PARENT[&lt;zone&gt;<br/>rg-publicdns] -->|NS delegation| ZONE
+    PARENT[&lt;zone&gt;<br/>&lt;zone-rg&gt;] -->|NS delegation| ZONE
 ```
 
-`<k>` = the trainee's initials (3 letters), `<zone>` = parent DNS zone (parameter `parentDnsZoneName`, name provided by the trainer).
+`<k>` = the trainee's initials (3 letters), `<zone>` = parent DNS zone (parameter `parentDnsZoneName`), `<zone-rg>` = its resource group (parameter `parentDnsZoneResourceGroup`), both provided by the trainer.
 
 ## Resources
 

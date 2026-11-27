@@ -29,10 +29,10 @@ flowchart LR
     CL -->|SMB: Freigaben, H:| FS
     FS -->|LDAP/Kerberos/DNS| DC
     DC <-->|AD-Replikation| DC2
-    PARENT[&lt;zone&gt;<br/>rg-publicdns] -->|NS-Delegation| ZONE
+    PARENT[&lt;zone&gt;<br/>&lt;zone-rg&gt;] -->|NS-Delegation| ZONE
 ```
 
-`<k>` = Kürzel des Azubis (3 Buchstaben), `<zone>` = übergeordnete DNS-Zone (Parameter `parentDnsZoneName`, Name vom Ausbilder).
+`<k>` = Kürzel des Azubis (3 Buchstaben), `<zone>` = übergeordnete DNS-Zone (Parameter `parentDnsZoneName`), `<zone-rg>` = deren Ressourcengruppe (Parameter `parentDnsZoneResourceGroup`), beides vom Ausbilder.
 
 ## Ressourcen
 
