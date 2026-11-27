@@ -91,7 +91,7 @@ param clientVmSize string = 'Standard_B2ms'
 @description('SKU des Windows-11-Images (Publisher MicrosoftWindowsDesktop, Offer windows-11).')
 param clientImageSku string = 'win11-25h2-ent'
 
-@description('Microsoft 365 Apps auf dem Client: O365ProPlusRetail = Apps for enterprise (M365 E3/E5), O365BusinessRetail = Apps for business (Business Standard/Premium). Aktiviert wird mit dem Firmenkonto.')
+@description('Microsoft 365 Apps auf dem Client: O365ProPlusRetail = Apps for enterprise (M365 E3/E5), O365BusinessRetail = Apps for business (Business Standard/Premium). Aktiviert wird mit einem Konto aus dem Microsoft-365-Demo-Tenant.')
 @allowed([
   'O365ProPlusRetail'
   'O365BusinessRetail'

@@ -89,7 +89,7 @@ Get-Message -Queue "<K>-EX01\<Queue-Identität>" | Format-List FromAddress, Reci
 
 ## Office reports "Unlicensed Product"
 
-- Signed in with the **company account**, not the lab account? The lab account has no Microsoft 365 licence.
+- Signed in with your account from the **Microsoft 365 demo tenant**, not the lab account? The lab account has no Microsoft 365 licence.
 - Show the licence status (PowerShell as administrator):
 
   ```powershell

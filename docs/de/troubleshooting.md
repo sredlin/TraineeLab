@@ -89,7 +89,7 @@ Get-Message -Queue "<K>-EX01\<Queue-Identität>" | Format-List FromAddress, Reci
 
 ## Office meldet „Nicht lizenziertes Produkt“
 
-- Mit dem **Firmenkonto** angemeldet, nicht mit dem Lab-Konto? Das Lab-Konto hat keine Microsoft-365-Lizenz.
+- Mit dem Konto aus dem **Microsoft-365-Demo-Tenant** angemeldet, nicht mit dem Lab-Konto? Das Lab-Konto hat keine Microsoft-365-Lizenz.
 - Lizenzstatus anzeigen (PowerShell als Administrator):
 
   ```powershell
