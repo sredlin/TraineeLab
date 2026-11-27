@@ -1,6 +1,6 @@
 # Deployment
 
-[Deutsch](../de/deployment.md) · **English**
+**English** · [Deutsch](../de/deployment.md)
 
 Prerequisites, parameters and first steps after the deployment. Placeholders: `<k>` = the trainee's initials (3 letters, lower case), `<K>` = initials in upper case, `<zone>` = parent DNS zone provided by the trainer. How the lab is built is described in [Architecture](architecture.md).
 

@@ -1,6 +1,6 @@
 # Troubleshooting
 
-**Deutsch** · [English](../en/troubleshooting.md)
+[English](../en/troubleshooting.md) · **Deutsch**
 
 Platzhalter wie in [Betrieb](operations.md). „EMS“ = Exchange Management Shell auf `<K>-EX01`, als Administrator gestartet.
 

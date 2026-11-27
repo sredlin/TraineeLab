@@ -1,6 +1,6 @@
 # Development
 
-[Deutsch](../de/development.md) · **English**
+**English** · [Deutsch](../de/development.md)
 
 For everyone working on the lab itself: repository layout, build, tests and acceptance.
 
@@ -8,7 +8,7 @@ For everyone working on the lab itself: repository layout, build, tests and acce
 
 - Source code: `infra/` (Bicep) and `scripts/` (PowerShell, ASCII only, Windows PowerShell 5.1). The scripts are embedded into the template via `loadTextContent`; there are no downloads from the repo.
 - Lab data per language in `scripts/data/<language>` (`de`, `en`): `LabUsers.psd1`, `FileServer.psd1` and the text corpus `corpus`. Both languages have the same structure; the tests check this.
-- Documentation in `docs/de` and `docs/en` with the same file names. Keep changes in both languages; the readme contains a German and an English section.
+- Documentation in `docs/de` and `docs/en` with the same file names. Keep changes in both languages. The readme contains an English and a German section; English always comes first, including in the table of contents and language switchers.
 
 ## Build the template
 

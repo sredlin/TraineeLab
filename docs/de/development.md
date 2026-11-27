@@ -1,6 +1,6 @@
 # Entwicklung
 
-**Deutsch** · [English](../en/development.md)
+[English](../en/development.md) · **Deutsch**
 
 Für alle, die am Lab selbst mitarbeiten: Aufbau des Repositorys, Build, Tests und Abnahme.
 
@@ -8,7 +8,7 @@ Für alle, die am Lab selbst mitarbeiten: Aufbau des Repositorys, Build, Tests u
 
 - Quellcode: `infra/` (Bicep) und `scripts/` (PowerShell, nur ASCII, Windows PowerShell 5.1). Die Skripte werden per `loadTextContent` ins Template eingebettet, es gibt keine Downloads aus dem Repo.
 - Lab-Daten je Sprache in `scripts/data/<Sprache>` (`de`, `en`): `LabUsers.psd1`, `FileServer.psd1` und der Textkorpus `corpus`. Beide Sprachen haben denselben Aufbau, die Tests prüfen das.
-- Dokumentation in `docs/de` und `docs/en` mit gleichen Dateinamen. Änderungen in beiden Sprachen pflegen, die readme hat einen deutschen und einen englischen Teil.
+- Dokumentation in `docs/de` und `docs/en` mit gleichen Dateinamen. Änderungen in beiden Sprachen pflegen. Die readme hat einen englischen und einen deutschen Teil; Englisch steht immer zuerst, auch in Inhaltsverzeichnis und Sprachumschaltern.
 
 ## Template bauen
 

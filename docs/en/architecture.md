@@ -1,6 +1,6 @@
 # Architecture
 
-[Deutsch](../de/architecture.md) · **English**
+**English** · [Deutsch](../de/architecture.md)
 
 How the lab is built, how the deployment runs, supportability and the certificate. For deployment and parameters see [Deployment](deployment.md), for day-to-day use [Operations](operations.md).
 

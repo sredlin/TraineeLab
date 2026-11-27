@@ -1,6 +1,6 @@
 # Operating the lab
 
-[Deutsch](../de/operations.md) · **English**
+**English** · [Deutsch](../de/operations.md)
 
 Placeholders: `<k>` = your initials (lower case), `<K>` = your initials (upper case), `<zone>` = parent DNS zone provided by the trainer. The commands run in [Azure Cloud Shell](https://shell.azure.com) (Bash) or locally with Azure CLI.
 

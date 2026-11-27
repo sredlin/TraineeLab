@@ -1,6 +1,6 @@
 # Troubleshooting
 
-[Deutsch](../de/troubleshooting.md) · **English**
+**English** · [Deutsch](../de/troubleshooting.md)
 
 Placeholders as in [Operations](operations.md). "EMS" = Exchange Management Shell on `<K>-EX01`, started as administrator.
 
