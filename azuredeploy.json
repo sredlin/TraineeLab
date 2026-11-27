@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.40.2.10011",
-      "templateHash": "13373249997188339736"
+      "templateHash": "5484478111069736519"
     },
     "name": "Exchange Server SE Lab",
     "description": "Azubi-Lab: separater Domain Controller und Exchange Server SE auf Windows Server 2025, fertig konfiguriert (Split DNS, Zertifikat, URLs, Postfaecher)."
@@ -91,9 +91,8 @@
     },
     "parentDnsZoneResourceGroup": {
       "type": "string",
-      "defaultValue": "rg-publicdns",
       "metadata": {
-        "description": "Ressourcengruppe der uebergeordneten DNS-Zone (gleiche Subscription)."
+        "description": "Ressourcengruppe der uebergeordneten DNS-Zone (gleiche Subscription, Name vom Ausbilder). Muss existieren."
       }
     },
     "exchangeIsoUri": {

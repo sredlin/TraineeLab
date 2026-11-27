@@ -48,8 +48,8 @@ param autoShutdownTime string = '1900'
 @description('Uebergeordnete oeffentliche DNS-Zone fuer die Subdomain-Delegation (Name vom Ausbilder). Wird angelegt, falls sie fehlt; eine bestehende Zone bleibt unveraendert.')
 param parentDnsZoneName string
 
-@description('Ressourcengruppe der uebergeordneten DNS-Zone (gleiche Subscription).')
-param parentDnsZoneResourceGroup string = 'rg-publicdns'
+@description('Ressourcengruppe der uebergeordneten DNS-Zone (gleiche Subscription, Name vom Ausbilder). Muss existieren.')
+param parentDnsZoneResourceGroup string
 
 @description('Download-URL des Exchange-Server-SE-ISO (Microsoft Download Center, ID 108244).')
 param exchangeIsoUri string = 'https://download.microsoft.com/download/ad9b1e53-f28e-4a82-987d-6c88803795b2/ExchangeServerSE-x64.iso'

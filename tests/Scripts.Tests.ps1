@@ -367,6 +367,11 @@ Describe 'azuredeploy.json' {
         $template.parameters.labUserPassword.PSObject.Properties.Name | Should -Not -Contain 'defaultValue'
     }
 
+    It 'verlangt Zone und Ressourcengruppe der uebergeordneten DNS-Zone als Eingabe (kein Standardwert)' {
+        $template.parameters.parentDnsZoneName.PSObject.Properties.Name | Should -Not -Contain 'defaultValue'
+        $template.parameters.parentDnsZoneResourceGroup.PSObject.Properties.Name | Should -Not -Contain 'defaultValue'
+    }
+
     It 'trennt SMTP von HTTP/HTTPS in der NSG' {
         $templateText | Should -Match "'name', 'Allow-Exchange-Web'"
         $templateText | Should -Match "'name', 'Allow-Exchange-SMTP'"
