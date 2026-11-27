@@ -177,6 +177,30 @@ function Write-LabLog {
     Write-Information -MessageData $line -InformationAction Continue
 }
 
+function Invoke-NativeCommand {
+    # Externes Programm mit Ausgabe und Exit-Code. Windows PowerShell 5.1 wirft bei "2>&1" unter ErrorActionPreference
+    # Stop schon die erste stderr-Zeile als Fehler, bevor der Exit-Code pruefbar ist (Testdeployment 2026-11-26).
+    param(
+        [Parameter(Mandatory)][string] $FilePath,
+        [string[]] $ArgumentList = @(),
+        [int[]] $SuccessExitCodes = @(0),
+        [switch] $NoThrow
+    )
+    $null = Get-Command -Name $FilePath -CommandType Application -ErrorAction Stop  # sonst bliebe ein alter Exit-Code stehen
+    $previousPreference = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try { $raw = @(& $FilePath @ArgumentList 2>&1) }
+    finally { $ErrorActionPreference = $previousPreference }
+    $exitCode = $LASTEXITCODE
+    $output = @($raw | ForEach-Object { "$_" })
+    # stdout allein (z. B. Zusammenfassungen): Die Reihenfolge gegenueber stderr ist bei 2>&1 nicht garantiert.
+    $stdOut = @($raw | Where-Object { $_ -isnot [System.Management.Automation.ErrorRecord] } | ForEach-Object { "$_" })
+    if ($SuccessExitCodes -notcontains $exitCode -and -not $NoThrow) {
+        throw ('{0} endete mit Exit-Code {1}: {2}' -f (Split-Path -Path $FilePath -Leaf), $exitCode, (($output | Select-Object -Last 5) -join ' '))
+    }
+    [pscustomobject]@{ ExitCode = $exitCode; Output = $output; StdOut = $stdOut }
+}
+
 function Invoke-WithRetry {
     param(
         [Parameter(Mandatory)][scriptblock] $ScriptBlock,
@@ -221,6 +245,27 @@ function Initialize-ClientPolicy {
     Write-LabLog 'Entra-Registrierung des Clients (Workplace Join) blockiert.'
 }
 
+function Invoke-LanguageInstall {
+    # Eigener Prozess mit Zeitlimit: Install-Language laedt aus dem Store und kann bei Stoerungen haengen.
+    param([Parameter(Mandatory)][string] $Language, [int] $TimeoutMinutes = 35)
+    $job = Start-Job -ScriptBlock {
+        Install-Language -Language $using:Language -CopyToSettings -ErrorAction Stop | Out-Null
+    }
+    try {
+        if (-not (Wait-Job -Job $job -Timeout ($TimeoutMinutes * 60))) {
+            Stop-Job -Job $job
+            throw "Install-Language $Language nach $TimeoutMinutes Minuten abgebrochen."
+        }
+        Receive-Job -Job $job -ErrorAction Stop | Out-Null
+        if ($job.State -ne 'Completed') {
+            throw "Install-Language $Language endete mit Status $($job.State)."
+        }
+    }
+    finally {
+        Remove-Job -Job $job -Force
+    }
+}
+
 function Initialize-ClientLanguage {
     Set-TimeZone -Id 'W. Europe Standard Time'
     if ($ClientLanguage.LanguagePack) {
@@ -232,7 +277,7 @@ function Initialize-ClientLanguage {
             else {
                 Write-LabLog "Installiere Sprachpaket $pack (dauert einige Minuten)."
                 Invoke-WithRetry -Activity "Install-Language $pack" -Attempts 2 -DelaySeconds 60 -ScriptBlock {
-                    Install-Language -Language $pack -CopyToSettings | Out-Null
+                    Invoke-LanguageInstall -Language $pack
                 }
             }
             Set-SystemPreferredUILanguage -Language $pack
@@ -306,10 +351,23 @@ function Install-OfficeApp {
         Set-Content -Path $configFile -Value $configuration -Encoding UTF8
 
         Write-LabLog "Installiere Microsoft 365 Apps ($OfficeProductId, $($ClientLanguage.Office), Monthly Enterprise Channel)."
-        $setup = Start-Process -FilePath (Join-Path $OdtDir 'setup.exe') -ArgumentList '/configure', "`"$configFile`"" -Wait -PassThru
-        if ($setup.ExitCode -ne 0 -or -not (Test-Path -Path $OutlookExe)) {
-            throw "Office-Setup mit Exit-Code $($setup.ExitCode) beendet, Outlook nicht gefunden. Details: C:\Windows\Temp\*.log"
+        # Hoechstens 60 Minuten; ein schnell gescheitertes Setup (z. B. Download vom CDN) wird einmal wiederholt.
+        $deadline = (Get-Date).AddMinutes(60)
+        for ($attempt = 1; ; $attempt++) {
+            $setup = Start-Process -FilePath (Join-Path $OdtDir 'setup.exe') -ArgumentList '/configure', "`"$configFile`"" -PassThru
+            $null = $setup.Handle
+            $remaining = [int][Math]::Max(0, ($deadline - (Get-Date)).TotalMilliseconds)
+            if (-not $setup.WaitForExit($remaining)) {
+                throw 'Office-Setup nach 60 Minuten nicht beendet. Details: C:\Windows\Temp\*.log'
+            }
+            if ($setup.ExitCode -eq 0 -and (Test-Path -Path $OutlookExe)) { break }
+            if ($attempt -ge 2 -or (Get-Date) -gt $deadline.AddMinutes(-20)) {
+                throw "Office-Setup mit Exit-Code $($setup.ExitCode) beendet, Outlook nicht gefunden. Details: C:\Windows\Temp\*.log"
+            }
+            Write-LabLog "Office-Setup mit Exit-Code $($setup.ExitCode) beendet, zweiter Versuch in 2 Minuten."
+            Start-Sleep -Seconds 120
         }
+        Remove-Item -Path (Join-Path $LabRoot 'office-failed.txt') -Force -ErrorAction SilentlyContinue
         Write-LabLog 'Microsoft 365 Apps installiert.'
     }
     catch {
@@ -394,10 +452,7 @@ function Install-RdmModule {
     "if (-not (Get-Module -ListAvailable -Name '$($RdmModule.Name)' | Where-Object { `$_.Version -eq [version]'$($RdmModule.Version)' })) { " +
     "Install-PSResource -Name '$($RdmModule.Name)' -Version '$($RdmModule.Version)' -Scope AllUsers -TrustRepository -ErrorAction Stop }"
     Invoke-WithRetry -Activity "Install-PSResource $($RdmModule.Name)" -ScriptBlock {
-        $output = & $PwshExe -NoProfile -NonInteractive -Command $command 2>&1
-        if ($LASTEXITCODE -ne 0) {
-            throw "pwsh endete mit Exit-Code ${LASTEXITCODE}: $($output -join ' ')"
-        }
+        Invoke-NativeCommand -FilePath $PwshExe -ArgumentList @('-NoProfile', '-NonInteractive', '-Command', $command) | Out-Null
     }
     Write-LabLog "Modul $($RdmModule.Name) $($RdmModule.Version) fuer alle Benutzer installiert."
 }
@@ -470,18 +525,23 @@ function Wait-DomainJoin {
 
 function Add-DomainUsersToRemoteDesktop {
     # Gruppennamen sind sprachabhaengig (Remotedesktopbenutzer, Domain Users), SIDs nicht.
-    $computerAccount = New-Object -TypeName System.Security.Principal.NTAccount -ArgumentList "$NetbiosName\$env:COMPUTERNAME`$"
-    $domainSid = $computerAccount.Translate([System.Security.Principal.SecurityIdentifier]).AccountDomainSid
+    # Beide Schritte fragen einen DC; kurz nach dem Beitritt oder waehrend eines DC-Neustarts wiederholen.
+    $domainSid = Invoke-WithRetry -Activity 'Domaenen-SID ermitteln' -Attempts 10 -DelaySeconds 30 -ScriptBlock {
+        $computerAccount = New-Object -TypeName System.Security.Principal.NTAccount -ArgumentList "$NetbiosName\$env:COMPUTERNAME`$"
+        $computerAccount.Translate([System.Security.Principal.SecurityIdentifier]).AccountDomainSid
+    }
     $domainUsersSid = '{0}-513' -f $domainSid.Value
     $group = Get-LocalGroup -SID 'S-1-5-32-555'
 
-    $members = @(Get-LocalGroupMember -Group $group -ErrorAction SilentlyContinue | ForEach-Object { $_.SID.Value })
-    if ($members -contains $domainUsersSid) {
-        Write-LabLog "Domaenen-Benutzer sind bereits Mitglied von $($group.Name)."
-        return
+    Invoke-WithRetry -Activity "Domaenen-Benutzer in $($group.Name)" -Attempts 5 -DelaySeconds 30 -ScriptBlock {
+        $members = @(Get-LocalGroupMember -Group $group -ErrorAction SilentlyContinue | ForEach-Object { $_.SID.Value })
+        if ($members -contains $domainUsersSid) {
+            Write-LabLog "Domaenen-Benutzer sind Mitglied von $($group.Name)."
+            return
+        }
+        Add-LocalGroupMember -Group $group -Member $domainUsersSid
+        Write-LabLog "Domaenen-Benutzer ($domainUsersSid) zu $($group.Name) hinzugefuegt."
     }
-    Add-LocalGroupMember -Group $group -Member $domainUsersSid
-    Write-LabLog "Domaenen-Benutzer ($domainUsersSid) zu $($group.Name) hinzugefuegt."
 }
 
 function ConvertFrom-Base64String {
@@ -535,8 +595,9 @@ function Publish-RemoteConnection {
         $env:TRAINEELAB_RDM_SERVERS = ConvertTo-Json -InputObject $servers -Compress
         $env:TRAINEELAB_RDM_PASSWORD = ConvertFrom-Base64String $AdminPasswordB64
         try {
-            $output = & $PwshExe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $helper 2>&1
-            $exitCode = $LASTEXITCODE
+            $result = Invoke-NativeCommand -FilePath $PwshExe -ArgumentList @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', $helper) -NoThrow
+            $output = $result.Output
+            $exitCode = $result.ExitCode
         }
         finally {
             Remove-Item -Path Env:TRAINEELAB_RDM_PASSWORD, Env:TRAINEELAB_RDM_SERVERS, Env:TRAINEELAB_RDM_FILE -ErrorAction SilentlyContinue

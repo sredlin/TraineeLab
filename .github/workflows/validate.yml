@@ -51,3 +51,30 @@ jobs:
           $config.Run.Exit = $true
           $config.Output.Verbosity = 'Detailed'
           Invoke-Pester -Configuration $config
+
+  # Die VM-Skripte laufen als Run Command unter Windows PowerShell 5.1. Dieser Job prueft sie dort: Analyzer,
+  # Laufzeittests (icacls, DPAPI, stderr nativer Befehle) und Generator mit Rastergrafik.
+  windows-powershell:
+    name: Windows PowerShell 5.1 (Analyzer, Pester)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Module installieren
+        shell: powershell
+        run: |
+          Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Scope CurrentUser -Force | Out-Null
+          Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+          # Das Image bringt Pester 3.4 mit; Pester 5 ist anders signiert.
+          Install-Module -Name Pester -MinimumVersion 5.5.0 -Scope CurrentUser -Force -SkipPublisherCheck
+          Install-Module -Name PSScriptAnalyzer -Scope CurrentUser -Force
+
+      - name: Pester
+        shell: powershell
+        run: |
+          Import-Module -Name Pester -MinimumVersion 5.5.0
+          $config = New-PesterConfiguration
+          $config.Run.Path = 'tests'
+          $config.Run.Exit = $true
+          $config.Output.Verbosity = 'Detailed'
+          Invoke-Pester -Configuration $config

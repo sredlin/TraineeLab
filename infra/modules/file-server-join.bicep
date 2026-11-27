@@ -206,8 +206,8 @@ resource completeFileServer 'Microsoft.Compute/virtualMachines/runCommands@2025-
       }
     ]
     asyncExecution: false
-    // Wartet bis zu 90 Minuten auf die Lab-Benutzer aus der Exchange-Installation.
-    timeoutInSeconds: 7200
+    // Beitritt bis 30 min, Lab-Benutzer aus der Exchange-Installation bis 90 min, dazu Rechte, Freigaben und Basisordner.
+    timeoutInSeconds: 10800
     treatFailureAsDeploymentFailure: true
   }
   dependsOn: [

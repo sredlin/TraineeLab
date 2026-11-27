@@ -165,7 +165,8 @@ resource prepareClient 'Microsoft.Compute/virtualMachines/runCommands@2025-04-01
       }
     ]
     asyncExecution: false
-    timeoutInSeconds: 5400
+    // Sprachpaket bis 2 x 35 min, Office bis 60 min (eigene Zeitlimits im Skript), dazu RDM.
+    timeoutInSeconds: 9000
     treatFailureAsDeploymentFailure: true
   }
 }

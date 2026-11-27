@@ -96,6 +96,30 @@ function ConvertFrom-Base64String {
     [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($Value)).TrimStart([char]0xFEFF)
 }
 
+function Invoke-NativeCommand {
+    # Externes Programm mit Ausgabe und Exit-Code. Windows PowerShell 5.1 wirft bei "2>&1" unter ErrorActionPreference
+    # Stop schon die erste stderr-Zeile als Fehler, bevor der Exit-Code pruefbar ist (Testdeployment 2026-11-26).
+    param(
+        [Parameter(Mandatory)][string] $FilePath,
+        [string[]] $ArgumentList = @(),
+        [int[]] $SuccessExitCodes = @(0),
+        [switch] $NoThrow
+    )
+    $null = Get-Command -Name $FilePath -CommandType Application -ErrorAction Stop  # sonst bliebe ein alter Exit-Code stehen
+    $previousPreference = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try { $raw = @(& $FilePath @ArgumentList 2>&1) }
+    finally { $ErrorActionPreference = $previousPreference }
+    $exitCode = $LASTEXITCODE
+    $output = @($raw | ForEach-Object { "$_" })
+    # stdout allein (z. B. Zusammenfassungen): Die Reihenfolge gegenueber stderr ist bei 2>&1 nicht garantiert.
+    $stdOut = @($raw | Where-Object { $_ -isnot [System.Management.Automation.ErrorRecord] } | ForEach-Object { "$_" })
+    if ($SuccessExitCodes -notcontains $exitCode -and -not $NoThrow) {
+        throw ('{0} endete mit Exit-Code {1}: {2}' -f (Split-Path -Path $FilePath -Leaf), $exitCode, (($output | Select-Object -Last 5) -join ' '))
+    }
+    [pscustomobject]@{ ExitCode = $exitCode; Output = $output; StdOut = $stdOut }
+}
+
 function Invoke-WithRetry {
     param(
         [Parameter(Mandatory)][scriptblock] $ScriptBlock,
@@ -124,18 +148,30 @@ function Write-Utf8File {
 function Invoke-IcaclsCommand {
     # Exit 1332 (ERROR_NONE_MAPPED): Die SID einer eben auf DC01 angelegten Gruppe ist auf dem DC, den der
     # Fileserver fragt (z. B. DC02), noch nicht repliziert. Dann warten und wiederholen (Testdeployment 2026-11-26).
-    param([Parameter(Mandatory)][string[]] $Arguments)
+    # AllowFileErrors: Bei /T /C (Besitz rekursiv) sind Fehler einzelner Dateien hinnehmbar, z. B. weil der Generator
+    # parallel Dateien umbenennt; sie werden protokolliert. Mit /C endet icacls dann trotzdem mit Exit 0, nur die
+    # Zusammenfassung nennt die Fehler (zweite Zahl, in jeder Sprache). Ohne /C sprachneutral am Exit-Code
+    # (2/3 Datei/Pfad fehlt, 5 Zugriff verweigert, 32 Datei in Verwendung).
+    param([Parameter(Mandatory)][string[]] $Arguments, [switch] $AllowFileErrors)
     for ($attempt = 1; ; $attempt++) {
-        # Windows PowerShell 5.1 wirft bei 2>&1 und ErrorActionPreference Stop schon die stderr-Zeile als Fehler,
-        # bevor der Exit-Code ausgewertet werden kann (Testdeployment 2026-11-26).
-        $previousPreference = $ErrorActionPreference
-        $ErrorActionPreference = 'Continue'
-        try { $output = & icacls.exe @Arguments 2>&1 }
-        finally { $ErrorActionPreference = $previousPreference }
-        if ($LASTEXITCODE -eq 0) { return }
-        $unmapped = $LASTEXITCODE -eq 1332 -or (($output -join ' ') -match 'No mapping between account names')
+        $result = Invoke-NativeCommand -FilePath 'icacls.exe' -ArgumentList $Arguments -NoThrow
+        if ($result.ExitCode -eq 0) {
+            $summaryLine = "$($result.StdOut | Select-Object -Last 1)"
+            $summary = [regex]::Matches($summaryLine, '\d+')
+            if ($AllowFileErrors -and $summary.Count -ge 2 -and [int]$summary[1].Value -gt 0) {
+                Write-LabLog "icacls $($Arguments[0]): $($summary[1].Value) Datei(en) nicht bearbeitet ($summaryLine)."
+            }
+            return
+        }
+        $text = $result.Output -join ' '
+        $unmapped = $result.ExitCode -eq 1332 -or $text -match 'No mapping between account names'
+        $fileErrors = @(2, 3, 5, 32) -contains $result.ExitCode -or $text -match 'Failed processing [1-9]'
+        if (-not $unmapped -and $AllowFileErrors -and $fileErrors) {
+            Write-LabLog "icacls $($Arguments[0]): einzelne Dateien nicht bearbeitet ($(($result.Output | Select-Object -Last 1)))."
+            return
+        }
         if (-not $unmapped -or $attempt -ge 20) {
-            throw "icacls $($Arguments -join ' ') endete mit $LASTEXITCODE`: $($output -join ' ')"
+            throw "icacls $($Arguments -join ' ') endete mit $($result.ExitCode): $text"
         }
         Write-LabLog "SID noch nicht aufloesbar (Replikation), neuer Versuch in 15 Sekunden ($attempt/20)."
         Start-Sleep -Seconds 15
@@ -305,17 +341,24 @@ function Wait-LabUser {
     # Die Lab-Benutzer legt die Exchange-Installation zu Beginn ihrer Installationsphase an.
     param([Parameter(Mandatory)][string[]] $SamAccountName)
 
+    # Ein voruebergehend nicht erreichbarer DC (Neustart, Last) zaehlt nicht als Fehler, sondern als "noch warten".
     $deadline = (Get-Date).AddMinutes($UserWaitMinutes)
     while ($true) {
-        $missing = @($SamAccountName | Where-Object { -not (Get-ADUser -Filter "SamAccountName -eq '$_'" @AdParams) })
-        if (-not $missing) {
-            Write-LabLog "Alle $($SamAccountName.Count) Lab-Benutzer sind im AD vorhanden."
-            return
+        try {
+            $missing = @($SamAccountName | Where-Object { -not (Get-ADUser -Filter "SamAccountName -eq '$_'" @AdParams) })
+            if (-not $missing) {
+                Write-LabLog "Alle $($SamAccountName.Count) Lab-Benutzer sind im AD vorhanden."
+                return
+            }
+            $state = "$($missing.Count) fehlen, z. B. $($missing[0])"
+        }
+        catch {
+            $state = "DC nicht erreichbar: $($_.Exception.Message)"
         }
         if ((Get-Date) -gt $deadline) {
-            throw "Lab-Benutzer nach $UserWaitMinutes Minuten nicht vorhanden: $($missing -join ', ')"
+            throw "Lab-Benutzer nach $UserWaitMinutes Minuten nicht vorhanden ($state)."
         }
-        Write-LabLog "Warte auf Lab-Benutzer ($($missing.Count) fehlen, z. B. $($missing[0]))."
+        Write-LabLog "Warte auf Lab-Benutzer ($state)."
         Start-Sleep -Seconds 60
     }
 }
@@ -450,7 +493,7 @@ function Initialize-HomeFolder {
         Invoke-IcaclsCommand -Arguments @($path, '/grant:r', "*${sid}:(OI)(CI)M")
         if (-not (Test-Path -Path $HomeOwnerMarker)) {
             # Besitzer = Benutzer, damit Kontingente und Berichte nach Besitzer stimmen. /C: weiter bei Einzelfehlern.
-            & icacls.exe $path /setowner "*$sid" /T /C /Q 2>&1 | Out-Null
+            Invoke-IcaclsCommand -Arguments @($path, '/setowner', "*$sid", '/T', '/C', '/Q') -AllowFileErrors
         }
         $unc = '\\{0}\{1}\{2}' -f $env:COMPUTERNAME, $Config.HomeFolders.Share, $sam
         Set-ADUser -Identity $sam -HomeDrive $Config.HomeFolders.DriveLetter -HomeDirectory $unc @AdParams
@@ -511,7 +554,7 @@ function Add-OrphanedSid {
             if ($Item.SampleSource) {
                 Copy-SampleFile -Source (Get-SharePath -Config $Config -RelativePath $Item.SampleSource) -Destination (Join-Path $path $Item.DocumentsFolder)
             }
-            & icacls.exe $path /setowner "*$sid" /T /C /Q 2>&1 | Out-Null
+            Invoke-IcaclsCommand -Arguments @($path, '/setowner', "*$sid", '/T', '/C', '/Q') -AllowFileErrors
         }
         New-Item -Path $path -ItemType Directory -Force | Out-Null
         Invoke-IcaclsCommand -Arguments @($path, '/grant', "*${sid}:(OI)(CI)$($Item.Rights)")
@@ -549,7 +592,7 @@ function Add-LegacyPermission {
                     $path = Get-SharePath -Config $Config -RelativePath $item.Path
                     New-Item -Path $path -ItemType Directory -Force | Out-Null
                     $sid = Resolve-LabPrincipalSid -Name $item.Principal
-                    & icacls.exe $path /setowner "*$sid" /T /C /Q 2>&1 | Out-Null
+                    Invoke-IcaclsCommand -Arguments @($path, '/setowner', "*$sid", '/T', '/C', '/Q') -AllowFileErrors
                     # SYSTEM bleibt (Sicherung, Wiederholungslauf), die Administratoren fehlen.
                     Invoke-IcaclsCommand -Arguments @($path, '/inheritance:r', '/grant:r', "*${sid}:(OI)(CI)F", "*${SidSystem}:(OI)(CI)F")
                     Set-Content -Path $marker -Value (Get-Date -Format o) -Encoding ASCII
@@ -709,6 +752,8 @@ function Invoke-CompletePhase {
     }
     $config = Import-PowerShellDataFile -Path $FileServerFile
     $labData = Import-PowerShellDataFile -Path $LabUsersFile
+    # Bei einem erneuten Lauf (Redeployment) darf die Verkleinerung nicht mitten in die Einrichtung fallen.
+    Remove-Item -Path $CompleteMarker -Force -ErrorAction SilentlyContinue
 
     Wait-DomainJoinComplete
     Install-FileServerRole
@@ -719,16 +764,17 @@ function Invoke-CompletePhase {
         Server     = "$DcComputerName.$DomainName"
         Credential = New-Object -TypeName System.Management.Automation.PSCredential -ArgumentList "$NetbiosName\$AdminUser", $password
     }
-    $domain = Get-ADDomain @AdParams
+    $domain = Invoke-WithRetry -Activity 'Get-ADDomain' -Attempts 10 -DelaySeconds 30 -ScriptBlock { Get-ADDomain @AdParams }
     $script:DomainSid = $domain.DomainSID.Value
     $script:CompanyDn = "OU=$CompanyOu,$($domain.DistinguishedName)"
 
     Wait-LabUser -SamAccountName @($labData.Users | ForEach-Object SamAccountName)
     Register-FileServerPtrRecord
-    Initialize-LabGroup -Config $config
-    Initialize-FolderAcl -Config $config
-    Initialize-LabShare -Config $config
-    Initialize-HomeFolder -Config $config -LabData $labData
+    # Idempotent; bei transienten AD-Fehlern (DC-Neustart, Last) wird der ganze Schritt wiederholt.
+    Invoke-WithRetry -Activity 'Gruppen (AGDLP)' -Attempts 3 -DelaySeconds 60 -ScriptBlock { Initialize-LabGroup -Config $config }
+    Invoke-WithRetry -Activity 'NTFS-Rechte' -Attempts 3 -DelaySeconds 60 -ScriptBlock { Initialize-FolderAcl -Config $config }
+    Invoke-WithRetry -Activity 'Freigaben' -Attempts 3 -DelaySeconds 60 -ScriptBlock { Initialize-LabShare -Config $config }
+    Invoke-WithRetry -Activity 'Basisordner' -Attempts 3 -DelaySeconds 60 -ScriptBlock { Initialize-HomeFolder -Config $config -LabData $labData }
     Enable-LabRecycleBin
     Add-LegacyPermission -Config $config
     Register-LabUpdateTask -ScriptContent (ConvertFrom-Base64String $UpdateScriptB64) -TaskName $UpdateTaskName

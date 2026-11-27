@@ -40,6 +40,9 @@ param publicDomainName string
 @description('Download-URL des Exchange-Server-SE-ISO.')
 param exchangeIsoUri string
 
+@description('SHA256 des Exchange-ISO, leer = keine Pruefung.')
+param exchangeIsoSha256 string
+
 @description('Let\'s-Encrypt-Zertifikat ueber die Managed Identity anfordern.')
 param enableLetsEncrypt bool
 
@@ -188,7 +191,7 @@ resource initializeExchangeServer 'Microsoft.Compute/virtualMachines/runCommands
     source: {
       script: loadTextContent('../../scripts/Initialize-ExchangeServer.ps1')
     }
-    // Leere Werte wuerden als Parameter ohne Argument uebergeben, daher WingetPackages nur bei Bedarf.
+    // Leere Werte wuerden als Parameter ohne Argument uebergeben, daher WingetPackages und IsoSha256 nur bei Bedarf.
     parameters: concat([
       {
         name: 'PublicDomainName'
@@ -218,6 +221,11 @@ resource initializeExchangeServer 'Microsoft.Compute/virtualMachines/runCommands
       {
         name: 'WingetPackages'
         value: join(wingetPackages, ',')
+      }
+    ], empty(exchangeIsoSha256) ? [] : [
+      {
+        name: 'IsoSha256'
+        value: exchangeIsoSha256
       }
     ])
     asyncExecution: false

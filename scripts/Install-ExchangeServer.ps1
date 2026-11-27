@@ -20,8 +20,10 @@
         Raumpostfaecher, externe Kontakte; Vorgesetzte der Lab-Benutzer
       - GPO 'LAB - Outlook klassisch' (neues Outlook kann kein Exchange on Premises)
       - verschiebt den optionalen Windows-11-Client in die Client-OU
-      - registriert den einmaligen Update-Task auf Exchange-Server und DC(s) sowie den taeglichen
-        Wartungs-Task (Invoke-LabMaintenance.ps1)
+      - registriert den einmaligen Update-Task auf dem Exchange-Server sowie den taeglichen
+        Wartungs-Task (Invoke-LabMaintenance.ps1); die DCs starten ihren Update-Lauf erst am Ende
+        des Deployments (Modul lab-finalize, Start-LabUpdate.ps1)
+      - alle AD-Aufrufe laufen gegen den ersten DC, damit neu angelegte Objekte sofort lesbar sind
       - legt Lab-Info.txt und Verknuepfungen (OWA, ECP, Logs) auf dem oeffentlichen Desktop ab
 
     Das Skript ist idempotent und enthaelt bewusst nur ASCII-Zeichen (Windows PowerShell 5.1).
@@ -52,7 +54,7 @@ param(
 
     [string] $OrganizationName = 'ExchOrg',
 
-    # Optionaler zweiter DC, bekommt ebenfalls den einmaligen Update-Task.
+    # Optionaler zweiter DC: Wartezeit auf seine Erstreplikation und Lab-Info.txt.
     [string] $SecondDcComputerName = '',
 
     # Optionaler Windows-11-Client, wird in die Client-OU aus LabUsers.psd1 verschoben.
@@ -86,6 +88,7 @@ $ScriptDir = Join-Path $LabRoot 'Scripts'
 $SecretDir = Join-Path $LabRoot 'Secrets'
 $SecretFile = Join-Path $SecretDir 'install.dat'
 $ResultFile = Join-Path $LabRoot 'exchange-install.result'
+$StartedMarker = Join-Path $LabRoot 'exchange-install.started'
 $DoneMarker = Join-Path $LabRoot 'exchange-install.done'
 $LabUsersFile = Join-Path $ScriptDir 'LabUsers.psd1'
 $UpdateScriptFile = Join-Path $ScriptDir 'Update-LabServer.ps1'
@@ -126,6 +129,30 @@ function ConvertFrom-Base64String {
     [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($Value))
 }
 
+function Invoke-NativeCommand {
+    # Externes Programm mit Ausgabe und Exit-Code. Windows PowerShell 5.1 wirft bei "2>&1" unter ErrorActionPreference
+    # Stop schon die erste stderr-Zeile als Fehler, bevor der Exit-Code pruefbar ist (Testdeployment 2026-11-26).
+    param(
+        [Parameter(Mandatory)][string] $FilePath,
+        [string[]] $ArgumentList = @(),
+        [int[]] $SuccessExitCodes = @(0),
+        [switch] $NoThrow
+    )
+    $null = Get-Command -Name $FilePath -CommandType Application -ErrorAction Stop  # sonst bliebe ein alter Exit-Code stehen
+    $previousPreference = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try { $raw = @(& $FilePath @ArgumentList 2>&1) }
+    finally { $ErrorActionPreference = $previousPreference }
+    $exitCode = $LASTEXITCODE
+    $output = @($raw | ForEach-Object { "$_" })
+    # stdout allein (z. B. Zusammenfassungen): Die Reihenfolge gegenueber stderr ist bei 2>&1 nicht garantiert.
+    $stdOut = @($raw | Where-Object { $_ -isnot [System.Management.Automation.ErrorRecord] } | ForEach-Object { "$_" })
+    if ($SuccessExitCodes -notcontains $exitCode -and -not $NoThrow) {
+        throw ('{0} endete mit Exit-Code {1}: {2}' -f (Split-Path -Path $FilePath -Leaf), $exitCode, (($output | Select-Object -Last 5) -join ' '))
+    }
+    [pscustomobject]@{ ExitCode = $exitCode; Output = $output; StdOut = $stdOut }
+}
+
 function Invoke-WithRetry {
     param(
         [Parameter(Mandatory)][scriptblock] $ScriptBlock,
@@ -154,15 +181,13 @@ function Write-Utf8File {
 function Protect-Directory {
     param([Parameter(Mandatory)][string] $Path)
     New-Item -Path $Path -ItemType Directory -Force | Out-Null
-    & icacls.exe $Path /inheritance:r /grant:r '*S-1-5-32-544:(OI)(CI)F' '*S-1-5-18:(OI)(CI)F' | Out-Null
+    Invoke-NativeCommand -FilePath 'icacls.exe' -ArgumentList @($Path, '/inheritance:r', '/grant:r', '*S-1-5-32-544:(OI)(CI)F', '*S-1-5-18:(OI)(CI)F') | Out-Null
 }
 
 function Register-LabUpdateTask {
-    # Wird lokal und per Invoke-Command auf dem DC ausgefuehrt, daher ohne Abhaengigkeiten.
     param(
         [Parameter(Mandatory)][string] $ScriptContent,
-        [Parameter(Mandatory)][string] $TaskName,
-        [bool] $StartNow = $false
+        [Parameter(Mandatory)][string] $TaskName
     )
     $scriptFolder = 'C:\ExchangeLab\Scripts'
     New-Item -Path $scriptFolder -ItemType Directory -Force | Out-Null
@@ -175,9 +200,6 @@ function Register-LabUpdateTask {
     $principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
     $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Hours 4) -StartWhenAvailable
     Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Force | Out-Null
-    if ($StartNow) {
-        Start-ScheduledTask -TaskName $TaskName
-    }
 }
 
 #region Phase Orchestrate
@@ -257,6 +279,50 @@ function Get-LabUsersText {
     ConvertFrom-Base64String $b64
 }
 
+function Register-InstallTask {
+    # Registriert und startet den Installationstask und prueft, dass die Phase 'Install' wirklich anlaeuft (Start-Marke).
+    # Kurz nach dem Domaenenbeitritt kann die Anmeldung als Domain-Admin scheitern (DC-Suche, Replikation); dann laeuft
+    # der Task gar nicht erst an und wird nach einer Minute neu registriert und gestartet.
+    param(
+        [Parameter(Mandatory)][object] $Action,
+        [Parameter(Mandatory)][object] $Settings
+    )
+    $attempts = 10
+    $adminPassword = ConvertFrom-Base64String $AdminPasswordB64
+    for ($attempt = 1; ; $attempt++) {
+        Remove-Item -Path $StartedMarker -Force -ErrorAction SilentlyContinue
+        try {
+            Register-ScheduledTask -TaskName $InstallTaskName -Action $Action -Settings $Settings -User "$NetbiosName\$AdminUser" -Password $adminPassword -RunLevel Highest -Force | Out-Null
+            Start-ScheduledTask -TaskName $InstallTaskName
+            $deadline = (Get-Date).AddMinutes(5)
+            while (-not (Test-Path -Path $StartedMarker) -and (Get-Date) -lt $deadline) {
+                Start-Sleep -Seconds 5
+                $task = Get-ScheduledTask -TaskName $InstallTaskName
+                if ($task.State -ne 'Running' -and -not (Test-Path -Path $StartedMarker)) {
+                    # Task schon beendet, ohne dass die Phase gestartet ist (z. B. Anmeldefehler).
+                    Start-Sleep -Seconds 5
+                    break
+                }
+            }
+            if ((Test-Path -Path $StartedMarker) -or (Get-ScheduledTask -TaskName $InstallTaskName).State -eq 'Running') {
+                Write-LabLog "Installationsphase als $NetbiosName\$AdminUser gestartet (Task $InstallTaskName)."
+                return
+            }
+            $info = Get-ScheduledTaskInfo -TaskName $InstallTaskName
+            $reason = 'Task-Code 0x{0:X8}, Status {1}' -f $info.LastTaskResult, (Get-ScheduledTask -TaskName $InstallTaskName).State
+        }
+        catch {
+            $reason = $_.Exception.Message
+        }
+        Stop-ScheduledTask -TaskName $InstallTaskName -ErrorAction SilentlyContinue
+        if ($attempt -ge $attempts) {
+            throw "Installationstask startet nicht ($reason)."
+        }
+        Write-LabLog "Installationstask nicht angelaufen ($reason), neuer Versuch in 60 Sekunden ($attempt/$attempts)."
+        Start-Sleep -Seconds 60
+    }
+}
+
 function Invoke-InstallTask {
     $scriptCopy = Join-Path $ScriptDir 'Install-ExchangeServer.ps1'
     Save-OwnScript -Destination $scriptCopy
@@ -278,13 +344,9 @@ function Invoke-InstallTask {
     }
     $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument $arguments
     $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Hours 3)
-    $adminPassword = ConvertFrom-Base64String $AdminPasswordB64
-    Register-ScheduledTask -TaskName $InstallTaskName -Action $action -Settings $settings -User "$NetbiosName\$AdminUser" -Password $adminPassword -RunLevel Highest -Force | Out-Null
-    Start-ScheduledTask -TaskName $InstallTaskName
-    Write-LabLog "Installationsphase als $NetbiosName\$AdminUser gestartet (Task $InstallTaskName)."
+    Register-InstallTask -Action $action -Settings $settings
 
     $deadline = (Get-Date).AddMinutes($TimeoutMinutes)
-    Start-Sleep -Seconds 30
     while ((Get-ScheduledTask -TaskName $InstallTaskName).State -eq 'Running') {
         if ((Get-Date) -gt $deadline) {
             Stop-ScheduledTask -TaskName $InstallTaskName
@@ -317,9 +379,12 @@ function Invoke-OrchestratePhase {
     }
 
     Wait-DomainJoinComplete
+    # Die Anmeldung des Installationstasks fragt den naechstgelegenen DC; DC02 muss das Admin-Konto kennen.
+    Import-Module -Name ActiveDirectory
+    Wait-SecondDomainController
     $pending = Get-PendingRebootReason
     if ($pending) {
-        Write-LabLog "WARNUNG: Neustart ausstehend ($($pending -join ', ')). Exchange-Setup prueft das selbst."
+        Write-LabLog "Hinweis: Neustart ausstehend ($($pending -join ', ')). Exchange-Setup prueft das selbst."
     }
 
     Invoke-InstallTask
@@ -351,7 +416,7 @@ function Initialize-LabDirectory {
 
     $domainDn = (Get-ADDomain).DistinguishedName
     $companyDn = "OU=$CompanyOu,$domainDn"
-    if (-not [adsi]::Exists("LDAP://$companyDn")) {
+    if (-not [adsi]::Exists("LDAP://$DcComputerName.$DomainName/$companyDn")) {
         New-ADOrganizationalUnit -Name $CompanyOu -Path $domainDn
         Write-LabLog "OU $companyDn angelegt."
     }
@@ -359,7 +424,7 @@ function Initialize-LabDirectory {
     $data = Import-PowerShellDataFile -Path $LabUsersFile
     foreach ($relativeOu in $data.OrganizationalUnits) {
         $ouDn = "$relativeOu,$companyDn"
-        if ([adsi]::Exists("LDAP://$ouDn")) { continue }
+        if ([adsi]::Exists("LDAP://$DcComputerName.$DomainName/$ouDn")) { continue }
         $parts = $relativeOu -split ',', 2
         $name = $parts[0] -replace '^OU=', ''
         $parentDn = if ($parts.Count -gt 1) { "$($parts[1]),$companyDn" } else { $companyDn }
@@ -368,22 +433,24 @@ function Initialize-LabDirectory {
     }
 
     foreach ($user in $data.Users) {
+        # OU, Anschrift und Fax kommen vom Standort des Benutzers (Sites in LabUsers.psd1).
+        $site = $data.Sites[$user.Site]
         $displayName = "$($user.GivenName) $($user.Surname)"
         $attributes = @{
             GivenName         = $user.GivenName
             Surname           = $user.Surname
             DisplayName       = $displayName
             UserPrincipalName = '{0}@{1}' -f $user.SamAccountName.ToLowerInvariant(), $PublicDomainName
-            StreetAddress     = $user.StreetAddress
-            City              = $user.City
-            PostalCode        = $user.PostalCode
+            StreetAddress     = $site.StreetAddress
+            City              = $site.City
+            PostalCode        = $site.PostalCode
             Country           = $data.Country.Code
             Company           = $data.Company
             Office            = $user.Office
             Title             = $user.Title
             OfficePhone       = $user.OfficePhone
             MobilePhone       = $user.MobilePhone
-            Fax               = $user.Fax
+            Fax               = $site.Fax
             # Lab-Kompromiss: Ohne das laeuft das Kennwort nach 42 Tagen (Default Domain Policy) ab.
             PasswordNeverExpires = $true
         }
@@ -394,7 +461,7 @@ function Initialize-LabDirectory {
             Set-ADUser -Identity $existing @attributes
         }
         else {
-            New-ADUser -Name $displayName -SamAccountName $user.SamAccountName -Path "$($user.OrganizationalUnit),$companyDn" -AccountPassword $LabUserPassword -Enabled $true @attributes
+            New-ADUser -Name $displayName -SamAccountName $user.SamAccountName -Path "$($site.OrganizationalUnit),$companyDn" -AccountPassword $LabUserPassword -Enabled $true @attributes
             Write-LabLog "Benutzer $($user.SamAccountName) angelegt."
         }
         # -Country setzt nur c; Name (co) und Laendercode (countryCode) zeigen ADUC und das Adressbuch an.
@@ -480,12 +547,15 @@ function Invoke-ExchangeSetup {
     # Immer gegen den ersten DC: Ein zweiter DC im selben Standort kann waehrend seiner Erstreplikation noch
     # kein azadmin kennen ("credential is invalid", CannotAccessAD; Testdeployment 2026-11-26).
     $allArguments = $Arguments + "/DomainController:$DcComputerName.$DomainName" + '/IAcceptExchangeServerLicenseTerms_DiagnosticDataOFF'
-    $outFile = Join-Path $LogDir "ExchangeSetup-$Step.out.log"
-    Write-LabLog "Exchange-Setup ${Step}: $($allArguments -join ' ')"
-    $process = Start-Process -FilePath $setupExe -ArgumentList $allArguments -Wait -PassThru -NoNewWindow -RedirectStandardOutput $outFile -RedirectStandardError "$outFile.err"
-    if ($process.ExitCode -ne 0) {
-        $tail = Get-Content -Path 'C:\ExchangeSetupLogs\ExchangeSetup.log' -Tail 30 -ErrorAction SilentlyContinue
-        throw "Exchange-Setup $Step mit Exit-Code $($process.ExitCode) beendet.`n$($tail -join "`n")"
+    # Zwei Versuche: Ein transienter AD-Fehler bricht das Setup ab, ein erneuter Aufruf setzt an der Abbruchstelle fort.
+    Invoke-WithRetry -Activity "Exchange-Setup $Step" -Attempts 2 -DelaySeconds 120 -ScriptBlock {
+        $outFile = Join-Path $LogDir "ExchangeSetup-$Step.out.log"
+        Write-LabLog "Exchange-Setup ${Step}: $($allArguments -join ' ')"
+        $process = Start-Process -FilePath $setupExe -ArgumentList $allArguments -Wait -PassThru -NoNewWindow -RedirectStandardOutput $outFile -RedirectStandardError "$outFile.err"
+        if ($process.ExitCode -ne 0) {
+            $tail = Get-Content -Path 'C:\ExchangeSetupLogs\ExchangeSetup.log' -Tail 30 -ErrorAction SilentlyContinue
+            throw "Exchange-Setup $Step mit Exit-Code $($process.ExitCode) beendet.`n$($tail -join "`n")"
+        }
     }
     Write-LabLog "Exchange-Setup $Step erfolgreich."
 }
@@ -665,18 +735,7 @@ function Initialize-LabMailboxLanguage {
 function Register-InitialUpdate {
     $content = Get-Content -Path $UpdateScriptFile -Raw
     Register-LabUpdateTask -ScriptContent $content -TaskName $UpdateTaskName
-    Write-LabLog 'Update-Task auf dem Exchange-Server registriert (laeuft nach dem Neustart).'
-
-    foreach ($dcName in @($DcComputerName, $SecondDcComputerName) | Where-Object { $_ }) {
-        $dcFqdn = "$dcName.$DomainName"
-        try {
-            Invoke-Command -ComputerName $dcFqdn -ScriptBlock ${function:Register-LabUpdateTask} -ArgumentList $content, $UpdateTaskName, $true
-            Write-LabLog "Update-Task auf $dcFqdn registriert und gestartet."
-        }
-        catch {
-            Write-LabLog "WARNUNG: Update-Task auf $dcFqdn nicht registriert: $($_.Exception.Message)"
-        }
-    }
+    Write-LabLog 'Update-Task auf dem Exchange-Server registriert (laeuft nach dem Neustart). Die DCs folgen am Ende des Deployments.'
 }
 
 function Register-LabMaintenance {
@@ -832,7 +891,7 @@ function Publish-LabDesktop {
         )
         foreach ($user in $LabData.Users) {
             $address = '{0}@{1}' -f $user.SamAccountName.ToLowerInvariant(), $PublicDomainName
-            $lines += '  {0,-40} {1} {2}, {3}, {4}' -f $address, $user.GivenName, $user.Surname, $user.Title, $user.City
+            $lines += '  {0,-40} {1} {2}, {3}, {4}' -f $address, $user.GivenName, $user.Surname, $user.Title, $LabData.Sites[$user.Site].City
         }
         $lines += ''
         $lines += $text.Groups
@@ -898,13 +957,32 @@ function Register-LabPtrRecord {
     }
 }
 
+function Initialize-AdDefaultServer {
+    # Alle AD- und GPO-Aufrufe gegen den ersten DC: Ein zweiter DC kann ein eben angelegtes Objekt noch nicht kennen.
+    # Exchange-Cmdlets waehlen ihren DC selbst (Topologie) und haben keinen Parameter Server.
+    $server = "$DcComputerName.$DomainName"
+    foreach ($cmdlet in 'Get-ADForest', 'Set-ADForest', 'Get-ADDomain', 'Get-ADUser', 'Set-ADUser', 'New-ADUser',
+        'New-ADOrganizationalUnit', 'Get-ADOptionalFeature', 'Enable-ADOptionalFeature', 'Get-ADComputer', 'Move-ADObject',
+        'Get-GPO', 'New-GPO', 'Set-GPRegistryValue', 'Get-GPInheritance', 'New-GPLink') {
+        $global:PSDefaultParameterValues["${cmdlet}:Server"] = $server
+    }
+    Write-LabLog "AD- und GPO-Aufrufe laufen gegen $server."
+}
+
 function Invoke-InstallPhase {
+    Initialize-AdDefaultServer
     $secret = Get-InstallSecret
-    $labData = Initialize-LabDirectory -LabUserPassword (ConvertTo-SecureString -String $secret.LabUserPassword -AsPlainText -Force)
+    $labUserPassword = ConvertTo-SecureString -String $secret.LabUserPassword -AsPlainText -Force
+    # Beide Schritte sind idempotent und werden bei transienten AD- bzw. Exchange-Fehlern als Ganzes wiederholt.
+    $labData = Invoke-WithRetry -Activity 'Lab-Verzeichnis (OUs, Benutzer)' -Attempts 4 -DelaySeconds 60 -ScriptBlock {
+        Initialize-LabDirectory -LabUserPassword $labUserPassword
+    }
     Enable-AdRecycleBin
     Install-Exchange
     Connect-ExchangeSession
-    Initialize-ExchangeConfiguration -Users $labData.Users
+    Invoke-WithRetry -Activity 'Exchange-Konfiguration' -Attempts 3 -DelaySeconds 60 -ScriptBlock {
+        Initialize-ExchangeConfiguration -Users $labData.Users
+    }
     Initialize-LabRecipient -LabData $labData
     Initialize-LabMailboxLanguage -LabData $labData
     Initialize-LabOutlookPolicy
@@ -922,6 +1000,7 @@ try {
     switch ($Phase) {
         'Orchestrate' { Invoke-OrchestratePhase }
         'Install' {
+            Set-Content -Path $StartedMarker -Value (Get-Date -Format o) -Encoding ASCII
             Invoke-InstallPhase
             Set-Content -Path $ResultFile -Value '0' -Encoding ASCII
         }

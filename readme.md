@@ -41,7 +41,7 @@ flowchart LR
 | Zweiter DC (optional) | `deploySecondDc = true`: `<K>-DC02` mit gleicher Ausstattung, wird parallel zum ersten DC aufgebaut und heraufgestuft, DNS des VNets zeigt dann auf beide DCs |
 | Exchange-Server | `Standard_E4s_v5` (32 GB RAM), Windows Server 2025, Exchange Server SE (Mailbox), OS- und Datendisk **Premium SSD**, DB und Logs auf ReFS-Datendisk |
 | Windows-11-Client | `deployClient = true` (Standard): `<K>-CL01`, `Standard_B2ms`, Windows 11 Enterprise mit deutscher Oberfläche (`labLanguage = en`: englische Oberfläche mit britischen Formaten, Tastatur immer Deutsch), Microsoft 365 Apps (de-de bzw. en-gb, ohne Access/Publisher/Teams), Domänenmitglied in `OU=Computers` der Zentrale, eigene Public IP für RDP, aktualisiert sich selbst (Neustarts nur außerhalb 06–23 Uhr). Einstieg ins Lab: Devolutions Remote Desktop Manager Free mit fertigen RDP-Verbindungen zu allen Lab-Servern (Domain-Admin, für jeden Benutzer am Client) |
-| Fileserver | `deployFileServer = true` (Standard): `<K>-FS01`, Windows Server 2025, keine Public IP. Erzeugt die Beispieldaten mit `Standard_D4s_v5` und verkleinert sich danach selbst auf `Standard_B2s_v2`. Datendisk `F:` mit 256 GB Standard SSD. Freigaben `Abteilungen`, `Projekte`, `Archiv`, `Scans` und `Home$` (englisch `Departments`, `Projects`, `Archive`, `Scans`, `Home$`) mit zugriffsbasierter Aufzählung und AGDLP-Gruppen, Basisordner `H:`, FSRM. Beispieldokumente bis 90 % der Datendisk (rund 230 GB) einer fiktiven Agentur (zwölf Jahre Projekte, Buchhaltung, Personal, Corporate Design, Logos für das Entra-Branding) mit fiktiven personenbezogenen Daten und absichtlichen Altlasten. Definiert in `scripts/data/<Sprache>/FileServer.psd1` und `scripts/data/<Sprache>/corpus` |
+| Fileserver | `deployFileServer = true` (Standard): `<K>-FS01`, Windows Server 2025, keine Public IP. Erzeugt die Beispieldaten mit `Standard_D4s_v5` und verkleinert sich danach selbst auf `Standard_B2s_v2` (bietet der Azure-Cluster diese Größe nicht an, auf `Standard_D2s_v5`). Datendisk `F:` mit 256 GB Standard SSD. Freigaben `Abteilungen`, `Projekte`, `Archiv`, `Scans` und `Home$` (englisch `Departments`, `Projects`, `Archive`, `Scans`, `Home$`) mit zugriffsbasierter Aufzählung und AGDLP-Gruppen, Basisordner `H:`, FSRM. Beispieldokumente bis 90 % der Datendisk (rund 230 GB) einer fiktiven Agentur (zwölf Jahre Projekte, Buchhaltung, Personal, Corporate Design, Logos für das Entra-Branding) mit fiktiven personenbezogenen Daten und absichtlichen Altlasten. Definiert in `scripts/data/<Sprache>/FileServer.psd1` und `scripts/data/<Sprache>/corpus` |
 | Netzwerk | ein VNet, ein Subnet, eine NSG (kein Allow-All, SMTP getrennt von HTTP/HTTPS), Standard-Public-IPs für Exchange und Client |
 | DNS | öffentliche Zone `<k>.<zone>` (mail, autodiscover, MX, SPF, DMARC `p=none`) mit Delegation in `<zone>`; intern Split DNS und Reverse-Zone `1.0.10.in-addr.arpa` auf dem DC |
 | AD | OU-Baum `LEARN-<k>` (Branch Berlin/Hamburg bzw. London/Manchester, Administration) und gleichnamige AD-Standorte mit Subnetzen, 28 Lab-Benutzer mit Postfach, Adresse `@<k>.<zone>`, Vorgesetzten, Firma, Land, Telefon, Mobil und Fax. Rufnummern nur fiktiv: Deutsch aus den Bereichen der Bundesnetzagentur für Medienproduktionen (030 23125, 040 66969, 0171 39200), Englisch aus den Ofcom-Drama-Nummern (020 7946 0, 0161 496 0, 07700 900). AD-Papierkorb aktiv |
@@ -86,7 +86,11 @@ flowchart LR
    | `enableLetsEncrypt` / `letsEncryptStaging` | nein | Zertifikat an/aus, Test-CA für Testdeployments |
    | `wingetPackages` | nein | zusätzliche Tools per winget, Standard `Microsoft.VisualStudioCode` |
 
-3. Das Deployment dauert **ca. 1–1,5 Stunden**. Im Test waren es rund 65 Minuten, davon allein 31 Minuten Exchange-Setup. Danach startet der Exchange-Server neu und installiert im Hintergrund alle Updates, inklusive Exchange-Sicherheitsupdate über Microsoft Update. DC und Fileserver machen das parallel. Rechne mit weiteren 30–60 Minuten. Die Beispieldaten des Fileservers entstehen höchstens 60 Minuten lang im Deployment, der Rest im Hintergrund: Mit `Standard_D4s_v5` waren 60 GB im Test nach gut 30 Minuten fertig, für rund 230 GB sind etwa zwei Stunden zu erwarten. Danach verkleinert sich der Fileserver selbst auf `Standard_B2s_v2` und startet dafür einmal neu.
+3. Das Deployment dauert **ca. 1–1,5 Stunden**, mit zweitem DC etwas länger: Exchange beginnt erst, wenn DC02 vollständig bereit ist (SYSVOL, DNS, Replikation in beide Richtungen). Im Test waren es rund 65 Minuten, davon allein 31 Minuten Exchange-Setup. Danach startet der Exchange-Server neu und installiert im Hintergrund alle Updates, inklusive Exchange-Sicherheitsupdate über Microsoft Update. Die DCs starten ihren Update-Lauf erst ganz am Ende des Deployments, wenn Exchange, Client und Fileserver fertig sind; so trifft kein DC-Neustart eine VM, die gerade beitritt. Rechne mit weiteren 30–60 Minuten. Die Beispieldaten des Fileservers entstehen höchstens 60 Minuten lang im Deployment, der Rest im Hintergrund: Mit `Standard_D4s_v5` waren 60 GB im Test nach gut 30 Minuten fertig, für rund 230 GB sind etwa zwei Stunden zu erwarten. Danach verkleinert sich der Fileserver selbst auf `Standard_B2s_v2` und startet dafür einmal neu.
+
+   **Startzeit:** Mit der Standard-Abschaltzeit 19:00 das Deployment bis etwa **17:30** starten. Die Abschaltung unterbricht kein Deployment-Modul, aber laufende Hintergrundarbeiten (Updates, Beispieldaten). Diese setzen nach dem nächsten Start fort, fertig ist das Lab dann erst am nächsten Tag.
+
+4. **Prüfen:** `./tools/Test-LabDeployment.ps1 -ResourceGroup rg-exlab-<k> -Wait` prüft Deployment, DNS-Delegation, alle VMs und die Hintergrundarbeiten und wartet, bis diese fertig sind. Exit-Code 0 heißt: Lab vollständig und fehlerfrei. Details in [docs/betrieb.md](docs/betrieb.md#lab-prüfen).
 
 ### Ablauf und Logs
 
@@ -94,7 +98,8 @@ flowchart LR
 | --- | --- | --- |
 | Forest anlegen, Neustart, Split DNS | DC | `C:\ExchangeLab\Logs\Install-DomainController-*.log` |
 | Warten auf DC01, Heraufstufung (optional) | DC02 | `C:\ExchangeLab\Logs\Wait-DomainController.log`, `Install-DomainController-*.log` |
-| Heraufstufung nach Neustart (nur wenn Windows-Wartung einen Neustart vorgemerkt hat) | DC | `C:\ExchangeLab\Logs\Install-DomainController-Promote.log` |
+| Heraufstufung nach Neustart (Windows-Wartung hat einen Neustart vorgemerkt oder ein Versuch ist gescheitert, höchstens 3 Neustarts) | DC | `C:\ExchangeLab\Logs\Install-DomainController-Promote.log` |
+| Schranke: DC02 vollständig bereit, erst dann VNet-DNS und Exchange (optional) | DC01 | `C:\ExchangeLab\Logs\Wait-SecondDomainController.log` |
 | Voraussetzungen, ISO, Zertifikat (parallel) | Exchange | `C:\ExchangeLab\Logs\Initialize-ExchangeServer.log` |
 | Sprachpaket, Microsoft 365 Apps, Remote Desktop Manager (parallel) | Client | `C:\ExchangeLab\Logs\Initialize-LabClient-Prepare.log` |
 | Warten auf DC, Domänenbeitritt, RDP für Lab-Benutzer, Verbindungen im Remote Desktop Manager | Client | `C:\ExchangeLab\Logs\Wait-DomainController.log`, `Initialize-LabClient-Complete.log` |
@@ -105,7 +110,7 @@ flowchart LR
 | Beispieldokumente (höchstens 60 Minuten, Rest per Task `TraineeLab-SampleDocuments`) | Fileserver | `C:\ExchangeLab\Logs\New-SampleDocuments*.log`, Stand in `C:\ExchangeLab\sample-documents.json` |
 | Warten auf DC, Domänenbeitritt, Rollen, Gruppen, Berechtigungen, Freigaben, Altlasten | Fileserver | `C:\ExchangeLab\Logs\Wait-DomainController.log`, `Initialize-FileServer-Complete.log` |
 | Verkleinerung nach Beispieldaten und Updates (Task `TraineeLab-FileServerResize`) | Fileserver | `C:\ExchangeLab\Logs\Resize-FileServer.log` |
-| Updates nach der Installation | alle Server | `C:\ExchangeLab\Logs\Update-LabServer.log` |
+| Updates nach der Installation (DCs erst am Ende des Deployments, Run Command `Start-LabUpdate`) | alle Server | `C:\ExchangeLab\Logs\Update-LabServer.log`, auf den DCs auch `Start-LabUpdate.log` |
 | tägliche Wartung (Log-Bereinigung, Zertifikat) | Exchange | `C:\ExchangeLab\Logs\Invoke-LabMaintenance.log` |
 
 Status von außen: `az vm run-command show -g <rg> --vm-name vm-<k>-ex01 --name Install-ExchangeServer --instance-view`.
@@ -205,12 +210,15 @@ az bicep build --file infra/main.bicep --outfile azuredeploy.json
     -CorpusPath .\scripts\data\de\corpus -LabUsersPath .\scripts\data\de\LabUsers.psd1 -ReferenceDate 2026-11-24
 ```
 
-- Prüfungen (laufen auch in der CI):
+- Prüfungen (laufen auch in der CI, unter Linux mit pwsh 7 und unter Windows PowerShell 5.1). `tests/Haertung.Tests.ps1` prüft die Fehlerklassen der Testdeployments: Run-Command-Parameter gegen die Skripte, Argumente geplanter Tasks, Formatstrings der Lab-Info, stderr nativer Befehle unter 5.1, Zeitlimits, DPAPI:
 
 ```powershell
-Invoke-ScriptAnalyzer -Path scripts -Recurse -Settings ./PSScriptAnalyzerSettings.psd1
+'scripts', 'tools' | ForEach-Object { Invoke-ScriptAnalyzer -Path $_ -Recurse -Settings ./PSScriptAnalyzerSettings.psd1 }
 Invoke-Pester -Path tests
 ```
+
+- Vor jeder Abnahme und nach jeder Versionsänderung prüft `./tools/Test-Downloads.ps1` alle festgelegten Downloads (Hash, Größe) und Modulversionen. Blockiert das eigene Netz GitHub-Downloads, mit `-ResourceGroup <rg> -VmName <vm>` von einer Lab-VM aus.
+- Abnahme einer Änderung: DE- und EN-Lab parallel bereitstellen (beide mit DC02, Client, Fileserver), ohne Eingriff, danach `./tools/Test-LabDeployment.ps1 -ResourceGroup <rg> -Wait` mit Exit-Code 0 auf beiden.
 
 ## Hinweis für Betreiber
 

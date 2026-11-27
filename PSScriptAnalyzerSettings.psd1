@@ -6,4 +6,11 @@
         # das erkennt die Regel nicht.
         'PSReviewUnusedParameter'
     )
+    Rules        = @{
+        # Die VM-Skripte laufen unter Windows PowerShell 5.1 (Run Command), Werkzeuge und Tests auch unter pwsh 7.
+        PSUseCompatibleSyntax = @{
+            Enable         = $true
+            TargetVersions = @('5.1', '7.4')
+        }
+    }
 }

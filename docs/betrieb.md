@@ -64,6 +64,28 @@ So ist es aufgebaut:
 
 **RDM-Version aktualisieren (Repository):** In `scripts/Initialize-LabClient.ps1` stehen die Pins `$RdmInstaller` (URL und SHA256 aus [productinfo.json](https://devolutions.net/productinfo.json), Abschnitt `RDMWindows.Current`, x64-MSI), `$RdmModule` (Version aus der PowerShell Gallery) und `$DotNetDesktopRuntime`. Die Updatesuche in RDM ist per Richtlinie aus, weil Lab-Benutzer keine Adminrechte haben. Auf einem laufenden Client installiert ein Administrator ein neues MSI von Hand.
 
+## Lab prüfen
+
+Ein Werkzeug prüft das ganze Lab von außen (Azure CLI, angemeldet mit Run-Command-Rechten auf der Ressourcengruppe):
+
+```powershell
+./tools/Test-LabDeployment.ps1 -ResourceGroup rg-exlab-<k>
+./tools/Test-LabDeployment.ps1 -ResourceGroup rg-exlab-<k> -Wait   # wartet auf Updates, Beispieldaten, Verkleinerung
+```
+
+Es liest Sprache und Optionen aus dem letzten Lab-Deployment und prüft:
+
+| Bereich | Prüfungen |
+| --- | --- |
+| Azure | alle Deployments und Run Commands erfolgreich, DNS-Delegation in der Parent-Zone, Fileserver auf Dauergröße |
+| DCs | DC-Rolle und Dienste, `dc-ready.txt`, SYSVOL/NETLOGON, Forwarder, SRV-Records aller DCs, Split DNS, PTR, AD-Standorte, Replikation, Lab-Benutzer mit Firma/Fax/Ort |
+| Exchange | Installation, Dienste, Postfächer und Beispielempfänger, Postfachsprache, Zertifikat auf 443 (Let's Encrypt, für SMTP aktiviert), OWA-URLs und `healthcheck.htm`, Wartungs-Task |
+| Fileserver | Phase Complete, Freigaben mit zugriffsbasierter Aufzählung, Altlasten, Beispieldaten fertig und Datenlaufwerk gefüllt |
+| Client | Domäne und Secure Channel, Anzeigesprache, Microsoft 365 Apps, Remote Desktop Manager, RDP für Domänen-Benutzer |
+| alle VMs | keine `WARNUNG:`/`FEHLER:` in `C:\ExchangeLab\Logs`, Gebietsschema, Update-Lauf fertig, `Lab-Info.txt` ohne offene Platzhalter |
+
+Jede Prüfung ist `OK`, `FAIL` oder `PENDING` (Hintergrundarbeit läuft noch). Exit-Code 0 = alles OK, 1 = Fehler, 2 = noch nicht fertig. Die Prüfskripte je Rolle liegen in `tools/LabChecks`. Ist eine VM gestoppt (Abschaltzeit), meldet das Werkzeug `PENDING`, bis sie wieder läuft.
+
 ## Status prüfen
 
 Stand eines Run Commands (z. B. Exchange-Installation):
@@ -90,7 +112,7 @@ az vm run-command list -g rg-exlab-<k> --vm-name vm-<k>-fs01 --query "[].{name:n
 
 Die Beispieldokumente füllen die Datendisk `F:` bis `fileServerDataPercent` (Standard 90 %, rund 230 GB), in der Sprache aus `labLanguage`. Davon ist rund ein Drittel Kopien wie auf echten Servern (Basisordner, „Kopie von“, alte Versionen, Quartalssicherungen im Archiv). Für mehr als rund 60 GB eigene Dokumente legt der Generator entsprechend mehr Projekte je Kunde und Jahr an. Er hört auf, wenn weniger als 8 % der Disk frei sind.
 
-Die Dokumente entstehen im Deployment höchstens 60 Minuten lang, den Rest erzeugt der Task `TraineeLab-SampleDocuments` im Hintergrund (mit `Standard_D4s_v5` insgesamt rund zwei Stunden). Danach verkleinert sich der Fileserver selbst auf `fileServerFinalVmSize` (Standard `Standard_B2s_v2`). Das passiert erst, wenn Beispieldaten, Einrichtung und Update-Lauf fertig sind, und kostet einen Neustart.
+Die Dokumente entstehen im Deployment höchstens 60 Minuten lang, den Rest erzeugt der Task `TraineeLab-SampleDocuments` im Hintergrund (mit `Standard_D4s_v5` insgesamt zwei bis drei Stunden; ist das Burst-Guthaben der Standard-SSD aufgebraucht, begrenzen deren IOPS das Tempo). Danach verkleinert sich der Fileserver selbst auf `fileServerFinalVmSize` (Standard `Standard_B2s_v2`). Bietet der Hardware-Cluster der VM diese Größe nicht an (eine Größenänderung ohne Deallokieren geht nur innerhalb des Clusters), nimmt er die 2-vCPU-Größe seiner Familie, mit den Standardwerten `Standard_D2s_v5`. Das passiert erst, wenn Beispieldaten, Einrichtung und Update-Lauf fertig sind, und kostet einen Neustart.
 
 Bei 90 % Belegung bleibt wenig Platz für Schattenkopien und eigene Versuche auf `F:`. Wer mehr Luft braucht, setzt `fileServerDataPercent` niedriger, z. B. 60.
 

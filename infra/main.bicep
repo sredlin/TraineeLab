@@ -54,6 +54,9 @@ param parentDnsZoneResourceGroup string = 'rg-publicdns'
 @description('Download-URL des Exchange-Server-SE-ISO (Microsoft Download Center, ID 108244).')
 param exchangeIsoUri string = 'https://download.microsoft.com/download/ad9b1e53-f28e-4a82-987d-6c88803795b2/ExchangeServerSE-x64.iso'
 
+@description('SHA256 des Exchange-ISO: Pruefung vor dem Entpacken, bei Abweichung neuer Download. Bei eigenem exchangeIsoUri anpassen oder leeren (keine Pruefung).')
+param exchangeIsoSha256 string = 'CD2B13F2C297187776AF4CFF3541B4BE3C677CF907CCA69D85AB0E2B70377BD1'
+
 @description('Let\'s-Encrypt-Wildcard-Zertifikat ueber die Managed Identity anfordern (Deployer braucht Owner/User Access Administrator auf der Ressourcengruppe).')
 param enableLetsEncrypt bool = true
 
@@ -276,6 +279,7 @@ module exchangeServer 'modules/exchange-server.bicep' = {
     adminPassword: adminPassword
     publicDomainName: publicDomainName
     exchangeIsoUri: exchangeIsoUri
+    exchangeIsoSha256: exchangeIsoSha256
     enableLetsEncrypt: enableLetsEncrypt
     letsEncryptStaging: letsEncryptStaging
     wingetPackages: wingetPackages
@@ -311,6 +315,29 @@ module secondDomainController 'modules/domain-controller.bicep' = if (deploySeco
   }
 }
 
+// Schranke: DC02 ist vollstaendig bereit (SYSVOL, DNS, Replikation), bevor er DNS-Server des VNets wird
+// und die Exchange-Installation beginnt.
+module dcReady 'modules/dc-ready.bicep' = if (deploySecondDc) {
+  name: 'dc-ready'
+  params: {
+    location: location
+    tags: allTags
+    vmName: names.dcVm
+    domainName: adDomainName
+    netbiosName: traineeUpper
+    adminUsername: adminUsername
+    adminPassword: adminPassword
+    secondDcComputerName: names.dc2Computer
+    secondDcIp: dc2PrivateIp
+    publicDomainName: publicDomainName
+    exchangeIp: exchangePrivateIp
+  }
+  dependsOn: [
+    domainController
+    secondDomainController
+  ]
+}
+
 module vnetDns 'modules/vnet-dns.bicep' = {
   name: 'vnet-dns'
   params: {
@@ -329,6 +356,7 @@ module vnetDns 'modules/vnet-dns.bicep' = {
   dependsOn: [
     domainController
     secondDomainController
+    dcReady
   ]
 }
 
@@ -448,6 +476,27 @@ module fileServerJoin 'modules/file-server-join.bicep' = if (deployFileServer) {
   dependsOn: [
     fileServer
     vnetDns
+  ]
+}
+
+// Update-Lauf der DCs erst ganz am Ende: Ihre Neustarts treffen keine VM mehr, die beitritt oder sich einrichtet.
+module labFinalize 'modules/lab-finalize.bicep' = {
+  name: 'lab-finalize'
+  params: {
+    location: location
+    tags: allTags
+    vmNames: deploySecondDc ? [
+      names.dcVm
+      names.dc2Vm
+    ] : [
+      names.dcVm
+    ]
+  }
+  dependsOn: [
+    exchangeInstall
+    clientJoin
+    fileServerJoin
+    dcReady
   ]
 }
 

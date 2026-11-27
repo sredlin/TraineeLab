@@ -11,11 +11,15 @@
       - die Beispieldokumente fertig sind (C:\ExchangeLab\sample-documents.json, State 'fertig'),
       - die Einrichtung abgeschlossen ist (Marker fs-complete.done),
       - der Update-Task fertig ist und kein Neustart aussteht,
-      - die VM seit mindestens MinUptimeMinutes laeuft (kein Konflikt mit einem laufenden Deployment).
+      - die VM seit mindestens MinUptimeMinutes laeuft und kein Run Command auf ihr laeuft
+        (kein Konflikt mit einem laufenden Deployment).
 
     Die Groesse setzt die verwaltete Identitaet der VM (Rolle 'Virtual Machine Contributor' nur auf
-    diese VM) ueber die ARM-API. Azure startet die VM dafuer einmal neu. Bietet der aktuelle Cluster
-    die Zielgroesse nicht an, bleibt die VM unveraendert und das Log nennt die Befehle fuer die Hand.
+    diese VM) ueber die ARM-API. Azure startet die VM dafuer einmal neu. Eine Groessenaenderung ohne
+    Deallokieren geht nur auf Groessen, die der aktuelle Hardware-Cluster anbietet. Fehlt die Zielgroesse
+    dort (im Abnahmetest 2026-11-26 fuer Standard_B2s_v2 nachgewiesen), nimmt das Skript die 2-vCPU-Groesse
+    derselben Familie (z. B. Standard_D4s_v5 -> Standard_D2s_v5), die der Cluster praktisch immer anbietet.
+    Erst wenn auch die fehlt, bleibt die VM unveraendert und das Log nennt die Befehle fuer die Hand.
 
     Nur ASCII (Windows PowerShell 5.1).
 #>
@@ -79,8 +83,10 @@ function Get-WaitReason {
 
 try {
     $compute = Get-ComputeInfo
-    if ($compute.vmSize -eq $TargetSize) {
-        Write-Verbose -Message "Groesse $TargetSize bereits gesetzt."
+    # Ersatzgroesse: 2 vCPU derselben Familie wie die aktuelle Groesse.
+    $fallbackSize = $compute.vmSize -replace '^(Standard_[A-Za-z]+)\d+', '${1}2'
+    if ($compute.vmSize -eq $TargetSize -or $compute.vmSize -eq $fallbackSize) {
+        Write-Verbose -Message "Groesse $($compute.vmSize) bereits gesetzt."
         exit 0
     }
     $reason = Get-WaitReason
@@ -91,14 +97,33 @@ try {
 
     $vmUri = 'https://management.azure.com/subscriptions/{0}/resourceGroups/{1}/providers/Microsoft.Compute/virtualMachines/{2}' -f $compute.subscriptionId, $compute.resourceGroupName, $compute.name
     $headers = @{ Authorization = "Bearer $(Get-ArmToken)" }
-    $available = @((Invoke-RestMethod -Uri "$vmUri/vmSizes?api-version=$ArmApiVersion" -Headers $headers -TimeoutSec 60).value.name)
-    if ($available -notcontains $TargetSize) {
-        Write-LabLog ('WARNUNG: {0} ist im aktuellen Cluster nicht verfuegbar, die VM bleibt {1}. Von Hand: az vm deallocate, az vm resize --size {0}, az vm start (-g {2} -n {3}).' -f $TargetSize, $compute.vmSize, $compute.resourceGroupName, $compute.name)
+
+    # Der Neustart der Groessenaenderung wuerde einen laufenden Run Command (z. B. aus einem erneuten Deployment) abbrechen.
+    $runCommands = @((Invoke-RestMethod -Uri "$vmUri/runCommands?`$expand=instanceView&api-version=$ArmApiVersion" -Headers $headers -TimeoutSec 60).value)
+    $busy = @($runCommands | Where-Object {
+            $_.properties.provisioningState -notin 'Succeeded', 'Failed', 'Canceled' -or
+            "$($_.properties.instanceView.executionState)" -in 'Pending', 'Running'
+        } | ForEach-Object { $_.name })
+    if ($busy) {
+        Write-LabLog "Warte ($($compute.vmSize) -> $TargetSize): Run Command $($busy -join ', ') laeuft."
         exit 0
     }
 
-    $body = @{ properties = @{ hardwareProfile = @{ vmSize = $TargetSize } } } | ConvertTo-Json -Depth 5
-    Write-LabLog "Aendere die Groesse von $($compute.vmSize) auf $TargetSize. Azure startet die VM dafuer neu."
+    $available = @((Invoke-RestMethod -Uri "$vmUri/vmSizes?api-version=$ArmApiVersion" -Headers $headers -TimeoutSec 60).value.name)
+    if ($available -contains $TargetSize) {
+        $newSize = $TargetSize
+    }
+    elseif ($available -contains $fallbackSize) {
+        $newSize = $fallbackSize
+        Write-LabLog "Hinweis: $TargetSize bietet der aktuelle Cluster nicht an, nutze $fallbackSize (gleiche Familie wie $($compute.vmSize))."
+    }
+    else {
+        Write-LabLog ('WARNUNG: Weder {0} noch {4} sind im aktuellen Cluster verfuegbar, die VM bleibt {1}. Von Hand: az vm deallocate, az vm resize --size {0}, az vm start (-g {2} -n {3}).' -f $TargetSize, $compute.vmSize, $compute.resourceGroupName, $compute.name, $fallbackSize)
+        exit 0
+    }
+
+    $body = @{ properties = @{ hardwareProfile = @{ vmSize = $newSize } } } | ConvertTo-Json -Depth 5
+    Write-LabLog "Aendere die Groesse von $($compute.vmSize) auf $newSize. Azure startet die VM dafuer neu."
     Invoke-RestMethod -Method Patch -Uri "${vmUri}?api-version=$ArmApiVersion" -Headers $headers -Body $body -ContentType 'application/json' -TimeoutSec 120 | Out-Null
     exit 0
 }

@@ -1,4 +1,4 @@
-#Requires -Modules @{ ModuleName = 'Pester'; ModuleVersion = '5.0.0' }
+﻿#Requires -Modules @{ ModuleName = 'Pester'; ModuleVersion = '5.0.0' }
 #Requires -Modules PSScriptAnalyzer
 
 BeforeDiscovery {
@@ -6,8 +6,13 @@ BeforeDiscovery {
     $scriptFiles = Get-ChildItem -Path (Join-Path $repoRoot 'scripts') -Filter '*.ps1' | ForEach-Object {
         @{ Name = $_.Name; Path = $_.FullName }
     }
+    $toolFiles = Get-ChildItem -Path (Join-Path $repoRoot 'tools') -Filter '*.ps1' -Recurse | ForEach-Object {
+        @{ Name = $_.Name; Path = $_.FullName }
+    }
     # Lab-Daten je Sprache unter scripts/data/<Sprache>.
     $languages = @(@{ Language = 'de' }, @{ Language = 'en' })
+    # Rastergrafik (System.Drawing) gibt es nur unter Windows.
+    $isWindowsHost = [Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT
 }
 
 BeforeAll {
@@ -15,9 +20,12 @@ BeforeAll {
     $labUsers = Import-PowerShellDataFile -Path (Join-Path -Path $repoRoot -ChildPath 'scripts/data/de/LabUsers.psd1')
     $fileServer = Import-PowerShellDataFile -Path (Join-Path -Path $repoRoot -ChildPath 'scripts/data/de/FileServer.psd1')
     $templateText = Get-Content -Path (Join-Path $repoRoot 'azuredeploy.json') -Raw
-    $template = $templateText | ConvertFrom-Json -Depth 100
+    # ConvertFrom-Json -Depth gibt es erst ab PowerShell 6; Windows PowerShell 5.1 hat keine Tiefengrenze.
+    $template = if ($PSVersionTable.PSVersion.Major -ge 6) { $templateText | ConvertFrom-Json -Depth 100 } else { $templateText | ConvertFrom-Json }
     # Nur fiktive Rufnummern: Deutsch Bundesnetzagentur (Medienproduktionen, Mitteilung 148/2021), Englisch Ofcom
     # (Drama-Nummern fuer TV und Radio). Echte Anschluesse duerfen weder im Adressbuch noch auf Dokumenten stehen.
+    # Zugelassene Verben: "Build" kennt erst PowerShell 6. Der Lauf unter pwsh 7 prueft die Verben weiter.
+    $analyzerExclude = if ($PSVersionTable.PSVersion.Major -lt 6) { @('PSUseApprovedVerbs') } else { @() }
     $phonePattern = @{
         de = @{ Fixed = '^\+49 (30 23125|40 66969)-\d{3}$'; Mobile = '^\+49 171 39200\d{2}$'; Source = 'Bundesnetzagentur: Berlin 030 23125, Hamburg 040 66969, Mobil 0171 39200' }
         en = @{ Fixed = '^\+44 (20 7946 0|161 496 0)\d{3}$'; Mobile = '^\+44 7700 900\d{3}$'; Source = 'Ofcom: London 020 7946 0, Manchester 0161 496 0, Mobil 07700 900' }
@@ -39,11 +47,28 @@ Describe 'Skript <Name>' -ForEach $scriptFiles {
 
     It 'hat keine PSScriptAnalyzer-Befunde' {
         $settings = Join-Path (Split-Path -Path $PSScriptRoot -Parent) 'PSScriptAnalyzerSettings.psd1'
-        Invoke-ScriptAnalyzer -Path $Path -Settings $settings | Should -BeNullOrEmpty
+        Invoke-ScriptAnalyzer -Path $Path -Settings $settings | Where-Object { $analyzerExclude -notcontains $_.RuleName } | Should -BeNullOrEmpty
     }
 
     It 'endet mit einem expliziten Exit-Code' {
         (Get-Content -Path $Path -Raw) | Should -Match 'exit 0'
+    }
+}
+
+Describe 'Werkzeug <Name>' -ForEach $toolFiles {
+    It 'enthaelt nur ASCII-Zeichen (Pruefskripte laufen per Run Command unter Windows PowerShell 5.1)' {
+        ([IO.File]::ReadAllBytes($Path) | Where-Object { $_ -gt 127 }) | Should -BeNullOrEmpty
+    }
+
+    It 'laesst sich fehlerfrei parsen' {
+        $errors = $null
+        [System.Management.Automation.Language.Parser]::ParseFile($Path, [ref]$null, [ref]$errors) | Out-Null
+        $errors | Should -BeNullOrEmpty
+    }
+
+    It 'hat keine PSScriptAnalyzer-Befunde' {
+        $settings = Join-Path (Split-Path -Path $PSScriptRoot -Parent) 'PSScriptAnalyzerSettings.psd1'
+        Invoke-ScriptAnalyzer -Path $Path -Settings $settings | Where-Object { $analyzerExclude -notcontains $_.RuleName } | Should -BeNullOrEmpty
     }
 }
 
@@ -71,13 +96,22 @@ Describe 'LabUsers.psd1 (<Language>)' -ForEach $languages {
         $names | ForEach-Object { $_.Length | Should -BeLessOrEqual 20 }
     }
 
-    It 'hat fuer jeden Benutzer alle Pflichtattribute' {
-        $required = 'SamAccountName', 'GivenName', 'Surname', 'OrganizationalUnit', 'StreetAddress', 'City', 'PostalCode', 'Office', 'Title', 'OfficePhone', 'MobilePhone', 'Fax'
+    It 'hat fuer jeden Benutzer alle Pflichtattribute und einen Standort mit Anschrift' {
+        $required = 'SamAccountName', 'GivenName', 'Surname', 'Site', 'Office', 'Title', 'OfficePhone', 'MobilePhone'
         foreach ($user in $labUsers.Users) {
             foreach ($key in $required) {
                 $user[$key] | Should -Not -BeNullOrEmpty -Because "$($user.SamAccountName) braucht $key"
             }
+            $labUsers.Sites.Keys | Should -Contain $user.Site -Because "$($user.SamAccountName) verweist auf Standort $($user.Site)"
         }
+        @($labUsers.Sites.Keys | Sort-Object) | Should -Be @('Branch', 'HQ')
+        foreach ($site in $labUsers.Sites.GetEnumerator()) {
+            foreach ($key in 'OrganizationalUnit', 'StreetAddress', 'City', 'PostalCode', 'Fax') {
+                $site.Value[$key] | Should -Not -BeNullOrEmpty -Because "Standort $($site.Key) braucht $key"
+            }
+        }
+        # Die Client-OU liegt beim Hauptstandort (Initialize-LabClient, Move-LabClientComputer).
+        $labUsers.ClientOrganizationalUnit | Should -Be ($labUsers.Sites.HQ.OrganizationalUnit -replace '^OU=Users,', 'OU=Computers,')
     }
 
     It 'nennt Firma und Land fuer die AD-Attribute company, c, co und countryCode' {
@@ -94,7 +128,9 @@ Describe 'LabUsers.psd1 (<Language>)' -ForEach $languages {
         foreach ($user in $labUsers.Users) {
             $user.OfficePhone | Should -Match $pattern.Fixed -Because "$($user.SamAccountName) braucht eine Festnetznummer ($($pattern.Source))"
             $user.MobilePhone | Should -Match $pattern.Mobile -Because "$($user.SamAccountName) braucht eine Mobilnummer ($($pattern.Source))"
-            $user.Fax | Should -Match $pattern.Fixed -Because "$($user.SamAccountName) braucht eine Faxnummer des Standorts"
+        }
+        foreach ($site in $labUsers.Sites.GetEnumerator()) {
+            $site.Value.Fax | Should -Match $pattern.Fixed -Because "Standort $($site.Key) braucht eine Faxnummer"
         }
         foreach ($contact in $labUsers.Contacts) {
             foreach ($number in $contact.Phone, $contact.Fax) {
@@ -104,8 +140,8 @@ Describe 'LabUsers.psd1 (<Language>)' -ForEach $languages {
     }
 
     It 'legt jede Benutzer-OU in der OU-Liste an' {
-        foreach ($user in $labUsers.Users) {
-            $labUsers.OrganizationalUnits | Should -Contain $user.OrganizationalUnit
+        foreach ($site in $labUsers.Sites.Values) {
+            $labUsers.OrganizationalUnits | Should -Contain $site.OrganizationalUnit
         }
     }
 
@@ -384,7 +420,8 @@ Describe 'azuredeploy.json' {
         $deployment.properties.parameters.labLanguage.value | Should -Be "[parameters('labLanguage')]"
         $runCommand = $deployment.properties.template.resources | Where-Object { $_.type -eq 'Microsoft.Compute/virtualMachines/runCommands' -and $_.name -match "'$Script'" }
         $runCommand | Should -Not -BeNullOrEmpty
-        ($runCommand.properties.parameters | ConvertTo-Json -Depth 20) | Should -Match '["'']LabLanguage["'']'
+        # Windows PowerShell 5.1 maskiert ' in ConvertTo-Json als '.
+        ($runCommand.properties.parameters | ConvertTo-Json -Depth 20) | Should -Match '(["'']|\\u0027)LabLanguage(["'']|\\u0027)'
     }
 
     It 'haelt die Base64-Parameter jedes Run Commands unter der Windows-Kommandozeilengrenze' {
@@ -393,7 +430,7 @@ Describe 'azuredeploy.json' {
         $b64 = { param([string[]] $Files) ($Files | ForEach-Object { [Convert]::ToBase64String([IO.File]::ReadAllBytes((Join-Path $repoRoot $_))).Length } | Measure-Object -Sum).Sum }
         $largest = { param([string] $Name) @('de', 'en' | ForEach-Object { & $b64 "scripts/data/$_/$Name" }) | Sort-Object -Descending | Select-Object -First 1 }
         (& $b64 'scripts/Update-LabServer.ps1', 'scripts/Invoke-LabMaintenance.ps1') | Should -BeLessThan 31000 -Because 'Install-ExchangeServer'
-        ((& $largest 'LabUsers.psd1') + (& $largest 'FileServer.psd1')) | Should -BeLessThan 31000 -Because 'Initialize-FileServer (Prepare), im Testdeployment mit 30.076 noch gelaufen'
+        ((& $largest 'LabUsers.psd1') + (& $largest 'FileServer.psd1')) | Should -BeLessThan 28000 -Because 'Initialize-FileServer (Prepare); Reserve fuer weiteres Wachstum (Sites statt Anschrift je Benutzer)'
         (& $b64 'scripts/Update-LabServer.ps1', 'scripts/Resize-FileServer.ps1') | Should -BeLessThan 31000 -Because 'Complete-FileServer'
         # LabUsers.psd1 erreicht Exchange deshalb ueber die userData der VM.
         $exchangeModule = ($template.resources | Where-Object name -EQ 'exchange-server').properties.template
@@ -683,21 +720,30 @@ Describe 'Beispieldokumente (Korpus, Artefakte, Generator) (<Language>)' -ForEac
         }
     }
 
-    It 'erzeugt ohne Rastergrafik gueltige Dateien ohne offene Platzhalter (Smoke-Test)' {
-        $target = Join-Path $TestDrive 'daten'
-        $labRoot = Join-Path $TestDrive 'lab'
-        $arguments = @('-NoProfile', '-NonInteractive', '-File', $generatorPath, '-TargetPath', $target, '-TargetSizeMB', '6', '-LabRoot', $labRoot,
+    It 'erzeugt <Variant> gueltige Dateien ohne offene Platzhalter (Smoke-Test)' -ForEach @(
+        @{ Variant = 'ohne Rastergrafik'; Raster = $false; SizeMB = 6; Skip = $false }
+        # Mit Rastergrafik sind die Dateien groesser, fuer alle Dateiarten braucht es mehr Volumen.
+        @{ Variant = 'mit Rastergrafik'; Raster = $true; SizeMB = 20; Skip = -not $isWindowsHost }
+    ) {
+        if ($Skip) { Set-ItResult -Skipped -Because 'Rastergrafik (System.Drawing) nur unter Windows'; return }
+        $target = Join-Path $TestDrive "daten-$Raster"
+        $labRoot = Join-Path $TestDrive "lab-$Raster"
+        $arguments = @('-NoProfile', '-NonInteractive', '-File', $generatorPath, '-TargetPath', $target, '-TargetSizeMB', "$SizeMB", '-LabRoot', $labRoot,
             '-CorpusPath', $corpusDir, '-LabUsersPath', $labUsersPath, '-ReferenceDate', '2026-11-24',
-            '-WorkerCount', '1', '-NoRaster', '-TimeBudgetMinutes', '0')
+            '-WorkerCount', '1', '-TimeBudgetMinutes', '0')
+        if (-not $Raster) { $arguments += '-NoRaster' }
         & (Get-Process -Id $PID).Path @arguments | Out-Null
         $LASTEXITCODE | Should -Be 0 -Because (Get-Content -Path (Join-Path $labRoot 'Logs/New-SampleDocuments.log') -Raw)
         (Get-Content -Path (Join-Path $labRoot 'Logs/New-SampleDocuments.log') -Raw) | Should -Not -MatchExactly 'WARNUNG:|FEHLER:'
         $files = @(Get-ChildItem -Path $target -Recurse -File)
-        foreach ($extension in '.docx', '.xlsx', '.pptx', '.pdf') { @($files | Where-Object Extension -EQ $extension).Count | Should -BeGreaterThan 0 -Because "$extension fehlt" }
+        # Mit Rastergrafik fuellen Bilder das Volumen frueher, Praesentationen kommen dann erst spaeter an die Reihe.
+        $expected = if ($Raster) { '.docx', '.xlsx', '.pdf', '.jpg', '.png' } else { '.docx', '.xlsx', '.pptx', '.pdf' }
+        foreach ($extension in $expected) { @($files | Where-Object Extension -EQ $extension).Count | Should -BeGreaterThan 0 -Because "$extension fehlt" }
         @($files | Where-Object Name -Match '\{[A-Za-z]+\}') | Should -BeNullOrEmpty
         $years = @($files | ForEach-Object { $_.LastWriteTime.Year } | Select-Object -Unique)
         $years.Count | Should -BeGreaterThan 5
-        Add-Type -AssemblyName System.IO.Compression
+        # ZipFile liegt unter .NET Framework (Windows PowerShell 5.1) in einer eigenen Assembly.
+        Add-Type -AssemblyName System.IO.Compression, System.IO.Compression.FileSystem
         foreach ($file in $files | Where-Object Extension -In '.docx', '.xlsx', '.pptx' | Select-Object -First 40) {
             $zip = [IO.Compression.ZipFile]::OpenRead($file.FullName)
             try {
